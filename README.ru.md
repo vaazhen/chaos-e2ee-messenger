@@ -119,8 +119,8 @@ messageKey   = HMAC-SHA256(chainKey, 0x01)
 | **Multi-device** | Отдельный конверт на устройство · UI управления · Отзыв доступа |
 | **Авторизация** | Phone + SMS OTP · Email + пароль · JWT access/refresh · Redis rate limiting |
 | **Сообщения** | Личные и групповые чаты · Realtime WebSocket/STOMP · Typing indicator |
-| **Операции** | Ответ · Редактирование · Soft delete · Фото · Статусы прочтения ✓✓ · Presence |
-| **Backend** | Spring Boot 3 · PostgreSQL 16 · Flyway 22 миграции · Redis 7 · Docker Compose |
+| **Операции** | Ответ · Редактирование · Soft delete · Фото · Статусы прочтения ✓✓ · Presence · Поиск пользователей |
+| **Backend** | Spring Boot 3 · PostgreSQL 16 · Flyway 21 миграция · Redis 7 · Docker Compose |
 | **Наблюдаемость** | Actuator · Prometheus · Grafana (провизионирован, без настройки) |
 | **Тесты** | 24 backend (Testcontainers) · 12 frontend (Vitest) · E2E (Playwright) |
 | **DX** | GitHub Actions CI · OpenAPI 3.1 · Swagger UI · запуск одной командой |
@@ -203,10 +203,11 @@ cd frontend && npm install && npm run dev
 **WebSocket-топики** (STOMP, JWT аутентификация):
 
 ```
-/topic/devices/{deviceId}        ← per-device доставка конвертов
-/topic/users/{username}/chats    ← обновления списка чатов
-/topic/chats/{chatId}/typing     ← события печати
-/topic/user/status               ← presence
+/topic/devices/{deviceId}/chats/{chatId}  ← per-device зашифрованный конверт
+/topic/devices/{deviceId}/status          ← per-device статус события
+/topic/users/{username}/chats             ← обновления списка чатов
+/topic/chats/{chatId}/typing              ← события печати
+/topic/user/status                        ← online presence
 ```
 
 ---
@@ -229,14 +230,16 @@ CI запускает все три при каждом push и pull request.
 chaos-messenger/
 ├── backend/src/main/java/ru/messenger/chaosmessenger/
 │   ├── auth/          # Phone OTP · email · JWT
-│   ├── chat/          # Чаты · сообщения · статусы
+│   ├── chat/          # Управление чатами
+│   ├── message/       # Сообщения · статусы · реакции · события
 │   ├── crypto/        # Устройства · prekeys · envelope fanout
 │   ├── infra/         # WebSocket · security · фильтры
 │   ├── user/          # Пользователи · профили
 │   └── common/        # Ошибки · i18n · утилиты
 ├── backend/src/main/resources/
-│   ├── db/migration/  # V1–V22 Flyway
-│   └── i18n/          # EN + RU сообщения
+│   ├── db/migration/  # V1–V22 Flyway (21 файл, нет V3)
+│   ├── messages.properties      # EN сообщения об ошибках
+│   └── messages_ru.properties   # RU сообщения об ошибках
 ├── frontend/src/
 │   ├── crypto-engine.js   # X3DH + Ratchet + AES-GCM, ноль зависимостей
 │   ├── components/        # AuthScreen · ChatList · MessageInput…
@@ -300,7 +303,7 @@ VITE_WS_URL=http://localhost:8080/ws
 📅  WebRTC звонки + TURN/STUN
 📅  Самоуничтожающиеся сообщения
 💡  Desktop-клиент (Tauri)
-💡  Реакции на сообщения
+🔜  Реакции на сообщения (entity + DB готовы, API в разработке)
 ```
 
 ---
