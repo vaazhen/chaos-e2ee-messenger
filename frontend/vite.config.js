@@ -19,7 +19,7 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test/setup.js"],
-    exclude: [
+    exclude: ["e2e/**", "e2e-real/**", "playwright-report/**", "playwright-report-real/**", "test-results/**", 
       "node_modules/**",
       "dist/**",
       "coverage/**",
@@ -32,7 +32,7 @@ export default defineConfig({
       reporter: ["text", "html", "json-summary"],
       reportsDirectory: "./coverage",
       include: ["src/**/*.{js,jsx}"],
-      exclude: [
+      exclude: ["e2e/**", "e2e-real/**", "playwright-report/**", "playwright-report-real/**", "test-results/**", 
         "src/main.jsx",
         "src/styles.js",
         "src/test/**",

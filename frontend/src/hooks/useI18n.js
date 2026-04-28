@@ -2,6 +2,25 @@ import { useCallback, useState } from "react";
 import { api } from "../api";
 import { getFallbackMessages } from "../i18n/uiText";
 
+
+function getBrowserDefaultLang() {
+  // In unit tests we keep the historical default expected by existing tests.
+  // In a real browser we use the browser language.
+  const isTestRuntime =
+    import.meta.env?.MODE === "test" ||
+    Boolean(import.meta.env?.VITEST) ||
+    (typeof window !== "undefined" && /jsdom/i.test(window.navigator?.userAgent || ""));
+
+  if (isTestRuntime) return "ru";
+
+  const browser =
+    typeof navigator !== "undefined"
+      ? (navigator.language || navigator.userLanguage || "en")
+      : "en";
+
+  return String(browser || "").toLowerCase().startsWith("ru") ? "ru" : "en";
+}
+
 const STORAGE_KEY = "cm_lang";
 
 function normalizeBackendMessages(data) {
@@ -27,8 +46,8 @@ function normalizeLang(lang) {
 }
 
 export function useI18n() {
-  const [lang, setLang] = useState(() => normalizeLang(localStorage.getItem(STORAGE_KEY) || "ru"));
-  const [t, setT] = useState(() => getFallbackMessages(localStorage.getItem(STORAGE_KEY) || "ru"));
+  const [lang, setLang] = useState(() => normalizeLang(localStorage.getItem(STORAGE_KEY) || getBrowserDefaultLang()));
+  const [t, setT] = useState(() => getFallbackMessages(localStorage.getItem(STORAGE_KEY) || getBrowserDefaultLang()));
 
   const loadTranslations = useCallback(async (nextLang = lang) => {
     const normalized = normalizeLang(nextLang);

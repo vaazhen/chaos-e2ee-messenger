@@ -1,11 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { api, setToken } from "../api";
 import { initials } from "../helpers";
 
 function resizeAvatarFile(file) {
   return new Promise((resolve, reject) => {
     if (!file || !file.type?.startsWith("image/")) {
-      reject(new Error("Выберите изображение")); return;
+      reject(new Error("\u0424\u0430\u0439\u043b \u0441\u043b\u0438\u0448\u043a\u043e\u043c \u0431\u043e\u043b\u044c\u0448\u043e\u0439. \u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0438\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u0435 \u0434\u043e 7 \u041c\u0411.")); return;
     }
     if (file.size > 7 * 1024 * 1024) {
       reject(new Error("Файл слишком большой. Выберите изображение до 7 МБ.")); return;
@@ -18,7 +18,7 @@ function resizeAvatarFile(file) {
         const canvas = document.createElement("canvas");
         canvas.width = size; canvas.height = size;
         const ctx = canvas.getContext("2d");
-        if (!ctx) throw new Error("Canvas недоступен");
+        if (!ctx) throw new Error("Canvas \u043d\u0435\u0434\u043e\u0441\u0442\u0443\u043f\u0435\u043d");
         const minSide = Math.min(img.width, img.height);
         const sx = Math.floor((img.width  - minSide) / 2);
         const sy = Math.floor((img.height - minSide) / 2);
@@ -27,7 +27,7 @@ function resizeAvatarFile(file) {
         resolve(canvas.toDataURL("image/jpeg", 0.88));
       } catch (e) { URL.revokeObjectURL(url); reject(e); }
     };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Не удалось прочитать изображение")); };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u043f\u0440\u043e\u0447\u0438\u0442\u0430\u0442\u044c \u0438\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u0435")); };
     img.src = url;
   });
 }
@@ -63,6 +63,24 @@ export default function SetupProfile({ me, setupToken, onFinishSetup, onDone }) 
   const [usernameStatus,    setUsernameStatus]    = useState(null);
   const [loading,           setLoading]           = useState(false);
   const [error,             setError]             = useState(null);
+  const bioRef = useRef(null);
+  const MAX_BIO_LEN = 200;
+
+  const rawLang =
+    (typeof localStorage !== "undefined" && localStorage.getItem("cm_lang")) ||
+    (typeof navigator !== "undefined" && navigator.language) ||
+    "en";
+
+  const lang = String(rawLang).toLowerCase().startsWith("ru") ? "ru" : "en";
+  const t = (ru, en) => (lang === "ru" ? ru : en);
+
+  useEffect(() => {
+    const el = bioRef.current;
+    if (!el) return;
+
+    el.style.height = "0px";
+    el.style.height = Math.min(el.scrollHeight, 220) + "px";
+  }, [bio]);
 
   useEffect(() => {
     if (me?.firstName) setFirstName(v => v || me.firstName);
@@ -119,8 +137,8 @@ export default function SetupProfile({ me, setupToken, onFinishSetup, onDone }) 
   );
 
   const handleSave = async () => {
-    if (!firstName.trim()) { setError("Enter your first name"); return; }
-    if (usernameStatus !== "ok") { setError("Choose a valid username"); return; }
+    if (!firstName.trim()) { setError(t("\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u0438\u043c\u044f", "Enter your first name")); return; }
+    if (usernameStatus !== "ok") { setError(t("\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u044b\u0439 username", "Choose a valid username")); return; }
 
     setLoading(true);
     setError(null);
@@ -151,7 +169,7 @@ export default function SetupProfile({ me, setupToken, onFinishSetup, onDone }) 
         avatarUrl: data.avatarUrl,
       });
     } catch (e) {
-      setError(e.message || "Failed to save");
+      setError(e.message || t("\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0441\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c", "Failed to save"));
       setLoading(false);
     }
   };
@@ -163,51 +181,123 @@ export default function SetupProfile({ me, setupToken, onFinishSetup, onDone }) 
         {error && <div className="err-bar">{error}</div>}
 
         <div className="setup-avatar-wrap">
-          <label className="setup-avatar-upload" title="Загрузить фото">
+          <label className="setup-avatar-upload" title={t("\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u0444\u043e\u0442\u043e", "Upload photo")}>
             <input type="file" accept="image/*" onChange={handleAvatarUpload} hidden />
             {uploadedAvatarUrl ? (
               <img src={uploadedAvatarUrl} alt="avatar" />
             ) : (
               <span>{initials(firstName || username || "?")}</span>
             )}
-            <em>+</em>
+            <em
+              style={{
+                display: "grid",
+                placeItems: "center",
+                fontSize: 17,
+                fontWeight: 700,
+                lineHeight: 1,
+              }}
+            >
+              +
+            </em>
           </label>
-          <div className="setup-avatar-caption">Нажмите, чтобы загрузить фото</div>
+          <div className="setup-avatar-caption">{t("\u041d\u0430\u0436\u043c\u0438\u0442\u0435, \u0447\u0442\u043e\u0431\u044b \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u0444\u043e\u0442\u043e", "Click to upload photo")}</div>
         </div>
 
-        <h1 className="auth-title" style={{ marginBottom: 20 }}>Tell us about yourself</h1>
+        <h1 className="auth-title" style={{ marginBottom: 20 }}>{t("\u0420\u0430\u0441\u0441\u043a\u0430\u0436\u0438\u0442\u0435 \u043e \u0441\u0435\u0431\u0435", "Tell us about yourself")}</h1>
 
         <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
           <div style={{ flex: 1 }}>
-            <div className="auth-label">First name *</div>
+            <div className="auth-label">{t("\u0418\u043c\u044f *", "First name *")}</div>
             <input className="inp" placeholder="John" value={firstName}
               onChange={e => setFirstName(e.target.value)} autoFocus />
           </div>
           <div style={{ flex: 1 }}>
-            <div className="auth-label">Фамилия</div>
+            <div className="auth-label">{t("\u0424\u0430\u043c\u0438\u043b\u0438\u044f", "Last name")}</div>
             <input className="inp" placeholder="Smith" value={lastName}
               onChange={e => setLastName(e.target.value)} />
           </div>
         </div>
 
-        <div style={{ marginBottom: 16 }}>
+        <div style={{ marginBottom: 6 }}>
           <div className="auth-label">Username *</div>
           <input className="inp" placeholder="ivan_petrov" value={username}
             onChange={e => setUsername(e.target.value.toLowerCase())} maxLength={32} />
-          <div className="username-check">
-            {usernameStatus === "checking" && <span>Проверяем...</span>}
-            {usernameStatus === "ok"       && <span className="username-ok">✓ Available</span>}
-            {usernameStatus === "taken"    && <span className="username-err">✗ Already taken</span>}
-            {usernameStatus === "invalid"  && <span className="username-err">✗ Only lowercase letters, digits and _</span>}
-            {usernameStatus === "unknown"  && <span className="username-err">✗ Не удалось проверить username</span>}
+          <div
+            className="username-check"
+            style={{ minHeight: 14, marginTop: 6, marginBottom: 0, lineHeight: 1.2 }}
+          >
+            {usernameStatus === "checking" && (
+              <span>{t("\u041f\u0440\u043e\u0432\u0435\u0440\u044f\u0435\u043c...", "Checking...")}</span>
+            )}
+
+            {usernameStatus === "ok" && (
+              <span className="username-ok">
+                ✓ {t("\u0421\u0432\u043e\u0431\u043e\u0434\u0435\u043d", "Available")}
+              </span>
+            )}
+
+            {usernameStatus === "taken" && (
+              <span className="username-err">
+                ✗ {t("\u0423\u0436\u0435 \u0437\u0430\u043d\u044f\u0442", "Already taken")}
+              </span>
+            )}
+
+            {usernameStatus === "invalid" && (
+              <span className="username-err">
+                ✗ {t("\u0422\u043e\u043b\u044c\u043a\u043e \u043b\u0430\u0442\u0438\u043d\u0438\u0446\u0430, \u0446\u0438\u0444\u0440\u044b \u0438 _", "Only lowercase letters, digits and _")}
+              </span>
+            )}
+
+            {usernameStatus === "unknown" && (
+              <span className="username-err">
+                ✗ {t("\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u043f\u0440\u043e\u0432\u0435\u0440\u0438\u0442\u044c username", "Could not check username")}
+              </span>
+            )}
           </div>
         </div>
 
         <div style={{ marginBottom: 16 }}>
-          <div className="auth-label">Bio</div>
-          <textarea className="inp" placeholder="A few words about yourself..."
-            value={bio} onChange={e => setBio(e.target.value)}
-            maxLength={200} rows={2} style={{ resize: "vertical" }} />
+          <div className="auth-label" style={{ marginTop: 4, marginBottom: 8 }}>{t("\u041e \u0441\u0435\u0431\u0435", "Bio")}</div>
+          <div style={{ position: "relative" }}>
+            <textarea
+              ref={bioRef}
+              className="inp"
+              placeholder={t("\u041d\u0435\u0441\u043a\u043e\u043b\u044c\u043a\u043e \u0441\u043b\u043e\u0432 \u043e \u0441\u0435\u0431\u0435...", "A few words about yourself...")}
+              value={bio}
+              onChange={e => setBio(e.target.value.slice(0, MAX_BIO_LEN))}
+              onInput={() => {
+                const el = bioRef.current;
+                if (!el) return;
+                el.style.height = "0px";
+                el.style.height = Math.min(el.scrollHeight, 220) + "px";
+              }}
+              maxLength={MAX_BIO_LEN}
+              rows={1}
+              style={{
+                resize: "none",
+                overflow: "hidden",
+                minHeight: 60,
+                maxHeight: 220,
+                paddingBottom: 28,
+                boxSizing: "border-box",
+                lineHeight: 1.45,
+              }}
+            />
+            <div
+              style={{
+                position: "absolute",
+                right: 16,
+                bottom: 10,
+                fontSize: 12,
+                fontWeight: 800,
+                color: "var(--t2)",
+                opacity: 0.72,
+                pointerEvents: "none",
+              }}
+            >
+              {bio.length}/{MAX_BIO_LEN}
+            </div>
+          </div>
         </div>
 
         <button
@@ -215,7 +305,7 @@ export default function SetupProfile({ me, setupToken, onFinishSetup, onDone }) 
           onClick={handleSave}
           disabled={!canSubmit}
         >
-          {loading ? "Сохраняем..." : "Enter messenger 🚀"}
+          {loading ? t("\u0421\u043e\u0445\u0440\u0430\u043d\u044f\u0435\u043c...", "Saving...") : t("\u0412\u043e\u0439\u0442\u0438 \u0432 \u043c\u0435\u0441\u0441\u0435\u043d\u0434\u0436\u0435\u0440", "Enter messenger")}
         </button>
       </div>
     </div>

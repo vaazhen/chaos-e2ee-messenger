@@ -90,6 +90,6 @@ export const api = {
   toggleReaction: (id, emoji)          => call(`/messages/${id}/reactions`, { method: "PUT", body: JSON.stringify({ emoji }) }),
 
   // ── i18n ──────────────────────────────────────────────────────────────────
-  getTranslations: (lang) => call(`/v1/i18n/messages?lang=${lang}`),
-  setLang:         (lang) => call(`/i18n/locale?lang=${lang}`, { method: "POST" }),
+  getTranslations: (lang) => call(`/v1/i18n/messages?lang=${encodeURIComponent(lang)}`),
+  setLang:         (lang) => call(`/v1/i18n/lang?lang=${encodeURIComponent(lang)}`, { method: "POST" }),
 };
