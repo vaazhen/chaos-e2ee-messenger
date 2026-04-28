@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { CSS } from "./styles";
 
 import { useAuth }     from "./hooks/useAuth";
@@ -38,7 +38,8 @@ export default function ChaosMessenger() {
 
   const [replyTo,        setReplyTo]        = useState(null);
   const [ctx,            setCtx]            = useState(null);
-  const [showSettings,   setShowSettings]   = useState(false);
+  
+  const [ctxClosing,     setCtxClosing]     = useState(false);const [showSettings,   setShowSettings]   = useState(false);
   const [showNewChat,    setShowNewChat]    = useState(false);
   const [typingUsers,    setTypingUsers]    = useState({});
   const [chatSearch,     setChatSearch]     = useState("");
@@ -47,7 +48,13 @@ export default function ChaosMessenger() {
   const [chatInfoOpen,   setChatInfoOpen]   = useState(false);
   const [chatBg,         setChatBg]         = useState(() => localStorage.getItem("cm_chat_background") || "clean");
   const [chatFilter,     setChatFilter]     = useState("all");
-  const [deleteTarget,   setDeleteTarget]   = useState(null);
+  
+  const ctxMenuRef = useRef(null);
+  const chatSearchRef = useRef(null);
+  const chatSearchBtnRef = useRef(null);
+  const chatInfoRef = useRef(null);
+  const chatInfoBtnRef = useRef(null);
+const [deleteTarget,   setDeleteTarget]   = useState(null);
   const [editTarget,     setEditTarget]     = useState(null);
   const [editText,       setEditText]       = useState("");
   const [editLoading,    setEditLoading]    = useState(false);
@@ -64,12 +71,42 @@ export default function ChaosMessenger() {
     if (!messageSearch.trim()) return 0;
     return activeMsgs.filter(m => messageMatchesQuery(m, messageSearch)).length;
   }, [activeMsgs, messageSearch]);
-
   useEffect(() => {
-    const h = () => setCtx(null);
-    window.addEventListener("click", h);
-    return () => window.removeEventListener("click", h);
-  }, []);
+    const isInside = (ref, target) => Boolean(ref.current && ref.current.contains(target));
+
+    const closeExternalPopovers = (event) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+
+      if (ctxMenuRef.current && !ctxMenuRef.current.contains(target)) {
+        setCtx(null);
+      }
+
+      const insideSearch =
+        isInside(chatSearchRef, target) ||
+        isInside(chatSearchBtnRef, target);
+
+      if (chatSearchOpen && !insideSearch) {
+        setChatSearchOpen(false);
+      }
+
+      const insideInfo =
+        isInside(chatInfoRef, target) ||
+        isInside(chatInfoBtnRef, target);
+
+      if (chatInfoOpen && !insideInfo) {
+        setChatInfoOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", closeExternalPopovers, true);
+    document.addEventListener("touchstart", closeExternalPopovers, true);
+
+    return () => {
+      document.removeEventListener("mousedown", closeExternalPopovers, true);
+      document.removeEventListener("touchstart", closeExternalPopovers, true);
+    };
+  }, [ctx, chatSearchOpen, chatInfoOpen]);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -173,8 +210,38 @@ export default function ChaosMessenger() {
     await msgStore.sendMessage(chatStore.activeId, { text, imgFile });
   };
 
+  const closeCtx = () => {
+    if (!ctx || ctxClosing) return;
+
+    setCtxClosing(true);
+
+    window.setTimeout(() => {
+      setCtx(null);
+      setCtxClosing(false);
+    }, 140);
+  };
+
+  useEffect(() => {
+    const onWindowClick = () => closeCtx();
+
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") {
+        closeCtx();
+      }
+    };
+
+    window.addEventListener("click", onWindowClick);
+    window.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      window.removeEventListener("click", onWindowClick);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [ctx, ctxClosing]);
+
   const openCtx = (e, msg) => {
     e.preventDefault(); e.stopPropagation();
+    setCtxClosing(false);
     setCtx({
       x: Math.min(e.clientX, window.innerWidth  - 208),
       y: Math.min(e.clientY, window.innerHeight - 280),
@@ -283,7 +350,7 @@ export default function ChaosMessenger() {
   }
 
   return (
-    <div className={`app mobile-product-shell${activeChat ? " has-active-chat" : ""}`} onClick={() => setCtx(null)}>
+    <div className={`app mobile-product-shell${activeChat ? " has-active-chat" : ""}`} onClick={closeCtx}>
       <div className="app-frame">
         <ChatList
           me={auth.me}
@@ -328,11 +395,13 @@ export default function ChaosMessenger() {
                 </div>
                 <div className="chat-head-actions">
                   <button
+                    ref={chatSearchBtnRef}
                     className={`chat-head-btn${chatSearchOpen ? " active" : ""}`}
                     title="Search"
                     onClick={() => { setChatSearchOpen(v => !v); setChatInfoOpen(false); }}
                   >⌕</button>
                   <button
+                    ref={chatInfoBtnRef}
                     className={`chat-head-btn${chatInfoOpen ? " active" : ""}`}
                     title="Chat info"
                     onClick={() => { setChatInfoOpen(v => !v); setChatSearchOpen(false); }}
@@ -341,7 +410,7 @@ export default function ChaosMessenger() {
               </div>
 
               {chatSearchOpen && (
-                <div className="chat-search-bar" onClick={e => e.stopPropagation()}>
+                <div ref={chatSearchRef} className="chat-search-bar" onClick={e => e.stopPropagation()}>
                   <span>⌕</span>
                   <input
                     value={messageSearch}
@@ -356,6 +425,7 @@ export default function ChaosMessenger() {
 
               {chatInfoOpen && (
                 <ChatInfoPanel
+                  panelRef={chatInfoRef}
                   chat={activeChat}
                   chatBg={chatBg}
                   onChangeBg={setChatBg}
@@ -392,7 +462,7 @@ export default function ChaosMessenger() {
       </div>
 
       {ctx && (
-        <div className="ctx-menu product-menu" style={{ left: ctx.x, top: ctx.y }} onClick={e => e.stopPropagation()}>
+        <div ref={ctxMenuRef} className="ctx-menu product-menu" style={{ left: ctx.x, top: ctx.y }} onClick={e => e.stopPropagation()}>
           <div className="ctx-reactions">
             {["👍","❤️","😂","😮","😢","🔥"].map(em => (
               <button key={em} className="ctx-react" type="button" onClick={() => reactToMsg(ctx.msg, em)}>{em}</button>
@@ -487,44 +557,85 @@ export default function ChaosMessenger() {
   );
 }
 
-function ChatInfoPanel({ chat, chatBg, onChangeBg, onClose, onOpenSearch }) {
+function ChatInfoPanel({ chat, chatBg, onChangeBg, onClose, onOpenSearch, lang, panelRef }) {
+  const effectiveLang = String(lang || "ru").toLowerCase().startsWith("en") ? "en" : "ru";
+  const l = (ru, en) => (effectiveLang === "ru" ? ru : en);
+
   const backgrounds = [
-    { key: "clean",  label: "Clean"  },
-    { key: "soft",   label: "Soft"   },
-    { key: "grid",   label: "Grid"   },
-    { key: "paper",  label: "Paper"  },
+    { key: "clean",  label: l("Чистый", "Clean") },
+    { key: "soft",   label: l("Мягкий", "Soft") },
+    { key: "grid",   label: l("Сетка", "Grid") },
+    { key: "paper",  label: l("Бумага", "Paper") },
   ];
+
   return (
-    <div className="chat-tools-panel" onClick={e => e.stopPropagation()}>
+    <div ref={panelRef} className="chat-tools-panel" onClick={e => e.stopPropagation()}>
       <div className="chat-tools-head">
-        <div><b>Chat settings</b><span>{chat?.name}</span></div>
-        <button onClick={onClose}>×</button>
+        <div>
+          <b>{l("Настройки чата", "Chat settings")}</b>
+          <span>{chat?.name}</span>
+        </div>
+
+        <button
+          type="button"
+          className="chat-tools-close"
+          onClick={onClose}
+          title={l("Закрыть", "Close")}
+          aria-label={l("Закрыть", "Close")}
+        >
+          ×
+        </button>
       </div>
-      <button className="tool-row" onClick={onOpenSearch}>
-        <span>⌕</span><b>Search messages</b><i>›</i>
+
+      <button type="button" className="tool-row" onClick={onOpenSearch}>
+        <span className="tool-icon tool-icon-search" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <circle cx="11" cy="11" r="6.5" />
+            <path d="M16.2 16.2L21 21" />
+          </svg>
+        </span>
+        <b>{l("Поиск сообщений", "Search messages")}</b>
+        <i>›</i>
       </button>
+
       <div className="tool-card">
-        <div className="tool-title">Chat background</div>
+        <div className="tool-title">{l("Фон переписки", "Chat background")}</div>
+
         <div className="bg-picker">
           {backgrounds.map(item => (
             <button
               key={item.key}
+              type="button"
               className={`bg-option bg-${item.key}${chatBg === item.key ? " active" : ""}`}
               onClick={() => onChangeBg(item.key)}
             >
-              <span /><b>{item.label}</b>
+              <span />
+              <b>{item.label}</b>
             </button>
           ))}
         </div>
       </div>
+
       <div className="tool-card">
-        <div className="tool-title">Security</div>
+        <div className="tool-title">{l("Безопасность", "Security")}</div>
         <div className="tool-note">
-          The server stores only encrypted envelopes. Messages are decrypted on device.
+          {l(
+            "Сервер хранит только зашифрованные конверты. Сообщения расшифровываются на устройстве.",
+            "The server stores only encrypted envelopes. Messages are decrypted on device."
+          )}
         </div>
       </div>
-      <button className="tool-row disabled"><span>◐</span><b>Notifications</b><em>coming soon</em></button>
-      <button className="tool-row disabled"><span>▧</span><b>Media & files</b><em>coming soon</em></button>
+
+      <button type="button" className="tool-row disabled" disabled>
+        <span className="tool-icon tool-icon-files" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="M7 7.5h8.5a2.5 2.5 0 0 1 2.5 2.5v7.5A2.5 2.5 0 0 1 15.5 20H7a2.5 2.5 0 0 1-2.5-2.5V10A2.5 2.5 0 0 1 7 7.5Z" />
+            <path d="M8.5 4h8A2.5 2.5 0 0 1 19 6.5v8" />
+          </svg>
+        </span>
+        <b>{l("Медиа и файлы", "Media & files")}</b>
+        <em>{l("позже", "coming soon")}</em>
+      </button>
     </div>
   );
 }
