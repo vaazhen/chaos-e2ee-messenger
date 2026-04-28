@@ -119,8 +119,8 @@ The server receives an opaque ciphertext envelope and routes one copy to every r
 | **Multi-device** | Separate envelope per device · Device management UI · Revoke access |
 | **Auth** | Phone + SMS OTP · Email + password · JWT access/refresh · Redis rate limiting |
 | **Messaging** | Direct and group chats · Realtime via WebSocket/STOMP · Typing indicator |
-| **Message ops** | Reply · Edit · Soft delete · Photo attachments · Read receipts ✓✓ · Presence |
-| **Backend** | Spring Boot 3 · PostgreSQL 16 · Flyway 22 migrations · Redis 7 · Docker Compose |
+| **Message ops** | Reply · Edit · Soft delete · Photo attachments · Read receipts ✓✓ · Presence · User search |
+| **Backend** | Spring Boot 3 · PostgreSQL 16 · Flyway 21 migrations · Redis 7 · Docker Compose |
 | **Observability** | Actuator · Prometheus · Grafana (pre-provisioned, zero config) |
 | **Tests** | 24 backend (Testcontainers) · 12 frontend (Vitest) · E2E (Playwright) |
 | **DX** | GitHub Actions CI · OpenAPI 3.1 · Swagger UI · one-command startup |
@@ -203,10 +203,11 @@ Every protected endpoint requires `Authorization: Bearer <jwt>` and `X-Device-Id
 **WebSocket topics** (STOMP, JWT authenticated):
 
 ```
-/topic/devices/{deviceId}        ← encrypted envelope delivery
-/topic/users/{username}/chats    ← chat list updates
-/topic/chats/{chatId}/typing     ← typing events
-/topic/user/status               ← presence
+/topic/devices/{deviceId}/chats/{chatId}  ← per-device encrypted envelope
+/topic/devices/{deviceId}/status          ← per-device status events
+/topic/users/{username}/chats             ← chat list updates
+/topic/chats/{chatId}/typing              ← typing events
+/topic/user/status                        ← online presence
 ```
 
 ---
@@ -229,14 +230,16 @@ CI runs all three on every push and pull request.
 chaos-messenger/
 ├── backend/src/main/java/ru/messenger/chaosmessenger/
 │   ├── auth/          # Phone OTP · email · JWT
-│   ├── chat/          # Chats · messages · receipts
+│   ├── chat/          # Chat management
+│   ├── message/       # Messages · receipts · reactions · events
 │   ├── crypto/        # Devices · prekeys · envelope fanout
 │   ├── infra/         # WebSocket · security · filters
 │   ├── user/          # Users · profiles
 │   └── common/        # Errors · i18n · utils
 ├── backend/src/main/resources/
-│   ├── db/migration/  # V1–V22 Flyway
-│   └── i18n/          # EN + RU messages
+│   ├── db/migration/  # V1–V22 Flyway (21 files, no V3)
+│   ├── messages.properties      # EN error messages
+│   └── messages_ru.properties   # RU error messages
 ├── frontend/src/
 │   ├── crypto-engine.js   # X3DH + Ratchet + AES-GCM, zero deps
 │   ├── components/        # AuthScreen · ChatList · MessageInput…
@@ -300,7 +303,7 @@ VITE_WS_URL=http://localhost:8080/ws
 📅  WebRTC calls + TURN/STUN
 📅  Self-destructing messages
 💡  Desktop client (Tauri)
-💡  Message reactions
+🔜  Message reactions (entity + DB ready, API pending)
 ```
 
 ---
