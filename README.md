@@ -32,6 +32,16 @@
 
 ---
 
+## Article
+
+I wrote a technical breakdown of the project on DEV:
+
+[Building an End-to-End Encrypted Messenger with Spring Boot and WebCrypto](https://dev.to/vaazhen/i-built-an-end-to-end-encrypted-messenger-with-spring-boot-and-webcrypto-1if5)
+
+The article explains the main architecture decisions behind Chaos Messenger: X3DH session setup, symmetric ratchet, encrypted per-device envelopes, WebSocket delivery, multi-device routing, and the limitations of browser-based E2EE.
+
+---
+
 ## What is this
 
 **Chaos Messenger** is a full-stack realtime messenger where end-to-end encryption is not a marketing claim — it is a verifiable architectural property.
