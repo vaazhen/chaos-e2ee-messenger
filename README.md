@@ -1,5 +1,9 @@
 <div align="center">
 
+[Русская версия](README.ru.md) · [Quick Setup](SETUP_COMPLETE.md) · [Security Audit](SECURITY_AUDIT_EN.md)
+
+<br/>
+
 [![CI](https://github.com/vaazhen/chaos-messenger/actions/workflows/ci.yml/badge.svg)](https://github.com/vaazhen/chaos-messenger/actions/workflows/ci.yml)
 [![Java](https://img.shields.io/badge/Java-17-orange?logo=openjdk&logoColor=white)](https://openjdk.org/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-brightgreen?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
@@ -7,8 +11,6 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7-red?logo=redis&logoColor=white)](https://redis.io/)
 [![License](https://img.shields.io/badge/license-MIT-green)](#)
-
-[🇷🇺 Русская версия](README.ru.md) · [🚀 Quick Setup](SETUP_COMPLETE.md) · [🔐 Security Audit](SECURITY_AUDIT_EN.md)
 
 </div>
 
