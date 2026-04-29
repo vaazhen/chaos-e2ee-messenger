@@ -1,8 +1,8 @@
 <div align="center">
-  <img src="docs/assets/screenshots/header-ru.png" alt="Chaos Messenger" width="100%"/>
-</div>
 
-<div align="center">
+[🇬🇧 English README](README.md) · [🚀 Быстрый запуск](SETUP_COMPLETE.ru.md) · [🔐 Аудит безопасности](SECURITY_AUDIT_RU.md)
+
+<br/>
 
 [![CI](https://github.com/vaazhen/chaos-messenger/actions/workflows/ci.yml/badge.svg)](https://github.com/vaazhen/chaos-messenger/actions/workflows/ci.yml)
 [![Java](https://img.shields.io/badge/Java-17-orange?logo=openjdk&logoColor=white)](https://openjdk.org/)
@@ -12,11 +12,15 @@
 [![Redis](https://img.shields.io/badge/Redis-7-red?logo=redis&logoColor=white)](https://redis.io/)
 [![License](https://img.shields.io/badge/license-MIT-green)](#)
 
-[🇬🇧 English README](README.md) · [🚀 Быстрый запуск](SETUP_COMPLETE.ru.md) · [🔐 Аудит безопасности](SECURITY_AUDIT_RU.md)
-
 </div>
 
 ---
+
+<div align="center">
+  <img src="docs/assets/screenshots/header-ru.png" alt="Chaos Messenger" width="100%"/>
+</div>
+
+<br/>
 
 <p align="center">
   <img src="docs/assets/screenshots/hero-ru.png" alt="Chaos Messenger — список чатов, переписка, устройства" width="100%"/>
@@ -25,6 +29,8 @@
 <p align="center">
   <sub>Список чатов с непрочитанными · Живая переписка со статусами прочтения ✓✓ · Управление устройствами E2EE</sub>
 </p>
+
+---
 
 ---
 
