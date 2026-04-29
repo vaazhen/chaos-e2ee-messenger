@@ -10,7 +10,7 @@
 [![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white)](https://react.dev/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7-red?logo=redis&logoColor=white)](https://redis.io/)
-[![License](https://img.shields.io/badge/license-MIT-green)](#)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 </div>
 
@@ -323,6 +323,18 @@ VITE_WS_URL=http://localhost:8080/ws
 - Изучения realtime-архитектуры на Spring Boot
 - Android-клиента с интеграцией Android Keystore
 - Пошаговой реализации полного Double Ratchet
+
+---
+
+---
+
+## Лицензия
+
+Проект распространяется под лицензией Apache License 2.0.
+
+Copyright 2026 Evgeniy Vasilenkov
+
+Подробности см. в файле [LICENSE](LICENSE).
 
 ---
 
