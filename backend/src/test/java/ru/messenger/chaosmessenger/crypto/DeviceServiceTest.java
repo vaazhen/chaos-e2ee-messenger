@@ -285,8 +285,8 @@ class DeviceServiceTest {
             activeCurrent.setLastSeen(LocalDateTime.now().minusHours(1));
 
             when(userIdentityService.require("alice")).thenReturn(alice);
-            when(userDeviceRepository.findByUserIdOrderByCreatedAtDesc(alice.getId()))
-                    .thenReturn(List.of(inactiveRecent, activeOld, activeCurrent));
+            when(userDeviceRepository.findByUserIdOrderByActiveDescLastSeenDescCreatedAtDescIdDesc(alice.getId()))
+                    .thenReturn(List.of(activeCurrent, activeOld, inactiveRecent));
 
             List<UserDeviceResponse> response = deviceService.listMyDevices("alice", "active-current");
 

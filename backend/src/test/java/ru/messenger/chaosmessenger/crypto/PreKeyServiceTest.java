@@ -26,7 +26,6 @@ import ru.messenger.chaosmessenger.user.service.UserIdentityService;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -62,11 +61,11 @@ class PreKeyServiceTest {
         SignedPreKey signed = signedPreKey(aliceDevice, 7, "signed-public", "signature");
         OneTimePreKey oneTime = oneTimePreKey(aliceDevice, 101, "otp-public");
 
-        when(userDeviceRepository.findByUserUsernameAndActiveTrue("alice"))
+        when(userDeviceRepository.findActiveByUsernameWithUser("alice"))
                 .thenReturn(List.of(aliceDevice));
-        when(signedPreKeyRepository.findTopByDeviceIdOrderByCreatedAtDesc(10L))
-                .thenReturn(Optional.of(signed));
-        when(oneTimePreKeyRepository.findAvailableReadOnly(10L))
+        when(signedPreKeyRepository.findLatestByDeviceIds(List.of(10L)))
+                .thenReturn(List.of(signed));
+        when(oneTimePreKeyRepository.findFirstAvailableReadOnlyByDeviceIds(List.of(10L)))
                 .thenReturn(List.of(oneTime));
 
         PreKeyBundleResponse response = preKeyService.getBundleByUsername("alice");
@@ -96,11 +95,11 @@ class PreKeyServiceTest {
     void getBundleByUsernameAllowsDevicesWithoutAvailablePreKeys() {
         UserDevice aliceDevice = device(10L, alice, "alice-phone");
 
-        when(userDeviceRepository.findByUserUsernameAndActiveTrue("alice"))
+        when(userDeviceRepository.findActiveByUsernameWithUser("alice"))
                 .thenReturn(List.of(aliceDevice));
-        when(signedPreKeyRepository.findTopByDeviceIdOrderByCreatedAtDesc(10L))
-                .thenReturn(Optional.empty());
-        when(oneTimePreKeyRepository.findAvailableReadOnly(10L))
+        when(signedPreKeyRepository.findLatestByDeviceIds(List.of(10L)))
+                .thenReturn(List.of());
+        when(oneTimePreKeyRepository.findFirstAvailableReadOnlyByDeviceIds(List.of(10L)))
                 .thenReturn(List.of());
 
         PreKeyBundleResponse response = preKeyService.getBundleByUsername("alice");
@@ -123,7 +122,7 @@ class PreKeyServiceTest {
                 .isInstanceOf(ChatException.class)
                 .hasMessageContaining("You are not a participant of this chat");
 
-        verify(chatParticipantRepository, never()).findByChatId(100L);
+        verify(chatParticipantRepository, never()).findUserIdsByChatId(100L);
     }
 
     @Test
@@ -141,23 +140,16 @@ class PreKeyServiceTest {
         when(currentDeviceService.requireCurrentDevice()).thenReturn(aliceDevice);
         when(chatParticipantRepository.existsByChatIdAndUserId(100L, alice.getId()))
                 .thenReturn(true);
-        when(chatParticipantRepository.findByChatId(100L))
-                .thenReturn(List.of(
-                        TestFixtures.participant(100L, alice.getId()),
-                        TestFixtures.participant(100L, bob.getId())
-                ));
+        when(chatParticipantRepository.findUserIdsByChatId(100L))
+                .thenReturn(List.of(alice.getId(), bob.getId()));
 
-        when(userDeviceRepository.findByUserIdAndActiveTrue(alice.getId()))
-                .thenReturn(List.of(aliceDevice));
-        when(userDeviceRepository.findByUserIdAndActiveTrue(bob.getId()))
-                .thenReturn(List.of(bobDevice));
+        when(userDeviceRepository.findActiveByUserIdsWithUser(List.of(alice.getId(), bob.getId())))
+                .thenReturn(List.of(aliceDevice, bobDevice));
 
-        when(signedPreKeyRepository.findTopByDeviceIdOrderByCreatedAtDesc(10L))
-                .thenReturn(Optional.of(aliceSigned));
-        when(signedPreKeyRepository.findTopByDeviceIdOrderByCreatedAtDesc(20L))
-                .thenReturn(Optional.of(bobSigned));
+        when(signedPreKeyRepository.findLatestByDeviceIds(List.of(10L, 20L)))
+                .thenReturn(List.of(aliceSigned, bobSigned));
 
-        when(oneTimePreKeyRepository.findAvailableReadOnly(10L))
+        when(oneTimePreKeyRepository.findFirstAvailableReadOnlyByDeviceIds(List.of(10L)))
                 .thenReturn(List.of(aliceOtp));
         when(oneTimePreKeyRepository.findAvailableForUpdate(20L))
                 .thenReturn(List.of(bobOtp));
@@ -193,23 +185,16 @@ class PreKeyServiceTest {
         when(currentDeviceService.requireCurrentDevice()).thenReturn(aliceDevice);
         when(chatParticipantRepository.existsByChatIdAndUserId(100L, alice.getId()))
                 .thenReturn(true);
-        when(chatParticipantRepository.findByChatId(100L))
-                .thenReturn(List.of(
-                        TestFixtures.participant(100L, alice.getId()),
-                        TestFixtures.participant(100L, bob.getId())
-                ));
+        when(chatParticipantRepository.findUserIdsByChatId(100L))
+                .thenReturn(List.of(alice.getId(), bob.getId()));
 
-        when(userDeviceRepository.findByUserIdAndActiveTrue(alice.getId()))
-                .thenReturn(List.of(aliceDevice));
-        when(userDeviceRepository.findByUserIdAndActiveTrue(bob.getId()))
-                .thenReturn(List.of(bobDevice, duplicateDevice));
+        when(userDeviceRepository.findActiveByUserIdsWithUser(List.of(alice.getId(), bob.getId())))
+                .thenReturn(List.of(aliceDevice, bobDevice, duplicateDevice));
 
-        when(signedPreKeyRepository.findTopByDeviceIdOrderByCreatedAtDesc(10L))
-                .thenReturn(Optional.empty());
-        when(signedPreKeyRepository.findTopByDeviceIdOrderByCreatedAtDesc(20L))
-                .thenReturn(Optional.empty());
+        when(signedPreKeyRepository.findLatestByDeviceIds(List.of(10L, 20L, 21L)))
+                .thenReturn(List.of());
 
-        when(oneTimePreKeyRepository.findAvailableReadOnly(10L))
+        when(oneTimePreKeyRepository.findFirstAvailableReadOnlyByDeviceIds(List.of(10L)))
                 .thenReturn(List.of());
         when(oneTimePreKeyRepository.findAvailableForUpdate(20L))
                 .thenReturn(List.of());
@@ -219,7 +204,6 @@ class PreKeyServiceTest {
         assertThat(response.getTargetDevices()).extracting(DeviceBundleDto::getDeviceId)
                 .containsExactly("alice-phone", "same-device-id");
 
-        verify(signedPreKeyRepository, never()).findTopByDeviceIdOrderByCreatedAtDesc(21L);
         verify(oneTimePreKeyRepository, never()).findAvailableForUpdate(21L);
     }
 
