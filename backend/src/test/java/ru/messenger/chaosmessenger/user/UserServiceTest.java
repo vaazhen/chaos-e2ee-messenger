@@ -8,6 +8,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import ru.messenger.chaosmessenger.TestFixtures;
 import ru.messenger.chaosmessenger.user.domain.User;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import ru.messenger.chaosmessenger.chat.repository.ChatParticipantRepository;
+import ru.messenger.chaosmessenger.infra.security.JwtService;
 import ru.messenger.chaosmessenger.user.dto.UpdateProfileRequest;
 import ru.messenger.chaosmessenger.user.repository.UserRepository;
 import ru.messenger.chaosmessenger.user.service.UserIdentityService;
@@ -27,6 +30,9 @@ class UserServiceTest {
 
     @Mock UserRepository userRepository;
     @Mock UserIdentityService userIdentityService;
+    @Mock JwtService jwtService;
+    @Mock ChatParticipantRepository participantRepository;
+    @Mock SimpMessagingTemplate messagingTemplate;
 
     @InjectMocks UserService userService;
 
@@ -101,6 +107,7 @@ class UserServiceTest {
         when(userIdentityService.require("alice")).thenReturn(alice);
         when(userRepository.existsByUsername("new_name")).thenReturn(false);
         when(userRepository.save(alice)).thenReturn(alice);
+        when(jwtService.generateToken("new_name")).thenReturn("jwt-new-name");
 
         var response = userService.updateProfile("alice", request);
 
@@ -109,9 +116,9 @@ class UserServiceTest {
         assertThat(alice.getAvatarUrl()).isEqualTo("data:image/jpeg;base64,abc");
         assertThat(alice.getUsername()).isEqualTo("new_name");
 
-        assertThat(response.getUsername()).isEqualTo("new_name");
-        assertThat(response.getFirstName()).isEqualTo("John");
-        assertThat(response.getLastName()).isEqualTo("Doe");
+        assertThat(response.username()).isEqualTo("new_name");
+        assertThat(response.firstName()).isEqualTo("John");
+        assertThat(response.lastName()).isEqualTo("Doe");
 
         verify(userRepository).save(alice);
     }
@@ -123,10 +130,11 @@ class UserServiceTest {
 
         when(userIdentityService.require("alice")).thenReturn(alice);
         when(userRepository.save(alice)).thenReturn(alice);
+        when(jwtService.generateToken("alice")).thenReturn("jwt-alice");
 
         var response = userService.updateProfile("alice", request);
 
-        assertThat(response.getUsername()).isEqualTo("alice");
+        assertThat(response.username()).isEqualTo("alice");
         verify(userRepository, never()).existsByUsername("alice");
     }
 
@@ -137,10 +145,11 @@ class UserServiceTest {
 
         when(userIdentityService.require("alice")).thenReturn(alice);
         when(userRepository.save(alice)).thenReturn(alice);
+        when(jwtService.generateToken("alice")).thenReturn("jwt-alice");
 
         var response = userService.updateProfile("alice", request);
 
-        assertThat(response.getUsername()).isEqualTo("alice");
+        assertThat(response.username()).isEqualTo("alice");
         verify(userRepository, never()).existsByUsername(org.mockito.ArgumentMatchers.anyString());
     }
 
