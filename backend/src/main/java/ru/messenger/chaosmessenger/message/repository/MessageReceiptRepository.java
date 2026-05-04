@@ -19,6 +19,99 @@ public interface MessageReceiptRepository extends JpaRepository<MessageReceipt, 
 
     List<MessageReceipt> findByMessageIdIn(Collection<Long> messageIds);
 
+
+    @Modifying(flushAutomatically = true, clearAutomatically = false)
+    @Query(value = """
+            insert into message_receipts (
+                message_id,
+                chat_id,
+                user_id,
+                device_id,
+                delivered_at,
+                read_at,
+                created_at,
+                updated_at
+            )
+            select
+                m.id,
+                m.chat_id,
+                :userId,
+                :deviceId,
+                :now,
+                :now,
+                :now,
+                :now
+            from messages m
+            where m.chat_id = :chatId
+              and m.sender_id <> :userId
+              and m.deleted_at is null
+              and not exists (
+                  select 1
+                  from message_receipts mr
+                  where mr.message_id = m.id
+                    and mr.user_id = :userId
+                    and mr.device_id = :deviceId
+                    and mr.read_at is not null
+              )
+            on conflict (message_id, user_id, device_id)
+            do update set
+                delivered_at = coalesce(message_receipts.delivered_at, excluded.delivered_at),
+                read_at = coalesce(message_receipts.read_at, excluded.read_at),
+                updated_at = excluded.updated_at
+            """, nativeQuery = true)
+    int upsertReadForChat(
+            @Param("chatId") Long chatId,
+            @Param("userId") Long userId,
+            @Param("deviceId") String deviceId,
+            @Param("now") LocalDateTime now
+    );
+
+    @Modifying(flushAutomatically = true, clearAutomatically = false)
+    @Query(value = """
+            insert into message_receipts (
+                message_id,
+                chat_id,
+                user_id,
+                device_id,
+                delivered_at,
+                read_at,
+                created_at,
+                updated_at
+            )
+            select
+                m.id,
+                m.chat_id,
+                :userId,
+                :deviceId,
+                :now,
+                null,
+                :now,
+                :now
+            from messages m
+            where m.chat_id = :chatId
+              and m.sender_id <> :userId
+              and m.status <> 'READ'
+              and m.deleted_at is null
+              and not exists (
+                  select 1
+                  from message_receipts mr
+                  where mr.message_id = m.id
+                    and mr.user_id = :userId
+                    and mr.device_id = :deviceId
+                    and mr.delivered_at is not null
+              )
+            on conflict (message_id, user_id, device_id)
+            do update set
+                delivered_at = coalesce(message_receipts.delivered_at, excluded.delivered_at),
+                updated_at = excluded.updated_at
+            """, nativeQuery = true)
+    int upsertDeliveredForChat(
+            @Param("chatId") Long chatId,
+            @Param("userId") Long userId,
+            @Param("deviceId") String deviceId,
+            @Param("now") LocalDateTime now
+    );
+
     @Modifying(flushAutomatically = true, clearAutomatically = false)
     @Query(value = """
             insert into message_receipts (

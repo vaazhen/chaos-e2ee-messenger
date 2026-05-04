@@ -6,12 +6,24 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
 public interface OneTimePreKeyRepository extends JpaRepository<OneTimePreKey, Long> {
 
     List<OneTimePreKey> findByDeviceIdAndUsedAtIsNull(Long deviceId);
+
+    @Query(value = """
+            select distinct on (device_db_id) *
+            from one_time_prekeys
+            where device_db_id in (:deviceIds)
+              and used_at is null
+            order by device_db_id, created_at asc, id asc
+            """, nativeQuery = true)
+    List<OneTimePreKey> findFirstAvailableReadOnlyByDeviceIds(
+            @Param("deviceIds") Collection<Long> deviceIds
+    );
 
     Optional<OneTimePreKey> findByDeviceIdAndPreKeyId(Long deviceId, Integer preKeyId);
 

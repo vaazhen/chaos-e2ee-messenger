@@ -12,8 +12,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import ru.messenger.chaosmessenger.chat.domain.ChatParticipant;
 import ru.messenger.chaosmessenger.chat.domain.Message;
+import ru.messenger.chaosmessenger.chat.dto.ChatListUpdateEvent;
 import ru.messenger.chaosmessenger.chat.repository.ChatParticipantRepository;
 import ru.messenger.chaosmessenger.common.TransactionUtils;
 import ru.messenger.chaosmessenger.common.exception.AuthException;
@@ -39,7 +39,6 @@ import ru.messenger.chaosmessenger.message.repository.MessageReactionRepository;
 import ru.messenger.chaosmessenger.message.repository.MessageReceiptRepository;
 import ru.messenger.chaosmessenger.message.repository.MessageRepository;
 import ru.messenger.chaosmessenger.user.domain.User;
-import ru.messenger.chaosmessenger.user.repository.UserRepository;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -57,7 +56,6 @@ public class MessageService {
     private final MessageReceiptRepository messageReceiptRepository;
     private final MessageReactionRepository messageReactionRepository;
     private final ChatParticipantRepository participantRepository;
-    private final UserRepository userRepository;
     private final UserIdentityService userIdentityService;
     private final UserDeviceRepository userDeviceRepository;
     private final CurrentDeviceService currentDeviceService;
@@ -88,7 +86,7 @@ public class MessageService {
             return toDeviceEvent("MESSAGE_CREATED", existingMessage, currentEnvelope, sender.getId());
         }
 
-        validateEnvelopeTargets(request.getChatId(), request.getEnvelopes());
+        Map<String, UserDevice> targetDevices = validateEnvelopeTargets(request.getChatId(), request.getEnvelopes());
 
         Message message = new Message();
         message.setChatId(request.getChatId());
@@ -102,7 +100,7 @@ public class MessageService {
 
         incrementCounter("messages_sent_total");
 
-        Map<String, MessageEnvelope> byDevice = persistEnvelopes(message, sender, request.getEnvelopes());
+        Map<String, MessageEnvelope> byDevice = persistEnvelopes(message, sender, request.getEnvelopes(), targetDevices);
         incrementUnreadForOthers(request.getChatId(), sender.getId());
 
         final Message msgFinal = message;
@@ -134,7 +132,7 @@ public class MessageService {
             throw new MessageException("senderDeviceId must match current X-Device-Id");
         }
 
-        validateEnvelopeTargets(message.getChatId(), request.getEnvelopes());
+        Map<String, UserDevice> targetDevices = validateEnvelopeTargets(message.getChatId(), request.getEnvelopes());
 
         message.setVersion(message.getVersion() + 1);
         message.setEditedAt(LocalDateTime.now());
@@ -144,7 +142,7 @@ public class MessageService {
         messageEnvelopeRepository.deleteByMessageId(messageId);
         messageEnvelopeRepository.flush();
 
-        Map<String, MessageEnvelope> byDevice = persistEnvelopes(message, sender, request.getEnvelopes());
+        Map<String, MessageEnvelope> byDevice = persistEnvelopes(message, sender, request.getEnvelopes(), targetDevices);
         saveMessageEvent(message, sender.getId(), "EDIT", Map.of("version", message.getVersion()));
 
         final Message msgEditFinal = message;
@@ -176,9 +174,17 @@ public class MessageService {
         Map<Long, MessageEnvelope> envelopeByMessageId = envelopes.stream()
                 .collect(Collectors.toMap(MessageEnvelope::getMessageId, Function.identity()));
 
+        Map<Long, Map<String, Long>> reactionSummaryByMessageId = reactionSummaries(messageIds);
+        Map<Long, Set<String>> myReactionsByMessageId = myReactionsByMessage(messageIds, user.getId());
+
         List<MessageTimelineItemResponse> result = new ArrayList<>();
         for (Message message : messages) {
-            result.add(toTimelineItem(message, envelopeByMessageId.get(message.getId()), user.getId()));
+            result.add(toTimelineItem(
+                    message,
+                    envelopeByMessageId.get(message.getId()),
+                    reactionSummaryByMessageId.getOrDefault(message.getId(), Map.of()),
+                    myReactionsByMessageId.getOrDefault(message.getId(), Set.of())
+            ));
         }
         return result;
     }
@@ -219,16 +225,32 @@ public class MessageService {
         requireParticipant(chatId, user.getId());
         unreadService.reset(user.getId(), chatId);
 
-        List<Message> messages = messageRepository.findByChatIdAndSenderIdNot(chatId, user.getId());
+        List<Long> chatParticipantIds = participantIds(chatId);
+        boolean directOrSavedChat = chatParticipantIds.size() <= 2;
+        List<Long> affectedSenderIds = directOrSavedChat
+                ? messageRepository.findDistinctSenderIdsByChatIdAndSenderIdNotAndStatusNot(
+                        chatId,
+                        user.getId(),
+                        Message.MessageStatus.READ
+                )
+                : List.of();
 
-        for (Message message : messages) {
-            markReceiptRead(message, user.getId(), deviceId);
-            updateAggregateStatus(message);
-            sendStatusToSenderDevices(message, message.getStatus().name());
-        }
+        int receiptRows = messageReceiptRepository.upsertReadForChat(
+                chatId,
+                user.getId(),
+                deviceId,
+                LocalDateTime.now()
+        );
+        messageRepository.recalculateAggregateStatusesForChat(chatId, user.getId());
 
-        incrementCounter("messages_read_total", messages.size());
-        notifyChatListUpdated(chatId, "chat_read");
+        incrementCounter("messages_read_total", Math.max(receiptRows, 0));
+
+        TransactionUtils.afterCommit(() -> {
+            if (directOrSavedChat) {
+                sendBulkStatusToSenderDevices(affectedSenderIds, chatId, Message.MessageStatus.READ.name(), user.getId());
+            }
+            notifyChatListUpdated(chatId, "chat_read");
+        });
     }
 
     @Transactional
@@ -239,19 +261,26 @@ public class MessageService {
 
         requireParticipant(chatId, user.getId());
 
-        List<Message> messages = messageRepository.findByChatIdAndSenderIdNot(chatId, user.getId());
+        List<Long> affectedSenderIds = messageRepository.findDistinctSenderIdsByChatIdAndSenderIdNotAndStatus(
+                chatId,
+                user.getId(),
+                Message.MessageStatus.SENT
+        );
 
-        for (Message message : messages) {
-            if (message.getStatus() == Message.MessageStatus.READ) {
-                continue;
-            }
-            markReceiptDelivered(message, user.getId(), deviceId);
-            updateAggregateStatus(message);
-            sendStatusToSenderDevices(message, message.getStatus().name());
-        }
+        int receiptRows = messageReceiptRepository.upsertDeliveredForChat(
+                chatId,
+                user.getId(),
+                deviceId,
+                LocalDateTime.now()
+        );
+        messageRepository.recalculateAggregateStatusesForChat(chatId, user.getId());
 
-        incrementCounter("messages_delivered_total", messages.size());
-        notifyChatListUpdated(chatId, "chat_delivered");
+        incrementCounter("messages_delivered_total", Math.max(receiptRows, 0));
+
+        TransactionUtils.afterCommit(() -> {
+            sendBulkStatusToSenderDevices(affectedSenderIds, chatId, Message.MessageStatus.DELIVERED.name(), user.getId());
+            notifyChatListUpdated(chatId, "chat_delivered");
+        });
     }
 
     @Transactional
@@ -428,16 +457,14 @@ public class MessageService {
         requireParticipant(request.getChatId(), sender.getId());
     }
 
-    private void validateEnvelopeTargets(Long chatId, List<EncryptedMessageEnvelopeInput> envelopes) {
+    private Map<String, UserDevice> validateEnvelopeTargets(Long chatId, List<EncryptedMessageEnvelopeInput> envelopes) {
         if (envelopes == null || envelopes.isEmpty()) {
             throw new IllegalArgumentException("envelopes are required");
         }
 
         Set<String> targetIds = new HashSet<>();
-        Set<Long> participantIds = participantRepository.findByChatId(chatId)
-                .stream()
-                .map(ChatParticipant::getUserId)
-                .collect(Collectors.toSet());
+        Set<Long> participantIds = participantIds(chatId).stream().collect(Collectors.toSet());
+        Set<Long> targetUserIds = new HashSet<>();
 
         for (EncryptedMessageEnvelopeInput envelope : envelopes) {
             if (envelope.getTargetDeviceId() == null || envelope.getTargetDeviceId().isBlank()) {
@@ -459,24 +486,41 @@ public class MessageService {
             if (envelope.getSenderIdentityPublicKey() == null || envelope.getSenderIdentityPublicKey().isBlank()) {
                 throw new IllegalArgumentException("senderIdentityPublicKey is required");
             }
-
-            userDeviceRepository.findByUserIdAndDeviceIdAndActiveTrue(
-                            envelope.getTargetUserId(),
-                            envelope.getTargetDeviceId()
-                    )
-                    .orElseThrow(() -> new IllegalArgumentException(
-                            "Target device not found: " + envelope.getTargetDeviceId()
-                    ));
+            targetUserIds.add(envelope.getTargetUserId());
         }
+
+        Map<String, UserDevice> activeDevicesByTarget = targetUserIds.isEmpty()
+                ? Map.of()
+                : userDeviceRepository.findActiveByUserIdsWithUser(targetUserIds)
+                        .stream()
+                        .collect(Collectors.toMap(
+                                device -> deviceKey(device.getUser().getId(), device.getDeviceId()),
+                                Function.identity(),
+                                (left, right) -> left
+                        ));
+
+        for (EncryptedMessageEnvelopeInput envelope : envelopes) {
+            if (!activeDevicesByTarget.containsKey(deviceKey(envelope.getTargetUserId(), envelope.getTargetDeviceId()))) {
+                throw new IllegalArgumentException("Target device not found: " + envelope.getTargetDeviceId());
+            }
+        }
+
+        return activeDevicesByTarget;
     }
 
-    private Map<String, MessageEnvelope> persistEnvelopes(Message message, User sender, List<EncryptedMessageEnvelopeInput> inputs) {
+    private Map<String, MessageEnvelope> persistEnvelopes(
+            Message message,
+            User sender,
+            List<EncryptedMessageEnvelopeInput> inputs,
+            Map<String, UserDevice> activeDevicesByTarget
+    ) {
         Map<String, MessageEnvelope> byDevice = new HashMap<>();
 
         for (EncryptedMessageEnvelopeInput input : inputs) {
-            UserDevice targetDevice = userDeviceRepository
-                    .findByUserIdAndDeviceIdAndActiveTrue(input.getTargetUserId(), input.getTargetDeviceId())
-                    .orElseThrow(() -> new IllegalArgumentException("Target device not found: " + input.getTargetDeviceId()));
+            UserDevice targetDevice = activeDevicesByTarget.get(deviceKey(input.getTargetUserId(), input.getTargetDeviceId()));
+            if (targetDevice == null) {
+                throw new IllegalArgumentException("Target device not found: " + input.getTargetDeviceId());
+            }
 
             MessageEnvelope entity = new MessageEnvelope();
             entity.setMessageId(message.getId());
@@ -504,6 +548,10 @@ public class MessageService {
         return byDevice;
     }
 
+    private String deviceKey(Long userId, String deviceId) {
+        return userId + ":" + deviceId;
+    }
+
     private void fanoutCreatedEvent(Message message, Map<String, MessageEnvelope> byDevice) {
         byDevice.forEach((deviceId, envelope) -> messagingTemplate.convertAndSend(
                 "/topic/devices/" + deviceId + "/chats/" + message.getChatId(),
@@ -519,24 +567,28 @@ public class MessageService {
     }
 
     private void fanoutDeleteEvent(Message message) {
-        for (Long participantId : participantIds(message.getChatId())) {
-            for (UserDevice device : userDeviceRepository.findByUserIdAndActiveTrue(participantId)) {
+        List<Long> participants = participantIds(message.getChatId());
+        if (participants.isEmpty()) {
+            return;
+        }
+
+        userDeviceRepository.findActiveByUserIdsWithUser(participants).forEach(device ->
                 messagingTemplate.convertAndSend(
                         "/topic/devices/" + device.getDeviceId() + "/chats/" + message.getChatId(),
-                        toDeviceEvent("MESSAGE_DELETED", message, null, participantId)
-                );
-            }
-        }
+                        toDeviceEvent("MESSAGE_DELETED", message, null, device.getUser().getId())
+                )
+        );
     }
 
     private void fanoutReactionEvent(Long chatId, ReactionEvent event) {
-        for (Long participantId : participantIds(chatId)) {
-            for (UserDevice device : userDeviceRepository.findByUserIdAndActiveTrue(participantId)) {
-                messagingTemplate.convertAndSend(
-                        "/topic/devices/" + device.getDeviceId() + "/chats/" + chatId,
-                        event
-                );
-            }
+        List<Long> participants = participantIds(chatId);
+        if (!participants.isEmpty()) {
+            userDeviceRepository.findByUserIdInAndActiveTrue(participants).forEach(device ->
+                    messagingTemplate.convertAndSend(
+                            "/topic/devices/" + device.getDeviceId() + "/chats/" + chatId,
+                            event
+                    )
+            );
         }
 
         notifyChatListUpdated(chatId, "message_reaction");
@@ -549,6 +601,20 @@ public class MessageService {
                     new StatusUpdateEvent(message.getId(), status)
             );
         }
+    }
+
+    private void sendBulkStatusToSenderDevices(Collection<Long> senderIds, Long chatId, String status, Long actorUserId) {
+        if (senderIds == null || senderIds.isEmpty()) {
+            return;
+        }
+
+        StatusBulkUpdateEvent event = new StatusBulkUpdateEvent("delivery_bulk", chatId, status, actorUserId);
+        userDeviceRepository.findByUserIdInAndActiveTrue(senderIds).forEach(device ->
+                messagingTemplate.convertAndSend(
+                        "/topic/devices/" + device.getDeviceId() + "/status",
+                        event
+                )
+        );
     }
 
     private void saveMessageEvent(Message message, Long actorUserId, String eventType, Map<String, Object> payload) {
@@ -596,6 +662,15 @@ public class MessageService {
     }
 
     private MessageTimelineItemResponse toTimelineItem(Message message, MessageEnvelope envelope, Long viewerUserId) {
+        return toTimelineItem(message, envelope, reactionSummary(message.getId()), myReactions(message.getId(), viewerUserId));
+    }
+
+    private MessageTimelineItemResponse toTimelineItem(
+            Message message,
+            MessageEnvelope envelope,
+            Map<String, Long> reactions,
+            Set<String> myReactions
+    ) {
         return new MessageTimelineItemResponse(
                 message.getId(),
                 message.getChatId(),
@@ -617,9 +692,43 @@ public class MessageService {
                         envelope.getSignedPreKeyId(),
                         envelope.getOneTimePreKeyId(),
                         envelope.getMessageIndex()),
-                reactionSummary(message.getId()),
-                myReactions(message.getId(), viewerUserId)
+                reactions,
+                myReactions
         );
+    }
+
+    private Map<Long, Map<String, Long>> reactionSummaries(Collection<Long> messageIds) {
+        if (messageIds == null || messageIds.isEmpty()) {
+            return Map.of();
+        }
+
+        return messageReactionRepository.findByMessageIdIn(messageIds)
+                .stream()
+                .collect(Collectors.groupingBy(
+                        MessageReaction::getMessageId,
+                        Collectors.groupingBy(
+                                MessageReaction::getEmoji,
+                                LinkedHashMap::new,
+                                Collectors.counting()
+                        )
+                ));
+    }
+
+    private Map<Long, Set<String>> myReactionsByMessage(Collection<Long> messageIds, Long userId) {
+        if (userId == null || messageIds == null || messageIds.isEmpty()) {
+            return Map.of();
+        }
+
+        return messageReactionRepository.findByMessageIdIn(messageIds)
+                .stream()
+                .filter(r -> Objects.equals(r.getUserId(), userId))
+                .collect(Collectors.groupingBy(
+                        MessageReaction::getMessageId,
+                        Collectors.mapping(
+                                MessageReaction::getEmoji,
+                                Collectors.toCollection(LinkedHashSet::new)
+                        )
+                ));
     }
 
     private Map<String, Long> reactionSummary(Long messageId) {
@@ -672,33 +781,38 @@ public class MessageService {
     }
 
     private List<Long> participantIds(Long chatId) {
-        return participantRepository.findByChatId(chatId)
+        return participantRepository.findUserIdsByChatId(chatId)
                 .stream()
-                .map(ChatParticipant::getUserId)
                 .distinct()
                 .toList();
     }
 
     private void incrementUnreadForOthers(Long chatId, Long senderId) {
-        participantRepository.findByChatId(chatId).forEach(p -> {
-            if (!Objects.equals(p.getUserId(), senderId)) {
-                unreadService.increment(p.getUserId(), chatId);
+        participantRepository.findUserIdsByChatId(chatId).forEach(userId -> {
+            if (!Objects.equals(userId, senderId)) {
+                unreadService.increment(userId, chatId);
             }
         });
     }
 
     private void notifyChatListUpdated(Long chatId, String reason) {
-        participantRepository.findByChatId(chatId).forEach(participant ->
-                userRepository.findById(participant.getUserId())
-                        .ifPresent(user -> messagingTemplate.convertAndSend(
-                                "/topic/users/" + user.getUsername() + "/chats",
-                                Map.of(
-                                        "chatId", chatId,
-                                        "reason", reason,
-                                        "timestamp", System.currentTimeMillis()
-                                )
-                        ))
+        ChatListUpdateEvent payload = ChatListUpdateEvent.forChat(chatId, reason);
+
+        participantRepository.findDistinctUsernamesByChatId(chatId).forEach(username ->
+                messagingTemplate.convertAndSend(
+                        "/topic/users/" + username + "/chats",
+                        payload
+                )
         );
+    }
+
+    @AllArgsConstructor
+    @Data
+    private static class StatusBulkUpdateEvent {
+        private String type;
+        private Long chatId;
+        private String status;
+        private Long actorUserId;
     }
 
     @AllArgsConstructor
