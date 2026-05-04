@@ -156,6 +156,9 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
       if (data.type === "delivery" && data.messageId) {
         msgStore.updateMessageStatus(data.messageId, data.status);
       }
+      if (data.type === "delivery_bulk" && data.chatId) {
+        msgStore.updateChatOutgoingStatus(data.chatId, data.status);
+      }
       if (data.type === "user_status") {
         chatStore.markChatOnlineStatus(data.username, data.status === "ONLINE");
       }
