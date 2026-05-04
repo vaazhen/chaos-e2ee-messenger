@@ -158,13 +158,20 @@ class ChatServiceTest {
 
             Chat saved = TestFixtures.groupChat(20L, "Team");
             when(chatRepository.save(any())).thenReturn(saved);
-            when(participantRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(participantRepository.saveAll(anyList())).thenAnswer(inv -> inv.getArgument(0));
 
             Long chatId = chatService.createGroupChat("alice", "Team", List.of(2L, 3L));
 
             assertThat(chatId).isEqualTo(20L);
-            // alice + bob + charlie = 3 rows in chat_participants
-            verify(participantRepository, times(3)).save(any());
+            // alice + bob + charlie = 3 rows in chat_participants, persisted as one batch
+            verify(participantRepository).saveAll(argThat((Iterable<ChatParticipant> participants) -> {
+                int count = 0;
+                for (ChatParticipant ignored : participants) {
+                    count++;
+                }
+                return count == 3;
+            }));
+            verify(participantRepository, never()).save(any());
         }
 
         @Test
@@ -196,7 +203,7 @@ class ChatServiceTest {
         @DisplayName("returns an empty list when there are no chats")
         void returnsEmptyList() {
             when(userRepository.findByUsername("alice")).thenReturn(Optional.of(alice));
-            when(participantRepository.findByUserId(1L)).thenReturn(List.of());
+            when(chatRepository.findChatIdsByUserIdOrderByActivity(1L, 100, 0)).thenReturn(List.of());
 
             assertThat(chatService.getMyChats("alice")).isEmpty();
         }
@@ -209,7 +216,7 @@ class ChatServiceTest {
             ChatParticipant pBob   = TestFixtures.participant(5L, 2L);
 
             when(userRepository.findByUsername("alice")).thenReturn(Optional.of(alice));
-            when(participantRepository.findByUserId(1L)).thenReturn(List.of(pAlice));
+            when(chatRepository.findChatIdsByUserIdOrderByActivity(1L, 100, 0)).thenReturn(List.of(5L));
             when(chatRepository.findByIdIn(List.of(5L))).thenReturn(List.of(chat));
             when(participantRepository.findByChatIdIn(List.of(5L))).thenReturn(List.of(pAlice, pBob));
             when(userRepository.findAllById(anySet())).thenReturn(List.of(bob));
@@ -235,7 +242,7 @@ class ChatServiceTest {
             ChatParticipant pBob   = TestFixtures.participant(7L, 2L);
 
             when(userRepository.findByUsername("alice")).thenReturn(Optional.of(alice));
-            when(participantRepository.findByUserId(1L)).thenReturn(List.of(pAlice));
+            when(chatRepository.findChatIdsByUserIdOrderByActivity(1L, 100, 0)).thenReturn(List.of(7L));
             when(chatRepository.findByIdIn(List.of(7L))).thenReturn(List.of(group));
             when(participantRepository.findByChatIdIn(List.of(7L))).thenReturn(List.of(pAlice, pBob));
             when(userRepository.findAllById(anySet())).thenReturn(List.of(bob));
