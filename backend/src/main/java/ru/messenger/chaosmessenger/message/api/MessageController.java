@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.*;
 import ru.messenger.chaosmessenger.crypto.device.CurrentDeviceService;
 import ru.messenger.chaosmessenger.crypto.dto.EncryptedEditMessageRequestV2;
 import ru.messenger.chaosmessenger.crypto.dto.EncryptedSendMessageRequestV2;
+import ru.messenger.chaosmessenger.message.dto.DeleteMessageResponse;
 import ru.messenger.chaosmessenger.message.dto.DeviceMessageEventResponse;
 import ru.messenger.chaosmessenger.message.dto.MessageTimelineItemResponse;
 import ru.messenger.chaosmessenger.message.dto.UpdateMessageStatusRequest;
@@ -15,7 +16,6 @@ import ru.messenger.chaosmessenger.message.service.MessageService;
 import ru.messenger.chaosmessenger.message.service.MessageService.ReactionEvent;
 
 import java.util.List;
-import java.util.Map;
 
 @RestController
 @RequestMapping("/api/messages")
@@ -80,10 +80,10 @@ public class MessageController {
     }
 
     @DeleteMapping("/{messageId}")
-    public Map<String, Object> deleteMessage(@PathVariable Long messageId, Authentication authentication) {
+    public DeleteMessageResponse deleteMessage(@PathVariable Long messageId, Authentication authentication) {
         currentDeviceService.requireCurrentDevice();
         messageService.deleteMessage(authentication.getName(), messageId);
-        return Map.of("success", true);
+        return new DeleteMessageResponse(true);
     }
 
     @Data
