@@ -123,19 +123,22 @@ class MessageServiceTest {
         when(userIdentityService.require("alice")).thenReturn(alice);
         when(currentDeviceService.requireCurrentDevice()).thenReturn(aliceDevice);
         when(participantRepository.existsByChatIdAndUserId(5L, 1L)).thenReturn(true);
-        when(messageRepository.findByChatIdAndSenderIdNot(5L, 1L)).thenReturn(List.of(msg));
-        when(participantRepository.findByChatId(5L))
-                .thenReturn(List.of(TestFixtures.participant(5L, 1L), TestFixtures.participant(5L, 2L)));
+        when(messageRepository.findDistinctSenderIdsByChatIdAndSenderIdNotAndStatus(5L, 1L, Message.MessageStatus.SENT))
+                .thenReturn(List.of(2L));
+        when(messageReceiptRepository.upsertDeliveredForChat(eq(5L), eq(1L), eq("device-alice-1"), any(java.time.LocalDateTime.class)))
+                .thenReturn(1);
+        when(participantRepository.findDistinctUsernamesByChatId(5L)).thenReturn(List.of("alice", "bob"));
+        when(userDeviceRepository.findByUserIdInAndActiveTrue(List.of(2L))).thenReturn(List.of());
 
         messageService.markChatAsDelivered("alice", 5L);
 
-        verify(messageReceiptRepository).upsertDelivered(
-                eq(100L),
+        verify(messageReceiptRepository).upsertDeliveredForChat(
                 eq(5L),
                 eq(1L),
                 eq("device-alice-1"),
                 any(java.time.LocalDateTime.class)
         );
+        verify(messageRepository).recalculateAggregateStatusesForChat(5L, 1L);
     }
 
     @Test
@@ -146,20 +149,25 @@ class MessageServiceTest {
         when(userIdentityService.require("alice")).thenReturn(alice);
         when(currentDeviceService.requireCurrentDevice()).thenReturn(aliceDevice);
         when(participantRepository.existsByChatIdAndUserId(5L, 1L)).thenReturn(true);
-        when(messageRepository.findByChatIdAndSenderIdNot(5L, 1L)).thenReturn(List.of(msg));
-        when(participantRepository.findByChatId(5L))
-                .thenReturn(List.of(TestFixtures.participant(5L, 1L), TestFixtures.participant(5L, 2L)));
+        when(participantRepository.findUserIdsByChatId(5L))
+                .thenReturn(List.of(1L, 2L));
+        when(messageRepository.findDistinctSenderIdsByChatIdAndSenderIdNotAndStatusNot(5L, 1L, Message.MessageStatus.READ))
+                .thenReturn(List.of(2L));
+        when(messageReceiptRepository.upsertReadForChat(eq(5L), eq(1L), eq("device-alice-1"), any(java.time.LocalDateTime.class)))
+                .thenReturn(1);
+        when(participantRepository.findDistinctUsernamesByChatId(5L)).thenReturn(List.of("alice", "bob"));
+        when(userDeviceRepository.findByUserIdInAndActiveTrue(List.of(2L))).thenReturn(List.of());
 
         messageService.markChatAsRead("alice", 5L);
 
         verify(unreadService).reset(1L, 5L);
-        verify(messageReceiptRepository).upsertRead(
-                eq(100L),
+        verify(messageReceiptRepository).upsertReadForChat(
                 eq(5L),
                 eq(1L),
                 eq("device-alice-1"),
                 any(java.time.LocalDateTime.class)
         );
+        verify(messageRepository).recalculateAggregateStatusesForChat(5L, 1L);
     }
 
     @Test
@@ -188,6 +196,10 @@ class MessageServiceTest {
         when(messageRepository.findById(100L)).thenReturn(Optional.of(msg));
         when(participantRepository.existsByChatIdAndUserId(5L, 1L)).thenReturn(true);
         when(objectMapper.writeValueAsString(any())).thenReturn("{}");
+        when(participantRepository.findUserIdsByChatId(5L))
+                .thenReturn(List.of(1L, 2L));
+        when(userDeviceRepository.findByUserIdInAndActiveTrue(any())).thenReturn(List.of());
+        when(participantRepository.findDistinctUsernamesByChatId(5L)).thenReturn(List.of("alice", "bob"));
 
         MessageService.ReactionEvent event = messageService.toggleReaction("alice", 100L, "👍");
 

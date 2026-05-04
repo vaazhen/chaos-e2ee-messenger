@@ -53,6 +53,6 @@ public class Chat {
      * prefer a separate query via {@code ChatParticipantRepository}
      * for batch-loading participants across multiple chats at once.
      */
-    @OneToMany(mappedBy = "chatId", fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "chat", fetch = FetchType.LAZY)
     private List<ChatParticipant> participants;
 }

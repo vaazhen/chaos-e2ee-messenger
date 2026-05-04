@@ -106,33 +106,7 @@ public class DeviceService {
     public java.util.List<UserDeviceResponse> listMyDevices(String username, String currentDeviceId) {
         User user = userIdentityService.require(username);
 
-        return userDeviceRepository.findByUserIdOrderByCreatedAtDesc(user.getId()).stream()
-                .sorted((a, b) -> {
-                    if (a.isActive() != b.isActive()) {
-                        return Boolean.compare(b.isActive(), a.isActive());
-                    }
-
-                    LocalDateTime aTime = a.getLastSeen() != null ? a.getLastSeen() : a.getCreatedAt();
-                    LocalDateTime bTime = b.getLastSeen() != null ? b.getLastSeen() : b.getCreatedAt();
-
-                    if (aTime == null && bTime == null) {
-                        return Long.compare(
-                                b.getId() == null ? 0L : b.getId(),
-                                a.getId() == null ? 0L : a.getId()
-                        );
-                    }
-
-                    if (aTime == null) return 1;
-                    if (bTime == null) return -1;
-
-                    int byTime = bTime.compareTo(aTime);
-                    if (byTime != 0) return byTime;
-
-                    return Long.compare(
-                            b.getId() == null ? 0L : b.getId(),
-                            a.getId() == null ? 0L : a.getId()
-                    );
-                })
+        return userDeviceRepository.findByUserIdOrderByActiveDescLastSeenDescCreatedAtDescIdDesc(user.getId()).stream()
                 .map(device -> toResponse(device, currentDeviceId))
                 .toList();
     }

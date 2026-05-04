@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.messenger.chaosmessenger.chat.domain.Chat;
 import ru.messenger.chaosmessenger.chat.domain.ChatParticipant;
 import ru.messenger.chaosmessenger.chat.domain.Message;
+import ru.messenger.chaosmessenger.chat.dto.ChatListUpdateEvent;
 import ru.messenger.chaosmessenger.chat.dto.ChatResponse;
 import ru.messenger.chaosmessenger.chat.repository.ChatParticipantRepository;
 import ru.messenger.chaosmessenger.chat.repository.ChatRepository;
@@ -131,33 +132,48 @@ public class ChatService {
         chat.setCreatedAt(LocalDateTime.now());
         chat = chatRepository.save(chat);
 
-        participantRepository.save(new ChatParticipant(chat.getId(), creator.getId()));
+        List<ChatParticipant> participantsToSave = new ArrayList<>();
+        participantsToSave.add(new ChatParticipant(chat.getId(), creator.getId()));
         for (User member : members) {
             if (!member.getId().equals(creator.getId())) {
-                participantRepository.save(new ChatParticipant(chat.getId(), member.getId()));
+                participantsToSave.add(new ChatParticipant(chat.getId(), member.getId()));
             }
         }
+        participantRepository.saveAll(participantsToSave);
 
-        final Long         chatId      = chat.getId();
-        final List<String> notifyUsers = new ArrayList<>();
+        final Long chatId = chat.getId();
+        final List<String> notifyUsers = members.stream()
+                .map(User::getUsername)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toCollection(ArrayList::new));
         notifyUsers.add(creator.getUsername());
-        members.forEach(m -> notifyUsers.add(m.getUsername()));
-        TransactionUtils.afterCommit(() -> notifyUsers.forEach(u -> notifyChatListUpdated(u, chatId, "chat_created")));
+        final List<String> distinctNotifyUsers = notifyUsers.stream().distinct().toList();
+        TransactionUtils.afterCommit(() ->
+                distinctNotifyUsers.forEach(u -> notifyChatListUpdated(u, chatId, "chat_created")));
 
         return chatId;
     }
 
     @Transactional(readOnly = true)
     public List<ChatResponse> getMyChats(String username) {
+        return getMyChats(username, 0, 100);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ChatResponse> getMyChats(String username, int offset, int limit) {
         User currentUser = userRepository.findByUsername(username)
                 .orElseThrow(() -> new ChatException("User not found"));
 
-        List<ChatParticipant> participations = participantRepository.findByUserId(currentUser.getId());
-        if (participations.isEmpty()) return List.of();
+        int safeOffset = Math.max(0, offset);
+        int safeLimit = Math.max(1, Math.min(limit, 100));
 
-        List<Long> chatIds = participations.stream()
-                .map(ChatParticipant::getChatId)
-                .collect(Collectors.toList());
+        List<Long> chatIds = chatRepository.findChatIdsByUserIdOrderByActivity(
+                currentUser.getId(),
+                safeLimit,
+                safeOffset
+        );
+        if (chatIds.isEmpty()) return List.of();
+
 
         List<Chat> chats = chatRepository.findByIdIn(chatIds);
 
@@ -179,7 +195,7 @@ public class ChatService {
 
         final String savedName = savedChatName();
 
-        return chats.stream().map(chat -> {
+        Map<Long, ChatResponse> responsesByChatId = chats.stream().map(chat -> {
             List<ChatParticipant> participants = byChat.getOrDefault(chat.getId(), List.of());
             Optional<Message>     lastMsg      = Optional.ofNullable(lastMessagesByChatId.get(chat.getId()));
 
@@ -211,11 +227,11 @@ public class ChatService {
                 );
             }
 
-            ChatParticipant otherP    = participants.stream()
+            ChatParticipant otherP = participants.stream()
                     .filter(p -> !p.getUserId().equals(currentUser.getId()))
                     .findFirst().orElse(null);
-            User    otherUser = otherP != null ? usersById.get(otherP.getUserId()) : null;
-            boolean online    = otherUser != null && onlineService.isOnline(otherUser.getUsername());
+            User otherUser = otherP != null ? usersById.get(otherP.getUserId()) : null;
+            boolean online = otherUser != null && onlineService.isOnline(otherUser.getUsername());
             LocalDateTime lastSeen = otherUser != null ? onlineService.getLastSeen(otherUser.getUsername()) : null;
 
             return new ChatResponse(
@@ -230,30 +246,20 @@ public class ChatService {
                     unread, online, lastSeen
             );
         })
-        .sorted((a, b) -> {
-            LocalDateTime aTime = a.getLastMessageAt();
-            LocalDateTime bTime = b.getLastMessageAt();
-            if (aTime == null && bTime == null) return Long.compare(
-                    b.getChatId() == null ? 0L : b.getChatId(),
-                    a.getChatId() == null ? 0L : a.getChatId());
-            if (aTime == null) return  1;
-            if (bTime == null) return -1;
-            int byTime = bTime.compareTo(aTime);
-            if (byTime != 0) return byTime;
-            return Long.compare(
-                    b.getChatId() == null ? 0L : b.getChatId(),
-                    a.getChatId() == null ? 0L : a.getChatId());
-        })
-        .collect(Collectors.toList());
+        .collect(Collectors.toMap(ChatResponse::getChatId, response -> response));
+
+        return chatIds.stream()
+                .map(responsesByChatId::get)
+                .filter(Objects::nonNull)
+                .toList();
     }
 
     // ── private ───────────────────────────────────────────────────────────────
 
     private void notifyChatListUpdated(String username, Long chatId, String reason) {
-        messagingTemplate.convertAndSend("/topic/users/" + username + "/chats", Map.of(
-                "chatId",    chatId,
-                "reason",    reason,
-                "timestamp", System.currentTimeMillis()
-        ));
+        messagingTemplate.convertAndSend(
+                "/topic/users/" + username + "/chats",
+                ChatListUpdateEvent.forChat(chatId, reason)
+        );
     }
 }
