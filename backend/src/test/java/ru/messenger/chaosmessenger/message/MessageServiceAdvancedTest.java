@@ -36,7 +36,6 @@ import ru.messenger.chaosmessenger.message.repository.MessageReceiptRepository;
 import ru.messenger.chaosmessenger.message.repository.MessageRepository;
 import ru.messenger.chaosmessenger.message.service.MessageService;
 import ru.messenger.chaosmessenger.user.domain.User;
-import ru.messenger.chaosmessenger.user.repository.UserRepository;
 import ru.messenger.chaosmessenger.user.service.UserIdentityService;
 
 import java.time.LocalDateTime;
@@ -66,7 +65,6 @@ class MessageServiceAdvancedTest {
     @Mock MessageReceiptRepository messageReceiptRepository;
     @Mock MessageReactionRepository messageReactionRepository;
     @Mock ChatParticipantRepository participantRepository;
-    @Mock UserRepository userRepository;
     @Mock UserIdentityService userIdentityService;
     @Mock UserDeviceRepository userDeviceRepository;
     @Mock CurrentDeviceService currentDeviceService;
@@ -98,7 +96,6 @@ class MessageServiceAdvancedTest {
                 messageReceiptRepository,
                 messageReactionRepository,
                 participantRepository,
-                userRepository,
                 userIdentityService,
                 userDeviceRepository,
                 currentDeviceService,
@@ -109,8 +106,6 @@ class MessageServiceAdvancedTest {
         );
 
         lenient().when(messageReactionRepository.findByMessageId(anyLong())).thenReturn(List.of());
-        lenient().when(userRepository.findById(1L)).thenReturn(Optional.of(alice));
-        lenient().when(userRepository.findById(2L)).thenReturn(Optional.of(bob));
     }
 
     @Test
@@ -297,8 +292,7 @@ class MessageServiceAdvancedTest {
         );
 
         MessageReaction bobReaction = reaction(1L, 100L, bob.getId(), "🔥");
-        when(messageReactionRepository.findByMessageId(1L)).thenReturn(List.of(bobReaction));
-        when(messageReactionRepository.findByMessageId(2L)).thenReturn(List.of());
+        when(messageReactionRepository.findByMessageIdIn(List.of(1L, 2L))).thenReturn(List.of(bobReaction));
 
         when(messageRepository.findByChatIdBefore(eq(100L), eq(99L), any(Pageable.class)))
                 .thenReturn(new java.util.ArrayList<>(List.of(newest, oldest)));
@@ -487,74 +481,74 @@ class MessageServiceAdvancedTest {
     }
 
     @Test
-    void markChatAsReadResetsUnreadUpsertsReadAndPromotesAggregateStatusToRead() {
+    void markChatAsReadResetsUnreadAndRunsBulkReadPath() {
         stubAuthenticated(bob, bobDevice);
         stubParticipant(100L, bob.getId());
         stubChatParticipants(100L);
 
-        Message message = TestFixtures.sentMessage(700L, 100L, alice.getId(), "alice-phone");
-
-        when(messageRepository.findByChatIdAndSenderIdNot(100L, bob.getId()))
-                .thenReturn(List.of(message));
-        when(messageReceiptRepository.findByMessageId(700L))
-                .thenReturn(List.of(readReceipt(message, bob.getId(), "bob-phone")));
+        when(messageRepository.findDistinctSenderIdsByChatIdAndSenderIdNotAndStatusNot(
+                100L,
+                bob.getId(),
+                Message.MessageStatus.READ
+        )).thenReturn(List.of(alice.getId()));
+        when(messageReceiptRepository.upsertReadForChat(
+                eq(100L),
+                eq(bob.getId()),
+                eq("bob-phone"),
+                any(LocalDateTime.class)
+        )).thenReturn(1);
         when(userDeviceRepository.findByUserIdAndActiveTrue(alice.getId()))
                 .thenReturn(List.of(aliceDevice));
-        when(messageRepository.save(message)).thenReturn(message);
 
         messageService.markChatAsRead("bob", 100L);
 
         verify(unreadService).reset(bob.getId(), 100L);
-        verify(messageReceiptRepository).upsertRead(
-                eq(700L),
+        verify(messageReceiptRepository).upsertReadForChat(
                 eq(100L),
                 eq(bob.getId()),
                 eq("bob-phone"),
                 any(LocalDateTime.class)
         );
-
-        assertThat(message.getStatus()).isEqualTo(Message.MessageStatus.READ);
-        verify(messageRepository).save(message);
+        verify(messageRepository).recalculateAggregateStatusesForChat(100L, bob.getId());
+        verify(messagingTemplate).convertAndSend(
+                eq("/topic/devices/alice-phone/status"),
+                isA(Object.class)
+        );
     }
 
     @Test
-    void markChatAsDeliveredSkipsAlreadyReadMessagesAndPromotesSentMessagesToDelivered() {
+    void markChatAsDeliveredRunsBulkDeliveredPath() {
         stubAuthenticated(bob, bobDevice);
         stubParticipant(100L, bob.getId());
         stubChatParticipants(100L);
 
-        Message sent = TestFixtures.sentMessage(701L, 100L, alice.getId(), "alice-phone");
-        Message alreadyRead = TestFixtures.sentMessage(702L, 100L, alice.getId(), "alice-phone");
-        alreadyRead.setStatus(Message.MessageStatus.READ);
-
-        when(messageRepository.findByChatIdAndSenderIdNot(100L, bob.getId()))
-                .thenReturn(List.of(sent, alreadyRead));
-        when(messageReceiptRepository.findByMessageId(701L))
-                .thenReturn(List.of(deliveredReceipt(sent, bob.getId(), "bob-phone")));
+        when(messageRepository.findDistinctSenderIdsByChatIdAndSenderIdNotAndStatus(
+                100L,
+                bob.getId(),
+                Message.MessageStatus.SENT
+        )).thenReturn(List.of(alice.getId()));
+        when(messageReceiptRepository.upsertDeliveredForChat(
+                eq(100L),
+                eq(bob.getId()),
+                eq("bob-phone"),
+                any(LocalDateTime.class)
+        )).thenReturn(1);
         when(userDeviceRepository.findByUserIdAndActiveTrue(alice.getId()))
                 .thenReturn(List.of(aliceDevice));
-        when(messageRepository.save(sent)).thenReturn(sent);
 
         messageService.markChatAsDelivered("bob", 100L);
 
-        verify(messageReceiptRepository).upsertDelivered(
-                eq(701L),
+        verify(messageReceiptRepository).upsertDeliveredForChat(
                 eq(100L),
                 eq(bob.getId()),
                 eq("bob-phone"),
                 any(LocalDateTime.class)
         );
-        verify(messageReceiptRepository, never()).upsertDelivered(
-                eq(702L),
-                eq(100L),
-                eq(bob.getId()),
-                eq("bob-phone"),
-                any(LocalDateTime.class)
+        verify(messageRepository).recalculateAggregateStatusesForChat(100L, bob.getId());
+        verify(messagingTemplate).convertAndSend(
+                eq("/topic/devices/alice-phone/status"),
+                isA(Object.class)
         );
-
-        assertThat(sent.getStatus()).isEqualTo(Message.MessageStatus.DELIVERED);
-        assertThat(alreadyRead.getStatus()).isEqualTo(Message.MessageStatus.READ);
-        verify(messageRepository).save(sent);
     }
 
     @Test
@@ -706,6 +700,17 @@ class MessageServiceAdvancedTest {
                 TestFixtures.participant(chatId, alice.getId()),
                 TestFixtures.participant(chatId, bob.getId())
         ));
+        when(participantRepository.findUserIdsByChatId(chatId)).thenReturn(List.of(alice.getId(), bob.getId()));
+        when(userDeviceRepository.findActiveByUserIdsWithUser(any()))
+                .thenAnswer(invocation -> activeDevicesFor(invocation.getArgument(0)));
+        when(userDeviceRepository.findByUserIdInAndActiveTrue(any()))
+                .thenAnswer(invocation -> activeDevicesFor(invocation.getArgument(0)));
+    }
+
+    private List<UserDevice> activeDevicesFor(java.util.Collection<Long> userIds) {
+        return List.of(aliceDevice, bobDevice).stream()
+                .filter(device -> userIds.contains(device.getUser().getId()))
+                .toList();
     }
 
     private void stubTargetDevice(Long userId, String deviceId, UserDevice device) {

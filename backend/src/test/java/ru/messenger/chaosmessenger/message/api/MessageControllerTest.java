@@ -179,9 +179,9 @@ class MessageControllerTest {
         when(authentication.getName()).thenReturn("alice");
         when(currentDeviceService.requireCurrentDevice()).thenReturn(new UserDevice());
 
-        Map<String, Object> response = messageController.deleteMessage(500L, authentication);
+        var response = messageController.deleteMessage(500L, authentication);
 
-        assertThat(response).containsEntry("success", true);
+        assertThat(response.success()).isTrue();
         verify(currentDeviceService).requireCurrentDevice();
         verify(messageService).deleteMessage("alice", 500L);
     }

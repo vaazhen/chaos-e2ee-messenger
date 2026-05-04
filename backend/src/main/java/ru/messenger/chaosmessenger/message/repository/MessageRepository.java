@@ -20,17 +20,80 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
     @Query("select m from Message m where m.chatId in :chatIds and m.createdAt = (select max(m2.createdAt) from Message m2 where m2.chatId = m.chatId)")
     List<Message> findLatestByChatIds(@Param("chatIds") List<Long> chatIds);
 
-    List<Message> findByChatIdAndSenderIdNot(Long chatId, Long senderId);
-
-    @Query("select m from Message m where m.chatId = :chatId and m.senderId <> :senderId and m.status = :status")
-    List<Message> findByChatIdAndSenderIdNotAndStatus(@Param("chatId") Long chatId,
-                                                       @Param("senderId") Long senderId,
-                                                       @Param("status") Message.MessageStatus status);
-
     @Query("select m from Message m where m.chatId = :chatId and (:beforeId is null or m.id < :beforeId) order by m.id desc")
     List<Message> findByChatIdBefore(@Param("chatId") Long chatId,
                                       @Param("beforeId") Long beforeId,
                                       Pageable pageable);
+
+
+    @Query("""
+            select distinct m.senderId
+            from Message m
+            where m.chatId = :chatId
+              and m.senderId <> :actorUserId
+              and m.status = :status
+              and m.deletedAt is null
+            """)
+    List<Long> findDistinctSenderIdsByChatIdAndSenderIdNotAndStatus(
+            @Param("chatId") Long chatId,
+            @Param("actorUserId") Long actorUserId,
+            @Param("status") Message.MessageStatus status
+    );
+
+    @Query("""
+            select distinct m.senderId
+            from Message m
+            where m.chatId = :chatId
+              and m.senderId <> :actorUserId
+              and m.status <> :status
+              and m.deletedAt is null
+            """)
+    List<Long> findDistinctSenderIdsByChatIdAndSenderIdNotAndStatusNot(
+            @Param("chatId") Long chatId,
+            @Param("actorUserId") Long actorUserId,
+            @Param("status") Message.MessageStatus status
+    );
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query(value = """
+            update messages m
+            set status = case
+                when not exists (
+                    select 1
+                    from chat_participants cp
+                    where cp.chat_id = m.chat_id
+                      and cp.user_id <> m.sender_id
+                ) then 'SENT'
+                when not exists (
+                    select 1
+                    from chat_participants cp
+                    where cp.chat_id = m.chat_id
+                      and cp.user_id <> m.sender_id
+                      and not exists (
+                          select 1
+                          from message_receipts mr
+                          where mr.message_id = m.id
+                            and mr.user_id = cp.user_id
+                            and mr.read_at is not null
+                      )
+                ) then 'READ'
+                when exists (
+                    select 1
+                    from message_receipts mr
+                    where mr.message_id = m.id
+                      and mr.delivered_at is not null
+                ) then 'DELIVERED'
+                else 'SENT'
+            end
+            where m.chat_id = :chatId
+              and m.sender_id <> :actorUserId
+              and m.status <> 'READ'
+              and m.deleted_at is null
+            """, nativeQuery = true)
+    int recalculateAggregateStatusesForChat(
+            @Param("chatId") Long chatId,
+            @Param("actorUserId") Long actorUserId
+    );
 
     @Modifying
     @Query("update Message m set m.status = :newStatus where m.chatId = :chatId and m.senderId <> :userId and m.status = :currentStatus")
