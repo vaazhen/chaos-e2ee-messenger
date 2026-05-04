@@ -32,6 +32,14 @@
 
 </div>
 
+## Статья
+
+Технический разбор проекта опубликован на DEV:
+
+[Building an End-to-End Encrypted Messenger with Spring Boot and WebCrypto](https://dev.to/vaazhen/i-built-an-end-to-end-encrypted-messenger-with-spring-boot-and-webcrypto-1if5)
+
+В статье разобраны основные архитектурные решения Chaos Messenger: установка E2EE-сессии через X3DH, symmetric ratchet, зашифрованные конверты для каждого устройства, WebSocket-доставка, multi-device маршрутизация и ограничения браузерного E2EE.
+
 ---
 
 ## О проекте
