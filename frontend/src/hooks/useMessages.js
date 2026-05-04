@@ -132,6 +132,16 @@ export function useMessages(myId) {
     });
   }, [myId]);
 
+  const updateChatOutgoingStatus = useCallback((chatId, status) => {
+    if (!chatId || !status) return;
+    setMsgs(prev => ({
+      ...prev,
+      [chatId]: (prev[chatId] || []).map(m =>
+        m._out && !m._temp ? { ...m, status } : m
+      ),
+    }));
+  }, []);
+
   // ── Send (E2EE) ─────────────────────────────────────────────────────────────
   const sendMessage = useCallback(async (chatId, input) => {
     const text = typeof input === "string" ? input : String(input?.text || "").trim();
@@ -370,6 +380,7 @@ export function useMessages(myId) {
     loadMessages,
     handleIncomingEvent,
     updateMessageStatus,
+    updateChatOutgoingStatus,
     sendMessage,
     editMessage,
     toggleReaction,
