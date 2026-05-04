@@ -1,90 +1,59 @@
 package ru.messenger.chaosmessenger.auth.api;
 
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.server.ResponseStatusException;
-import ru.messenger.chaosmessenger.TestFixtures;
-import ru.messenger.chaosmessenger.auth.service.DeviceRegistrationTokenService;
-import ru.messenger.chaosmessenger.auth.service.PhoneVerificationService;
-import ru.messenger.chaosmessenger.auth.service.RefreshTokenService;
-import ru.messenger.chaosmessenger.auth.service.SetupTokenService;
-import ru.messenger.chaosmessenger.infra.security.JwtService;
-import ru.messenger.chaosmessenger.user.domain.User;
-import ru.messenger.chaosmessenger.user.repository.UserRepository;
-
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
+import ru.messenger.chaosmessenger.auth.dto.AccountExistsResponse;
+import ru.messenger.chaosmessenger.auth.dto.AuthResponse;
+import ru.messenger.chaosmessenger.auth.dto.LogoutResponse;
+import ru.messenger.chaosmessenger.auth.dto.SendCodeResponse;
+import ru.messenger.chaosmessenger.auth.dto.TokenRefreshResponse;
+import ru.messenger.chaosmessenger.auth.dto.UsernameAvailabilityResponse;
+import ru.messenger.chaosmessenger.auth.dto.VerifyCodeResponse;
+import ru.messenger.chaosmessenger.auth.service.AuthService;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class AuthPhoneControllerTest {
 
-    @Mock PhoneVerificationService verificationService;
-    @Mock UserRepository userRepository;
-    @Mock RefreshTokenService refreshTokenService;
-    @Mock DeviceRegistrationTokenService deviceRegTokenService;
-    @Mock JwtService jwtService;
-    @Mock SetupTokenService setupTokenService;
+    @Mock AuthService authService;
 
     @InjectMocks AuthPhoneController controller;
 
-    private User alice;
+    @Test
+    void existsDelegatesToAuthService() {
+        when(authService.accountExists("8 (900) 123-45-67"))
+                .thenReturn(new AccountExistsResponse(true, "+79001234567"));
 
-    @BeforeEach
-    void setUp() {
-        alice = TestFixtures.user(1L, "alice");
-        alice.setPhone("+79001234567");
-        alice.setFirstName("Alice");
-        alice.setLastName("Smith");
-        alice.setAvatarUrl("avatar.png");
+        var response = controller.exists("8 (900) 123-45-67");
+
+        assertThat(response.exists()).isTrue();
+        assertThat(response.phone()).isEqualTo("+79001234567");
+        verify(authService).accountExists("8 (900) 123-45-67");
     }
 
     @Test
-    void existsNormalizesRussianPhoneAndChecksRepository() {
-        when(userRepository.existsByPhone("+79001234567")).thenReturn(true);
-
-        ResponseEntity<Map<String, Object>> response = controller.exists("8 (900) 123-45-67");
-
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(Objects.requireNonNull(response.getBody()))
-                .containsEntry("exists", true)
-                .containsEntry("phone", "+79001234567");
-    }
-
-    @Test
-    void existsRejectsBlankPhone() {
-        assertThatThrownBy(() -> controller.exists("----"))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Phone number is required");
-    }
-
-    @Test
-    void sendCodeNormalizesPhoneAndDelegatesToVerificationService() {
+    void sendCodeDelegatesToAuthService() {
         AuthPhoneController.SendCodeRequest request = new AuthPhoneController.SendCodeRequest();
         request.setPhone("9001234567");
         request.setVia("telegram");
 
-        ResponseEntity<Map<String, Object>> response = controller.sendCode(request);
+        when(authService.sendCode("9001234567", "telegram"))
+                .thenReturn(new SendCodeResponse(true, "+79001234567"));
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(Objects.requireNonNull(response.getBody()))
-                .containsEntry("sent", true)
-                .containsEntry("phone", "+79001234567");
+        var response = controller.sendCode(request);
 
-        verify(verificationService).sendCode("+79001234567", "telegram");
+        assertThat(response.sent()).isTrue();
+        assertThat(response.phone()).isEqualTo("+79001234567");
+        verify(authService).sendCode("9001234567", "telegram");
     }
 
     @Test
@@ -93,33 +62,30 @@ class AuthPhoneControllerTest {
         request.setPhone("+79001234567");
         request.setCode("111111");
 
-        var result = new PhoneVerificationService.VerificationResult(
-                "ok",
-                false,
-                true,
-                "temporary-token-from-service",
-                1L,
-                "user_abcd12"
-        );
+        when(authService.verifyCode("+79001234567", "111111"))
+                .thenReturn(new VerifyCodeResponse(
+                        "ok",
+                        false,
+                        true,
+                        "+79001234567",
+                        "setup-token-1",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null
+                ));
 
-        when(verificationService.verifyCode("+79001234567", "111111")).thenReturn(result);
-        when(setupTokenService.issue("+79001234567")).thenReturn("setup-token-1");
+        var response = controller.verifyCode(request);
 
-        ResponseEntity<Map<String, Object>> response = controller.verifyCode(request);
-
-        Map<String, Object> body = Objects.requireNonNull(response.getBody());
-
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(body)
-                .containsEntry("status", "ok")
-                .containsEntry("exists", false)
-                .containsEntry("isNewUser", true)
-                .containsEntry("phone", "+79001234567")
-                .containsEntry("setupToken", "setup-token-1");
-
-        assertThat(body).doesNotContainKeys("token", "refreshToken", "deviceRegistrationToken");
-        verify(refreshTokenService, never()).issue("user_abcd12");
-        verify(deviceRegTokenService, never()).issue("user_abcd12");
+        assertThat(response.status()).isEqualTo("ok");
+        assertThat(response.exists()).isFalse();
+        assertThat(response.newUser()).isTrue();
+        assertThat(response.phone()).isEqualTo("+79001234567");
+        assertThat(response.setupToken()).isEqualTo("setup-token-1");
+        assertThat(response.token()).isNull();
+        assertThat(response.refreshToken()).isNull();
+        assertThat(response.deviceRegistrationToken()).isNull();
     }
 
     @Test
@@ -128,254 +94,113 @@ class AuthPhoneControllerTest {
         request.setPhone("8 900 123 45 67");
         request.setCode("222222");
 
-        var result = new PhoneVerificationService.VerificationResult(
-                "ok",
-                true,
-                false,
-                "jwt-token",
-                1L,
-                "alice"
-        );
+        when(authService.verifyCode("8 900 123 45 67", "222222"))
+                .thenReturn(new VerifyCodeResponse(
+                        "ok",
+                        true,
+                        false,
+                        "+79001234567",
+                        null,
+                        "jwt-token",
+                        "refresh-token",
+                        "device-token",
+                        1L,
+                        "alice"
+                ));
 
-        when(verificationService.verifyCode("+79001234567", "222222")).thenReturn(result);
-        when(refreshTokenService.issue("alice")).thenReturn("refresh-token");
-        when(deviceRegTokenService.issue("alice")).thenReturn("device-token");
+        var response = controller.verifyCode(request);
 
-        ResponseEntity<Map<String, Object>> response = controller.verifyCode(request);
-
-        Map<String, Object> body = Objects.requireNonNull(response.getBody());
-
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(body)
-                .containsEntry("status", "ok")
-                .containsEntry("exists", true)
-                .containsEntry("isNewUser", false)
-                .containsEntry("phone", "+79001234567")
-                .containsEntry("token", "jwt-token")
-                .containsEntry("refreshToken", "refresh-token")
-                .containsEntry("deviceRegistrationToken", "device-token")
-                .containsEntry("userId", 1L)
-                .containsEntry("username", "alice");
-
-        assertThat(body).doesNotContainKey("setupToken");
-        verify(setupTokenService, never()).issue("+79001234567");
+        assertThat(response.status()).isEqualTo("ok");
+        assertThat(response.exists()).isTrue();
+        assertThat(response.newUser()).isFalse();
+        assertThat(response.token()).isEqualTo("jwt-token");
+        assertThat(response.refreshToken()).isEqualTo("refresh-token");
+        assertThat(response.deviceRegistrationToken()).isEqualTo("device-token");
+        assertThat(response.userId()).isEqualTo(1L);
+        assertThat(response.username()).isEqualTo("alice");
+        assertThat(response.setupToken()).isNull();
     }
 
     @Test
-    void verifyCodeNonOkResultReturnsStatusWithoutTokens() {
-        AuthPhoneController.VerifyCodeRequest request = new AuthPhoneController.VerifyCodeRequest();
-        request.setPhone("+79001234567");
-        request.setCode("bad");
+    void completeSetupDelegatesToAuthService() {
+        AuthPhoneController.CompleteSetupRequest request = completeSetupRequest("setup-token", "Alice", "alice");
+        request.setLastName("Smith");
+        request.setAvatarUrl("avatar.png");
 
-        var result = new PhoneVerificationService.VerificationResult(
-                "invalid",
-                false,
-                false,
-                null,
-                null,
-                null
-        );
+        when(authService.completeSetup("setup-token", "alice", "Alice", "Smith", "avatar.png"))
+                .thenReturn(new AuthResponse(
+                        "ok",
+                        true,
+                        false,
+                        1L,
+                        "alice",
+                        "alice@test.com",
+                        "jwt",
+                        "refresh",
+                        "device-token"
+                ));
 
-        when(verificationService.verifyCode("+79001234567", "bad")).thenReturn(result);
+        var response = controller.completeSetup(request);
 
-        ResponseEntity<Map<String, Object>> response = controller.verifyCode(request);
-
-        Map<String, Object> body = Objects.requireNonNull(response.getBody());
-
-        assertThat(body)
-                .containsEntry("status", "invalid")
-                .containsEntry("exists", false)
-                .containsEntry("isNewUser", false)
-                .containsEntry("phone", "+79001234567");
-
-        assertThat(body).doesNotContainKeys("token", "refreshToken", "deviceRegistrationToken", "setupToken");
+        assertThat(response.status()).isEqualTo("ok");
+        assertThat(response.username()).isEqualTo("alice");
+        assertThat(response.token()).isEqualTo("jwt");
+        verify(authService).completeSetup("setup-token", "alice", "Alice", "Smith", "avatar.png");
     }
 
     @Test
-    void completeSetupRejectsInvalidSetupToken() {
+    void completeSetupPropagatesInvalidSetupToken() {
         AuthPhoneController.CompleteSetupRequest request = completeSetupRequest("bad-token", "Alice", "alice");
 
-        when(setupTokenService.consumePhone("bad-token")).thenReturn(null);
-
-        ResponseEntity<Map<String, Object>> response = controller.completeSetup(request);
-
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
-        assertThat(Objects.requireNonNull(response.getBody()))
-                .containsEntry("error", "invalid_or_expired_setup_token");
-
-        verify(userRepository, never()).save(alice);
-    }
-
-    @Test
-    void completeSetupRejectsMissingUserForConsumedPhone() {
-        AuthPhoneController.CompleteSetupRequest request = completeSetupRequest("setup-token", "Alice", "alice");
-
-        when(setupTokenService.consumePhone("setup-token")).thenReturn("+79001234567");
-        when(userRepository.findByPhone("+79001234567")).thenReturn(Optional.empty());
+        when(authService.completeSetup("bad-token", "alice", "Alice", null, null))
+                .thenThrow(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid_or_expired_setup_token"));
 
         assertThatThrownBy(() -> controller.completeSetup(request))
                 .isInstanceOf(ResponseStatusException.class)
-                .satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
+                .satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode())
+                        .isEqualTo(HttpStatus.UNAUTHORIZED));
     }
 
     @Test
-    void completeSetupRejectsInvalidUsername() {
-        AuthPhoneController.CompleteSetupRequest request = completeSetupRequest("setup-token", "Alice", "bad-name!");
+    void usernameAvailableReturnsTypedResponse() {
+        when(authService.usernameAvailable(" Free_Name "))
+                .thenReturn(new UsernameAvailabilityResponse("free_name", true, true));
 
-        when(setupTokenService.consumePhone("setup-token")).thenReturn("+79001234567");
-        when(userRepository.findByPhone("+79001234567")).thenReturn(Optional.of(alice));
+        var response = controller.usernameAvailable(" Free_Name ");
 
-        assertThatThrownBy(() -> controller.completeSetup(request))
-                .isInstanceOf(ResponseStatusException.class)
-                .satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST));
-
-        verify(userRepository, never()).save(alice);
+        assertThat(response.username()).isEqualTo("free_name");
+        assertThat(response.valid()).isTrue();
+        assertThat(response.available()).isTrue();
+        verify(authService).usernameAvailable(" Free_Name ");
     }
 
     @Test
-    void completeSetupRejectsTakenUsername() {
-        AuthPhoneController.CompleteSetupRequest request = completeSetupRequest("setup-token", "Alice", "bob");
-
-        when(setupTokenService.consumePhone("setup-token")).thenReturn("+79001234567");
-        when(userRepository.findByPhone("+79001234567")).thenReturn(Optional.of(alice));
-        when(userRepository.existsByUsername("bob")).thenReturn(true);
-
-        assertThatThrownBy(() -> controller.completeSetup(request))
-                .isInstanceOf(ResponseStatusException.class)
-                .satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
-
-        verify(userRepository, never()).save(alice);
-    }
-
-    @Test
-    void completeSetupTrimsProfileLowercasesUsernameAndReturnsAuthResponse() {
-        AuthPhoneController.CompleteSetupRequest request = completeSetupRequest("setup-token", "  Alice  ", "  Alice_New  ");
-        request.setLastName("  Smith  ");
-        request.setAvatarUrl("  data:image/png;base64,abc  ");
-
-        when(setupTokenService.consumePhone("setup-token")).thenReturn("+79001234567");
-        when(userRepository.findByPhone("+79001234567")).thenReturn(Optional.of(alice));
-        when(userRepository.existsByUsername("alice_new")).thenReturn(false);
-        when(userRepository.save(alice)).thenReturn(alice);
-
-        when(jwtService.generateToken("alice_new")).thenReturn("jwt-new");
-        when(refreshTokenService.issue("alice_new")).thenReturn("refresh-new");
-        when(deviceRegTokenService.issue("alice_new")).thenReturn("device-new");
-
-        ResponseEntity<Map<String, Object>> response = controller.completeSetup(request);
-
-        assertThat(alice.getUsername()).isEqualTo("alice_new");
-        assertThat(alice.getFirstName()).isEqualTo("Alice");
-        assertThat(alice.getLastName()).isEqualTo("Smith");
-        assertThat(alice.getAvatarUrl()).isEqualTo("data:image/png;base64,abc");
-
-        Map<String, Object> body = Objects.requireNonNull(response.getBody());
-
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(body)
-                .containsEntry("status", "ok")
-                .containsEntry("exists", true)
-                .containsEntry("isNewUser", false)
-                .containsEntry("userId", 1L)
-                .containsEntry("username", "alice_new")
-                .containsEntry("email", "alice@test.com")
-                .containsEntry("token", "jwt-new")
-                .containsEntry("refreshToken", "refresh-new")
-                .containsEntry("deviceRegistrationToken", "device-new");
-    }
-
-    @Test
-    void usernameAvailableReturnsValidAndAvailableState() {
-        when(userRepository.existsByUsername("free_name")).thenReturn(false);
-        when(userRepository.existsByUsername("taken")).thenReturn(true);
-
-        assertThat(Objects.requireNonNull(controller.usernameAvailable(" Free_Name ").getBody()))
-                .containsEntry("username", "free_name")
-                .containsEntry("valid", true)
-                .containsEntry("available", true);
-
-        assertThat(Objects.requireNonNull(controller.usernameAvailable("taken").getBody()))
-                .containsEntry("username", "taken")
-                .containsEntry("valid", true)
-                .containsEntry("available", false);
-
-        assertThat(Objects.requireNonNull(controller.usernameAvailable("bad-name!").getBody()))
-                .containsEntry("username", "bad-name!")
-                .containsEntry("valid", false)
-                .containsEntry("available", false);
-    }
-
-    @Test
-    void refreshRejectsInvalidToken() {
-        AuthPhoneController.RefreshRequest request = new AuthPhoneController.RefreshRequest();
-        request.setRefreshToken("bad-refresh");
-
-        when(refreshTokenService.consumeAndGetUsername("bad-refresh")).thenReturn(null);
-
-        ResponseEntity<Map<String, Object>> response = controller.refresh(request);
-
-        assertThat(response.getStatusCode().value()).isEqualTo(401);
-        assertThat(Objects.requireNonNull(response.getBody()))
-                .containsEntry("error", "invalid_refresh_token");
-
-        verify(jwtService, never()).generateToken("alice");
-    }
-
-    @Test
-    void refreshRotatesRefreshTokenAndIssuesDeviceRegistrationToken() {
+    void refreshDelegatesToAuthService() {
         AuthPhoneController.RefreshRequest request = new AuthPhoneController.RefreshRequest();
         request.setRefreshToken("old-refresh");
 
-        when(refreshTokenService.consumeAndGetUsername("old-refresh")).thenReturn("alice");
-        when(jwtService.generateToken("alice")).thenReturn("new-jwt");
-        when(refreshTokenService.issue("alice")).thenReturn("new-refresh");
-        when(deviceRegTokenService.issue("alice")).thenReturn("new-device-token");
+        when(authService.refresh("old-refresh"))
+                .thenReturn(new TokenRefreshResponse("new-jwt", "new-refresh", "new-device-token"));
 
-        ResponseEntity<Map<String, Object>> response = controller.refresh(request);
+        var response = controller.refresh(request);
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(Objects.requireNonNull(response.getBody()))
-                .containsEntry("token", "new-jwt")
-                .containsEntry("refreshToken", "new-refresh")
-                .containsEntry("deviceRegistrationToken", "new-device-token");
+        assertThat(response.token()).isEqualTo("new-jwt");
+        assertThat(response.refreshToken()).isEqualTo("new-refresh");
+        assertThat(response.deviceRegistrationToken()).isEqualTo("new-device-token");
+        verify(authService).refresh("old-refresh");
     }
 
     @Test
-    void logoutRevokesRefreshToken() {
+    void logoutDelegatesToAuthService() {
         AuthPhoneController.RefreshRequest request = new AuthPhoneController.RefreshRequest();
         request.setRefreshToken("refresh-token");
 
-        ResponseEntity<Map<String, Object>> response = controller.logout(request);
+        when(authService.logout("refresh-token")).thenReturn(new LogoutResponse(true));
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(Objects.requireNonNull(response.getBody()))
-                .containsEntry("loggedOut", true);
+        var response = controller.logout(request);
 
-        verify(refreshTokenService).revoke("refresh-token");
-    }
-
-    @Test
-    void chooseUsernameNormalizesAndAddsSuffixWhenTaken() {
-        when(userRepository.existsByUsername("john_doe")).thenReturn(true);
-        when(userRepository.existsByUsername("john_doe_1")).thenReturn(false);
-
-        assertThat(controller.chooseUsername(" John---Doe ", "fallback@test.com"))
-                .isEqualTo("john_doe_1");
-    }
-
-    @Test
-    void chooseUsernameFallsBackToEmailLocalPart() {
-        when(userRepository.existsByUsername("mail_user")).thenReturn(false);
-
-        assertThat(controller.chooseUsername(null, "mail.user@test.com"))
-                .isEqualTo("mail_user");
-    }
-
-    @Test
-    void trimToNullReturnsNullForBlankAndTrimmedValueForText() {
-        assertThat(controller.trimToNull(null)).isNull();
-        assertThat(controller.trimToNull("   ")).isNull();
-        assertThat(controller.trimToNull("  abc  ")).isEqualTo("abc");
+        assertThat(response.loggedOut()).isTrue();
+        verify(authService).logout("refresh-token");
     }
 
     private static AuthPhoneController.CompleteSetupRequest completeSetupRequest(String setupToken, String firstName, String username) {
