@@ -9,6 +9,7 @@ import org.springframework.security.core.Authentication;
 import ru.messenger.chaosmessenger.chat.dto.ChatIdResponse;
 import ru.messenger.chaosmessenger.chat.dto.ChatResponse;
 import ru.messenger.chaosmessenger.chat.dto.CreateGroupRequest;
+import ru.messenger.chaosmessenger.chat.dto.UpdateGroupParticipantsRequest;
 import ru.messenger.chaosmessenger.chat.service.ChatService;
 
 import java.time.LocalDateTime;
@@ -63,10 +64,20 @@ class ChatControllerTest {
                 "bob",
                 "Bob",
                 "Brown",
+                null,
                 "bob.png",
                 3L,
                 true,
-                LocalDateTime.now()
+                LocalDateTime.now(),
+                "ACCEPTED",
+                1L,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
         );
 
         when(authentication.getName()).thenReturn("alice");
@@ -100,5 +111,22 @@ class ChatControllerTest {
 
         assertThat(response.chatId()).isEqualTo(200L);
         verify(chatService).createGroupChat("alice", "Team", List.of(2L, 3L));
+    }
+
+    @Test
+    void inviteParticipantsDelegatesToService() {
+        UpdateGroupParticipantsRequest request = new UpdateGroupParticipantsRequest(List.of(2L, 3L));
+        ChatResponse response = new ChatResponse(
+                200L, "GROUP", "Team", null, null, null, null, List.of(1L, 2L, 3L),
+                null, null, null, null, null, null, 0L, false, null, null, null,
+                null, null, "ALL", "ADMINS", "ADMINS", "OWNER", List.of()
+        );
+        when(authentication.getName()).thenReturn("alice");
+        when(chatService.inviteGroupParticipants("alice", 200L, request)).thenReturn(response);
+
+        ChatResponse actual = controller.inviteParticipants(200L, request, authentication);
+
+        assertThat(actual.chatId()).isEqualTo(200L);
+        verify(chatService).inviteGroupParticipants("alice", 200L, request);
     }
 }

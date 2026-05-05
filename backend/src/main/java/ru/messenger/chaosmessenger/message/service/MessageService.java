@@ -11,8 +11,11 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.messenger.chaosmessenger.chat.domain.Message;
+import ru.messenger.chaosmessenger.chat.domain.Chat;
+import ru.messenger.chaosmessenger.chat.domain.GroupPolicy;
 import ru.messenger.chaosmessenger.chat.dto.ChatListUpdateEvent;
 import ru.messenger.chaosmessenger.chat.repository.ChatParticipantRepository;
+import ru.messenger.chaosmessenger.chat.repository.ChatRepository;
 import ru.messenger.chaosmessenger.common.TransactionUtils;
 import ru.messenger.chaosmessenger.common.exception.AuthException;
 import ru.messenger.chaosmessenger.common.exception.ChatException;
@@ -55,6 +58,7 @@ public class MessageService {
     private final MessageReceiptRepository messageReceiptRepository;
     private final MessageReactionRepository messageReactionRepository;
     private final ChatParticipantRepository participantRepository;
+    private final ChatRepository chatRepository;
     private final UserIdentityService userIdentityService;
     private final UserDeviceRepository userDeviceRepository;
     private final CurrentDeviceService currentDeviceService;
@@ -107,10 +111,24 @@ public class MessageService {
 
         final Message msgFinal = message;
         final Map<String, MessageEnvelope> byDeviceFinal = byDevice;
+        final Chat chat = chatRepository.findById(request.chatId()).orElse(null);
         TransactionUtils.afterCommit(() -> {
             incrementUnreadForOthers(msgFinal.getChatId(), sender.getId());
             fanoutCreatedEvent(msgFinal, byDeviceFinal);
             notifyChatListUpdated(msgFinal.getChatId(), "message_created");
+            if (chat != null
+                    && "DIRECT".equals(chat.getType())
+                    && "PENDING".equalsIgnoreCase(String.valueOf(chat.getDirectStatus()))) {
+                ChatListUpdateEvent requestEvent = ChatListUpdateEvent.forChat(msgFinal.getChatId(), "request_message");
+                participantRepository.findDistinctUsernamesByChatId(msgFinal.getChatId()).forEach(participantUsername -> {
+                    if (!Objects.equals(participantUsername, sender.getUsername())) {
+                        messagingTemplate.convertAndSend(
+                                "/topic/users/" + participantUsername + "/requests",
+                                requestEvent
+                        );
+                    }
+                });
+            }
         });
 
         return toDeviceEvent("MESSAGE_CREATED", message, byDevice.get(currentDevice.getDeviceId()), sender.getId());
@@ -444,6 +462,46 @@ public class MessageService {
         }
 
         requireParticipant(request.chatId(), sender.getId());
+
+        // Instagram-style message requests: recipient cannot send until accepted.
+        Chat chat = chatRepository.findById(request.chatId()).orElse(null);
+        if (chat != null && "DIRECT".equals(chat.getType())) {
+            String st = String.valueOf(chat.getDirectStatus());
+            if ("PENDING".equalsIgnoreCase(st)) {
+                Long requestedBy = chat.getDirectRequestedBy();
+                if (requestedBy != null && !requestedBy.equals(sender.getId())) {
+                    throw new MessageException("Chat request not accepted");
+                }
+                if (requestedBy != null && requestedBy.equals(sender.getId())) {
+                    long senderMessages = messageRepository.countByChatIdAndSenderIdAndDeletedAtIsNull(
+                            request.chatId(),
+                            sender.getId()
+                    );
+                    if (senderMessages >= 1) {
+                        throw new MessageException("Only one message is allowed until request is accepted");
+                    }
+                }
+            }
+            if ("DECLINED".equalsIgnoreCase(st)) {
+                throw new MessageException("Chat request was declined");
+            }
+        }
+        if (chat != null && "GROUP".equals(chat.getType())) {
+            var participant = participantRepository.findByChatIdAndUserId(request.chatId(), sender.getId())
+                    .orElseThrow(() -> new ChatException("You are not a participant of this chat"));
+            if (participant.isBanned()) {
+                throw new MessageException("You are banned in this group");
+            }
+            if (participant.isMutedNow()) {
+                throw new MessageException("You are muted in this group");
+            }
+            GroupPolicy policy = GroupPolicy.fromString(chat.getWhoCanWrite(), GroupPolicy.ALL);
+            if (policy != GroupPolicy.ALL && policy != GroupPolicy.ANYONE) {
+                if (!participant.groupRole().atLeast(policy.minRole())) {
+                    throw new MessageException("You cannot write to this group");
+                }
+            }
+        }
     }
 
     private Map<String, UserDevice> validateEnvelopeTargets(Long chatId, List<EncryptedMessageEnvelopeInput> envelopes) {

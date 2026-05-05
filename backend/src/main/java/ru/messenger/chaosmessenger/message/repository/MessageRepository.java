@@ -113,4 +113,6 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
                                 @Param("newStatus") Message.MessageStatus newStatus);
 
     long countByChatId(Long chatId);
+
+    long countByChatIdAndSenderIdAndDeletedAtIsNull(Long chatId, Long senderId);
 }
