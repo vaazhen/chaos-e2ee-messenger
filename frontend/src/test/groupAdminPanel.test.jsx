@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 const mocks = vi.hoisted(() => ({
@@ -91,7 +91,7 @@ describe("GroupAdminPanel", () => {
     expect(screen.getByRole("menuitem", { name: /Remove from group/i })).toBeInTheDocument();
   });
 
-  it("paginates participants when list exceeds page size (30 per page)", async () => {
+  it("renders all filtered participants in one scrollable list (no pagination)", async () => {
     const { default: GroupAdminPanel } = await import("../components/GroupAdminPanel");
     const many = Array.from({ length: 160 }, (_, i) => ({
       userId: 1000 + i,
@@ -101,15 +101,12 @@ describe("GroupAdminPanel", () => {
     }));
     render(<GroupAdminPanel me={{ id: 99 }} chat={buildChat({ groupParticipants: many })} l={l} onRefreshGroup={vi.fn()} />);
 
-    expect(screen.getByRole("navigation", { name: /Participant list pages/i })).toBeInTheDocument();
-    expect(screen.getByText(/Page 1 of 6/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Next$/i })).toBeEnabled();
-
+    expect(screen.queryByRole("navigation", { name: /Participant list pages/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Next$/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("list", { name: /Participants: 160/i })).toBeInTheDocument();
     expect(screen.getByText("User0")).toBeInTheDocument();
-    expect(screen.queryByText("User31")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /^Next$/i }));
-    expect(screen.queryByText("User0")).not.toBeInTheDocument();
     expect(screen.getByText("User31")).toBeInTheDocument();
+    expect(screen.getByText("User159")).toBeInTheDocument();
   });
 
   it("filters participants by role", async () => {

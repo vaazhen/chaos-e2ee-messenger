@@ -224,8 +224,6 @@ class MessageServiceTest {
         when(chatRepository.findById(5L)).thenReturn(Optional.of(group));
         when(participantRepository.findByChatIdAndUserId(5L, 1L))
                 .thenReturn(Optional.of(new ChatParticipant(5L, 1L, GroupRole.MEMBER)));
-        when(messageRepository.findBySenderIdAndSenderDeviceIdAndClientMessageId(1L, "device-alice-1", "client-100"))
-                .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> messageService.sendEncryptedMessageV2(
                 "alice",
@@ -249,8 +247,6 @@ class MessageServiceTest {
         when(participantRepository.existsByChatIdAndUserId(5L, 1L)).thenReturn(true);
         when(chatRepository.findById(5L)).thenReturn(Optional.of(group));
         when(participantRepository.findByChatIdAndUserId(5L, 1L)).thenReturn(Optional.of(participant));
-        when(messageRepository.findBySenderIdAndSenderDeviceIdAndClientMessageId(1L, "device-alice-1", "client-100"))
-                .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> messageService.sendEncryptedMessageV2("alice", sendRequest(5L, "client-100", "device-alice-1")))
                 .isInstanceOf(MessageException.class)
@@ -271,8 +267,6 @@ class MessageServiceTest {
         when(participantRepository.existsByChatIdAndUserId(5L, 1L)).thenReturn(true);
         when(chatRepository.findById(5L)).thenReturn(Optional.of(group));
         when(participantRepository.findByChatIdAndUserId(5L, 1L)).thenReturn(Optional.of(participant));
-        when(messageRepository.findBySenderIdAndSenderDeviceIdAndClientMessageId(1L, "device-alice-1", "client-100"))
-                .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> messageService.sendEncryptedMessageV2("alice", sendRequest(5L, "client-100", "device-alice-1")))
                 .isInstanceOf(MessageException.class)

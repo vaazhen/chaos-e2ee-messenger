@@ -6,6 +6,8 @@ import { useChats }    from "./hooks/useChats";
 import { useMessages } from "./hooks/useMessages";
 import { useI18n }     from "./hooks/useI18n";
 import useWebSocket    from "./hooks/useWebSocket";
+import useNowTicker    from "./hooks/useNowTicker";
+import { getActiveGroupMuteUntilMs, formatMuteCountdown } from "./groupMute";
 
 import AuthScreen   from "./components/AuthScreen";
 import SetupProfile from "./components/SetupProfile";
@@ -32,6 +34,21 @@ const SIDEBAR_LEGACY_COLLAPSED_KEY = "cm_sidebar_collapsed";
 const SIDEBAR_MIN = 68;
 const SIDEBAR_MAX = 520;
 const SIDEBAR_DEFAULT = 400;
+
+/** Backend publishes these on `/topic/users/.../chats` when group metadata or participants change. */
+const GROUP_CHAT_LIST_WS_REASONS = new Set([
+  "group_settings_updated",
+  "group_permissions_updated",
+  "group_role_updated",
+  "group_participants_invited",
+  "group_participant_removed",
+  "group_participant_muted",
+  "group_participant_unmuted",
+  "group_participant_banned",
+  "group_participant_unbanned",
+  "group_archived",
+]);
+
 /** Гистерезис: меньше дёрганья у границы «широкий / только аватарки». */
 const SIDEBAR_COMPACT_ENTER = 112;
 const SIDEBAR_COMPACT_EXIT = 128;
@@ -275,6 +292,35 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
     return displayNameForChat(activeChat, auth.me?.id);
   }, [activeChat, auth.me?.id, aliasTick]);
 
+  const myMutedUntilIso = useMemo(() => {
+    if (activeChat?.type !== "group" || !auth.me?.id) return null;
+    const me = activeChat.groupParticipants?.find((p) => String(p.userId) === String(auth.me.id));
+    return me?.mutedUntil || null;
+  }, [activeChat, auth.me?.id]);
+
+  const groupMuteTickerNow = useNowTicker(Boolean(myMutedUntilIso));
+  const myGroupMuteUntilMs = useMemo(
+    () =>
+      activeChat?.type === "group" && auth.me?.id
+        ? getActiveGroupMuteUntilMs(activeChat.groupParticipants, auth.me.id)
+        : null,
+    [activeChat, auth.me?.id, groupMuteTickerNow]
+  );
+  const myGroupMuteCountdown = useMemo(
+    () => formatMuteCountdown(myGroupMuteUntilMs, groupMuteTickerNow),
+    [myGroupMuteUntilMs, groupMuteTickerNow]
+  );
+
+  const loadChats = chatStore.loadChats;
+  useEffect(() => {
+    if (!myMutedUntilIso || myGroupMuteUntilMs != null) return;
+    const t = Date.parse(myMutedUntilIso);
+    if (!Number.isFinite(t) || t > Date.now()) return;
+    const uid = auth.me?.id;
+    if (uid == null) return;
+    loadChats(uid);
+  }, [myMutedUntilIso, myGroupMuteUntilMs, auth.me?.id, loadChats]);
+
   const l = useMemo(() => {
     const effectiveLang = String(lang || "ru").toLowerCase().startsWith("en") ? "en" : "ru";
     return (ru, en) => (effectiveLang === "ru" ? ru : en);
@@ -487,6 +533,10 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
         reason === "saved_chat_exists";
 
       if (needsHardRefresh) scheduleChatsRefresh();
+
+      if (reason && GROUP_CHAT_LIST_WS_REASONS.has(reason)) {
+        scheduleChatsRefresh();
+      }
 
       // Incoming message requests: refresh only the requests list (badge + modal tab), not the whole chat list.
       if (reason === "request_message") {
@@ -961,6 +1011,20 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
                 </div>
               )}
 
+              {myGroupMuteUntilMs && (
+                <div className="group-mute-banner" role="status" aria-live="polite">
+                  <span className="group-mute-banner__icon" aria-hidden>
+                    🔇
+                  </span>
+                  <span>
+                    {l(
+                      `Вы в муте в этой группе. Осталось: ${myGroupMuteCountdown || "…"}`,
+                      `You are muted in this group. Time left: ${myGroupMuteCountdown || "…"}`
+                    )}
+                  </span>
+                </div>
+              )}
+
               <div className="enc-notice">
                 <span>🔒</span>
                 <span>{t.encrypted_notice || "Encrypted on device"}</span>
@@ -971,7 +1035,11 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
                 replyTo={replyTo}
                 onОтменаОтветить={() => setReplyTo(null)}
                 onTyping={() => ws.sendTyping(chatStore.activeId)}
-                disabled={(isPendingRequestChat && !isRequesterInPendingChat) || (isRequesterInPendingChat && requesterFirstMsgSent)}
+                disabled={
+                  (isPendingRequestChat && !isRequesterInPendingChat) ||
+                  (isRequesterInPendingChat && requesterFirstMsgSent) ||
+                  Boolean(myGroupMuteUntilMs)
+                }
                 pendingFirstMessageOnly={isRequesterInPendingChat && !requesterFirstMsgSent}
               />
             </>
