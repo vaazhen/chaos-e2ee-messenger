@@ -106,6 +106,7 @@ export function useMessages(myId) {
       _out:      isOut,
       _text:     parsed.text,
       _img:      parsed.img,
+      _voice:    parsed.voice,
       _payload:  parsed.payload,
       _time:     getTime(event.createdAt),
     };
@@ -150,14 +151,15 @@ export function useMessages(myId) {
   const sendMessage = useCallback(async (chatId, input) => {
     const text = typeof input === "string" ? input : String(input?.text || "").trim();
     const imgFile = typeof input === "string" ? null : input?.imgFile;
-    if ((!text && !imgFile) || !chatId) return null;
+    const voiceFile = typeof input === "string" ? null : input?.voiceFile;
+    if ((!text && !imgFile && !voiceFile) || !chatId) return null;
     if (!window.e2ee?.buildFanoutRequest) {
       console.error("[Send] crypto-engine is not loaded");
       return null;
     }
 
     const clientMessageId = "tmp_" + Date.now();
-    let parsedPayload = { text, img: null, payload: null };
+    let parsedPayload = { text, img: null, voice: null, payload: null };
     let encryptedPlaintext = text;
 
     try {
@@ -174,9 +176,23 @@ export function useMessages(myId) {
           },
         };
         encryptedPlaintext = JSON.stringify(parsedPayload.payload);
+      } else if (voiceFile) {
+        const voice = await prepareVoiceFile(voiceFile);
+        parsedPayload = {
+          text,
+          img: null,
+          voice,
+          payload: {
+            v: 1,
+            type: "voice",
+            text,
+            voice,
+          },
+        };
+        encryptedPlaintext = JSON.stringify(parsedPayload.payload);
       }
     } catch (e) {
-      console.error("[Send] image prepare error:", e);
+      console.error("[Send] media prepare error:", e);
       return null;
     }
     if (encryptedPlaintext.length > MAX_ENCRYPTED_PAYLOAD_CHARS) {
@@ -191,6 +207,7 @@ export function useMessages(myId) {
       _out: true,
       _text: parsedPayload.text,
       _img: parsedPayload.img,
+      _voice: parsedPayload.voice,
       _payload: parsedPayload.payload,
       _time: getTime(),
       content: encryptedPlaintext,
@@ -312,6 +329,7 @@ export function useMessages(myId) {
               version: (m.version || 1) + 1,
               _text: parsed.text,
               _img: parsed.img,
+              _voice: parsed.voice,
               _payload: parsed.payload,
             }
           : m
@@ -441,6 +459,7 @@ async function decryptMsg(msg, myId, fallbackChatId) {
     content: decryptedText,
     _text: parsed.text,
     _img: parsed.img,
+    _voice: parsed.voice,
     _payload: parsed.payload,
     _out:  msg.senderId === myId,
     _time: getTime(msg.createdAt),
@@ -490,7 +509,7 @@ function compareMessages(a, b) {
 function parseMessagePayload(raw) {
   const fallbackText = String(raw || "");
   if (!fallbackText || fallbackText === "[encrypted]") {
-    return { text: fallbackText, img: null, payload: null };
+    return { text: fallbackText, img: null, voice: null, payload: null };
   }
   try {
     const payload = JSON.parse(fallbackText);
@@ -499,17 +518,28 @@ function parseMessagePayload(raw) {
       return {
         text: String(payload.text || ""),
         img: image.dataUrl || payload.dataUrl || null,
+        voice: null,
+        payload,
+      };
+    }
+    if (payload?.v === 1 && payload?.type === "voice") {
+      const voice = payload.voice || {};
+      return {
+        text: String(payload.text || ""),
+        img: null,
+        voice: voice.dataUrl ? voice : null,
         payload,
       };
     }
   } catch (_) {
     // regular text message
   }
-  return { text: fallbackText, img: null, payload: null };
+  return { text: fallbackText, img: null, voice: null, payload: null };
 }
 
 function messagePreview(parsed) {
   if (parsed?.img) return parsed.text ? `📷 ${parsed.text}` : "📷 Photo";
+  if (parsed?.voice) return parsed.text ? `Voice: ${parsed.text}` : "Voice message";
   return parsed?.text || "";
 }
 
@@ -522,6 +552,21 @@ function buildEditedPayload(msg, text) {
       parsed: {
         text,
         img: image.dataUrl || payload.dataUrl || msg._img || null,
+        voice: null,
+        payload,
+      },
+    };
+  }
+
+  if (msg?._payload?.v === 1 && msg?._payload?.type === "voice") {
+    const payload = { ...msg._payload, text };
+    const voice = payload.voice || {};
+    return {
+      plaintext: JSON.stringify(payload),
+      parsed: {
+        text,
+        img: null,
+        voice: voice.dataUrl ? voice : msg._voice || null,
         payload,
       },
     };
@@ -529,7 +574,7 @@ function buildEditedPayload(msg, text) {
 
   return {
     plaintext: text,
-    parsed: { text, img: null, payload: null },
+    parsed: { text, img: null, voice: null, payload: null },
   };
 }
 
@@ -593,4 +638,25 @@ async function compressImageFile(file) {
     width: compressed.width,
     height: compressed.height,
   };
+}
+
+async function prepareVoiceFile(input) {
+  const dataUrl = input.dataUrl || await blobToDataUrl(input.blob || input.file);
+  return {
+    dataUrl,
+    mime: input.mime || input.blob?.type || input.file?.type || "audio/webm",
+    name: input.name || "voice-message.webm",
+    size: input.size || input.blob?.size || input.file?.size || Math.round((String(dataUrl).length * 3) / 4),
+    durationMs: Math.max(0, Math.round(Number(input.durationMs || 0))),
+  };
+}
+
+function blobToDataUrl(blob) {
+  if (!blob) return Promise.reject(new Error("Voice blob is missing"));
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("Cannot read voice"));
+    reader.readAsDataURL(blob);
+  });
 }

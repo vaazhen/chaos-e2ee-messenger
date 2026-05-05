@@ -113,7 +113,7 @@ export const IMAGE_PROFILES = {
     cropSquare: false,
     maxSide: 1280,
     maxInputBytes: 10 * MB,
-    maxOutputBytes: 190 * 1024,
+    maxOutputBytes: 125 * 1024,
     tooLargeInputMessage: "Файл слишком большой. Выберите изображение до 10 МБ.",
     invalidTypeMessage: "Выберите файл изображения",
   },
