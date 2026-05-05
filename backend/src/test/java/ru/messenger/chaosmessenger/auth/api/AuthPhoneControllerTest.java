@@ -9,10 +9,14 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 import ru.messenger.chaosmessenger.auth.dto.AccountExistsResponse;
 import ru.messenger.chaosmessenger.auth.dto.AuthResponse;
+import ru.messenger.chaosmessenger.auth.dto.CompleteSetupRequest;
 import ru.messenger.chaosmessenger.auth.dto.LogoutResponse;
+import ru.messenger.chaosmessenger.auth.dto.RefreshRequest;
+import ru.messenger.chaosmessenger.auth.dto.SendCodeRequest;
 import ru.messenger.chaosmessenger.auth.dto.SendCodeResponse;
 import ru.messenger.chaosmessenger.auth.dto.TokenRefreshResponse;
 import ru.messenger.chaosmessenger.auth.dto.UsernameAvailabilityResponse;
+import ru.messenger.chaosmessenger.auth.dto.VerifyCodeRequest;
 import ru.messenger.chaosmessenger.auth.dto.VerifyCodeResponse;
 import ru.messenger.chaosmessenger.auth.service.AuthService;
 
@@ -42,9 +46,7 @@ class AuthPhoneControllerTest {
 
     @Test
     void sendCodeDelegatesToAuthService() {
-        AuthPhoneController.SendCodeRequest request = new AuthPhoneController.SendCodeRequest();
-        request.setPhone("9001234567");
-        request.setVia("telegram");
+        SendCodeRequest request = new SendCodeRequest("9001234567", "telegram");
 
         when(authService.sendCode("9001234567", "telegram"))
                 .thenReturn(new SendCodeResponse(true, "+79001234567"));
@@ -58,9 +60,7 @@ class AuthPhoneControllerTest {
 
     @Test
     void verifyCodeForNewUserReturnsSetupTokenWithoutJwt() {
-        AuthPhoneController.VerifyCodeRequest request = new AuthPhoneController.VerifyCodeRequest();
-        request.setPhone("+79001234567");
-        request.setCode("111111");
+        VerifyCodeRequest request = new VerifyCodeRequest("+79001234567", "111111");
 
         when(authService.verifyCode("+79001234567", "111111"))
                 .thenReturn(new VerifyCodeResponse(
@@ -90,9 +90,7 @@ class AuthPhoneControllerTest {
 
     @Test
     void verifyCodeForExistingUserReturnsJwtRefreshAndDeviceRegistrationToken() {
-        AuthPhoneController.VerifyCodeRequest request = new AuthPhoneController.VerifyCodeRequest();
-        request.setPhone("8 900 123 45 67");
-        request.setCode("222222");
+        VerifyCodeRequest request = new VerifyCodeRequest("8 900 123 45 67", "222222");
 
         when(authService.verifyCode("8 900 123 45 67", "222222"))
                 .thenReturn(new VerifyCodeResponse(
@@ -123,9 +121,8 @@ class AuthPhoneControllerTest {
 
     @Test
     void completeSetupDelegatesToAuthService() {
-        AuthPhoneController.CompleteSetupRequest request = completeSetupRequest("setup-token", "Alice", "alice");
-        request.setLastName("Smith");
-        request.setAvatarUrl("avatar.png");
+        CompleteSetupRequest request = new CompleteSetupRequest(
+                "setup-token", "Alice", "Smith", "alice", "avatar.png");
 
         when(authService.completeSetup("setup-token", "alice", "Alice", "Smith", "avatar.png"))
                 .thenReturn(new AuthResponse(
@@ -150,7 +147,7 @@ class AuthPhoneControllerTest {
 
     @Test
     void completeSetupPropagatesInvalidSetupToken() {
-        AuthPhoneController.CompleteSetupRequest request = completeSetupRequest("bad-token", "Alice", "alice");
+        CompleteSetupRequest request = completeSetupRequest("bad-token", "Alice", "alice");
 
         when(authService.completeSetup("bad-token", "alice", "Alice", null, null))
                 .thenThrow(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid_or_expired_setup_token"));
@@ -176,8 +173,7 @@ class AuthPhoneControllerTest {
 
     @Test
     void refreshDelegatesToAuthService() {
-        AuthPhoneController.RefreshRequest request = new AuthPhoneController.RefreshRequest();
-        request.setRefreshToken("old-refresh");
+        RefreshRequest request = new RefreshRequest("old-refresh");
 
         when(authService.refresh("old-refresh"))
                 .thenReturn(new TokenRefreshResponse("new-jwt", "new-refresh", "new-device-token"));
@@ -192,8 +188,7 @@ class AuthPhoneControllerTest {
 
     @Test
     void logoutDelegatesToAuthService() {
-        AuthPhoneController.RefreshRequest request = new AuthPhoneController.RefreshRequest();
-        request.setRefreshToken("refresh-token");
+        RefreshRequest request = new RefreshRequest("refresh-token");
 
         when(authService.logout("refresh-token")).thenReturn(new LogoutResponse(true));
 
@@ -203,11 +198,7 @@ class AuthPhoneControllerTest {
         verify(authService).logout("refresh-token");
     }
 
-    private static AuthPhoneController.CompleteSetupRequest completeSetupRequest(String setupToken, String firstName, String username) {
-        AuthPhoneController.CompleteSetupRequest request = new AuthPhoneController.CompleteSetupRequest();
-        request.setSetupToken(setupToken);
-        request.setFirstName(firstName);
-        request.setUsername(username);
-        return request;
+    private static CompleteSetupRequest completeSetupRequest(String setupToken, String firstName, String username) {
+        return new CompleteSetupRequest(setupToken, firstName, null, username, null);
     }
 }
