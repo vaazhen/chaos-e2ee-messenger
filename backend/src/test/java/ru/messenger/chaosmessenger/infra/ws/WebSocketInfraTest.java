@@ -193,9 +193,11 @@ class WebSocketInfraTest {
                 accessor.setUser(principal("alice"))
         );
 
+        when(onlineService.markSessionOnline("alice", "s1")).thenReturn(true);
+
         listener.handleConnect(new SessionConnectedEvent(this, message));
 
-        verify(onlineService).setOnline("alice");
+        verify(onlineService).markSessionOnline("alice", "s1");
         verify(messagingTemplate).convertAndSend(
                 eq("/topic/user/status"),
                 org.mockito.ArgumentMatchers.any(UserStatusEvent.class)
@@ -212,7 +214,7 @@ class WebSocketInfraTest {
 
         listener.handleConnect(new SessionConnectedEvent(this, message));
 
-        verify(onlineService, never()).setOnline("alice");
+        verify(onlineService, never()).markSessionOnline("alice", "s1");
         verify(messagingTemplate, never()).convertAndSend(
                 eq("/topic/user/status"),
                 org.mockito.ArgumentMatchers.any(UserStatusEvent.class)
@@ -229,10 +231,33 @@ class WebSocketInfraTest {
                 accessor.setUser(principal("alice"))
         );
 
+        when(onlineService.markSessionOffline("alice", "s1")).thenReturn(true);
+
         listener.handleDisconnect(new SessionDisconnectEvent(this, message, "s1", CloseStatus.NORMAL));
 
-        verify(onlineService).setOffline("alice");
+        verify(onlineService).markSessionOffline("alice", "s1");
         verify(messagingTemplate).convertAndSend(
+                eq("/topic/user/status"),
+                org.mockito.ArgumentMatchers.any(UserStatusEvent.class)
+        );
+    }
+
+    @Test
+    void eventListenerDoesNotPublishOfflineStatusWhenAnotherSessionIsStillOnline() {
+        OnlineService onlineService = mock(OnlineService.class);
+        SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
+        WebSocketEventListener listener = new WebSocketEventListener(onlineService, messagingTemplate);
+
+        Message<byte[]> message = stomp(StompCommand.DISCONNECT, "s1", null, accessor ->
+                accessor.setUser(principal("alice"))
+        );
+
+        when(onlineService.markSessionOffline("alice", "s1")).thenReturn(false);
+
+        listener.handleDisconnect(new SessionDisconnectEvent(this, message, "s1", CloseStatus.NORMAL));
+
+        verify(onlineService).markSessionOffline("alice", "s1");
+        verify(messagingTemplate, never()).convertAndSend(
                 eq("/topic/user/status"),
                 org.mockito.ArgumentMatchers.any(UserStatusEvent.class)
         );

@@ -12,7 +12,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
     volumes:
       - grafana-data:/var/lib/grafana
       - ./src/main/resources/grafana-datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro
@@ -24,7 +24,7 @@ services:
     environment:
       - POSTGRES_DB=chaos
       - POSTGRES_USER=chaos
-      - POSTGRES_PASSWORD=chaos
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     ports:
@@ -41,8 +41,10 @@ services:
       - "8080:8080"
     environment:
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/chaos
+      - SPRING_DATASOURCE_USERNAME=chaos
+      - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       - SPRING_DATA_REDIS_HOST=redis
-      - JWT_SECRET=please-change-this-secret-key-please
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
     depends_on:
       - postgres
       - redis
