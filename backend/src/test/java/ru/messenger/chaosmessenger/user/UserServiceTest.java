@@ -98,7 +98,7 @@ class UserServiceTest {
 
     @Test
     void updateProfileTrimsNamesAvatarAndLowercasesUsername() {
-        UpdateProfileRequest request = new UpdateProfileRequest("  John  ", "  Doe  ", "  data:image/jpeg;base64,abc  ", "  New_Name  ");
+        UpdateProfileRequest request = new UpdateProfileRequest("  John  ", "  Doe  ", null, "  data:image/jpeg;base64,abc  ", "  New_Name  ");
 
         when(userIdentityService.require("alice")).thenReturn(alice);
         when(userRepository.existsByUsername("new_name")).thenReturn(false);
@@ -121,7 +121,7 @@ class UserServiceTest {
 
     @Test
     void updateProfileClearsAvatarWhenBlankValueIsSubmitted() {
-        UpdateProfileRequest request = new UpdateProfileRequest(null, null, "   ", null);
+        UpdateProfileRequest request = new UpdateProfileRequest(null, null, null, "   ", null);
 
         when(userIdentityService.require("alice")).thenReturn(alice);
         when(userRepository.save(alice)).thenReturn(alice);
@@ -135,7 +135,7 @@ class UserServiceTest {
 
     @Test
     void updateProfileDoesNotCheckAvailabilityWhenUsernameIsSameIgnoringCase() {
-        UpdateProfileRequest request = new UpdateProfileRequest(null, null, null, "ALICE");
+        UpdateProfileRequest request = new UpdateProfileRequest(null, null, null, null, "ALICE");
 
         when(userIdentityService.require("alice")).thenReturn(alice);
         when(userRepository.save(alice)).thenReturn(alice);
@@ -149,7 +149,7 @@ class UserServiceTest {
 
     @Test
     void updateProfileIgnoresBlankUsername() {
-        UpdateProfileRequest request = new UpdateProfileRequest(null, null, null, "   ");
+        UpdateProfileRequest request = new UpdateProfileRequest(null, null, null, null, "   ");
 
         when(userIdentityService.require("alice")).thenReturn(alice);
         when(userRepository.save(alice)).thenReturn(alice);
@@ -163,7 +163,7 @@ class UserServiceTest {
 
     @Test
     void updateProfileRejectsInvalidUsername() {
-        UpdateProfileRequest request = new UpdateProfileRequest(null, null, null, "bad-name!");
+        UpdateProfileRequest request = new UpdateProfileRequest(null, null, null, null, "bad-name!");
 
         when(userIdentityService.require("alice")).thenReturn(alice);
 
@@ -176,7 +176,7 @@ class UserServiceTest {
 
     @Test
     void updateProfileRejectsTakenUsername() {
-        UpdateProfileRequest request = new UpdateProfileRequest(null, null, null, "bob");
+        UpdateProfileRequest request = new UpdateProfileRequest(null, null, null, null, "bob");
 
         when(userIdentityService.require("alice")).thenReturn(alice);
         when(userRepository.existsByUsername("bob")).thenReturn(true);

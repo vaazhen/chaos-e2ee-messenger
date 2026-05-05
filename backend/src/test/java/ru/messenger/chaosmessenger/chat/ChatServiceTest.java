@@ -252,7 +252,7 @@ class ChatServiceTest {
             ));
             when(userRepository.findAllById(List.of(3L))).thenReturn(List.of(charlie));
             when(participantRepository.saveAll(anyList())).thenAnswer(inv -> inv.getArgument(0));
-            when(chatRepository.findChatIdsByUserIdOrderByActivity(1L, 1000, 0)).thenReturn(List.of(20L));
+            when(chatRepository.findChatIdsByUserIdOrderByActivity(1L, 100, 0)).thenReturn(List.of(20L));
             when(chatRepository.findByIdIn(List.of(20L))).thenReturn(List.of(group));
             when(participantRepository.findByChatIdIn(List.of(20L))).thenReturn(List.of(
                     new ChatParticipant(20L, 1L, GroupRole.OWNER),

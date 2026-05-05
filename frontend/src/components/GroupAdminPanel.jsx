@@ -1,6 +1,8 @@
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
+import { formatMuteCountdown, participantMuteRemainingMs } from "../groupMute";
+import useNowTicker from "../hooks/useNowTicker";
 import {
   assignableRoleValues,
   canFullAdmin,
@@ -11,8 +13,6 @@ import {
 } from "../utils/groupRbac";
 
 const PARTICIPANT_FILTER_DEBOUNCE_MS = 150;
-/** Client-side page size for the participant list (independent scroll region). */
-const PARTICIPANT_PAGE_SIZE = 30;
 
 function policyWriteHint(l) {
   return l(
@@ -213,7 +213,6 @@ export default function GroupAdminPanel({ me, chat, l, onRefreshGroup, onClose, 
   const [participantRoleFilter, setParticipantRoleFilter] = useState("");
   const [participantMutedOnly, setParticipantMutedOnly] = useState(false);
   const [participantBannedOnly, setParticipantBannedOnly] = useState(false);
-  const [participantPage, setParticipantPage] = useState(0);
   const [menuState, setMenuState] = useState(null);
 
   const actorRole = normalizedRole(chat?.myRole);
@@ -231,6 +230,7 @@ export default function GroupAdminPanel({ me, chat, l, onRefreshGroup, onClose, 
     [participants]
   );
   const hasBannedData = useMemo(() => participants.some((p) => Boolean(p.banned)), [participants]);
+  const participantMuteTickerNow = useNowTicker(hasMutedData);
 
   useEffect(() => {
     const t = window.setTimeout(
@@ -272,21 +272,6 @@ export default function GroupAdminPanel({ me, chat, l, onRefreshGroup, onClose, 
   ]);
 
   const filteredCount = filteredParticipants.length;
-  const totalPages = filteredCount === 0 ? 1 : Math.ceil(filteredCount / PARTICIPANT_PAGE_SIZE);
-  const safePage = Math.min(participantPage, Math.max(0, totalPages - 1));
-  const pageSliceStart = safePage * PARTICIPANT_PAGE_SIZE;
-  const visibleParticipants = useMemo(
-    () => filteredParticipants.slice(pageSliceStart, pageSliceStart + PARTICIPANT_PAGE_SIZE),
-    [filteredParticipants, pageSliceStart]
-  );
-
-  useEffect(() => {
-    setParticipantPage(0);
-  }, [participantFilterDebounced, participantRoleFilter, participantMutedOnly, participantBannedOnly, chat?.id]);
-
-  useEffect(() => {
-    setParticipantPage((p) => Math.min(p, Math.max(0, totalPages - 1)));
-  }, [totalPages]);
 
   useEffect(() => {
     if (!fullAdmin || inviteQuery.trim().length < 2) {
@@ -547,13 +532,18 @@ export default function GroupAdminPanel({ me, chat, l, onRefreshGroup, onClose, 
         </div>
         <p id="ga-participant-filter-hint" className="tool-note group-admin-hint group-admin-section__hint">
           {l(
-            "Поиск и фильтры выполняются на устройстве. Список ниже прокручивается отдельно; страницы по 30 совпадений.",
-            "Search and filters run on this device. The list below scrolls on its own; pages show 30 matches each."
+            "Поиск и фильтры выполняются на устройстве. Все совпадения в одном списке — прокрутите его ниже.",
+            "Search and filters run on this device. All matches appear in one list — scroll below."
           )}
         </p>
 
-        <div className="group-participant-picker" role="list" aria-busy={groupActionBusy}>
-        {visibleParticipants.map((p) => {
+        <div
+          className="group-participant-picker"
+          role="list"
+          aria-busy={groupActionBusy}
+          aria-label={l(`Участники: ${filteredCount}`, `Participants: ${filteredCount}`)}
+        >
+        {filteredParticipants.map((p) => {
           const id = String(p.userId);
           const menuPreview = buildParticipantMenuDescriptors({
             l,
@@ -589,7 +579,15 @@ export default function GroupAdminPanel({ me, chat, l, onRefreshGroup, onClose, 
                   <span className="group-participant-row__meta">
                     {String(p.role || "MEMBER").toUpperCase()}
                     {p.banned ? ` · ${l("Бан", "Banned")}` : ""}
-                    {!p.banned && p.mutedUntil ? ` · ${l("Мут", "Muted")}` : ""}
+                    {!p.banned && p.mutedUntil
+                      ? (() => {
+                          const untilMs = participantMuteRemainingMs(p.mutedUntil, participantMuteTickerNow);
+                          const cd = formatMuteCountdown(untilMs, participantMuteTickerNow);
+                          return cd
+                            ? ` · ${l("Мут", "Muted")} · ${cd}`
+                            : ` · ${l("Мут", "Muted")}`;
+                        })()
+                      : ""}
                   </span>
                 </span>
                 {hasMenu && (
@@ -619,46 +617,6 @@ export default function GroupAdminPanel({ me, chat, l, onRefreshGroup, onClose, 
           );
         })}
       </div>
-
-        <nav className="group-admin-pagination" aria-label={l("Страницы списка участников", "Participant list pages")}>
-          <button
-            type="button"
-            className="btn-sec group-admin-pagination__nav"
-            disabled={safePage <= 0}
-            onClick={() => setParticipantPage(safePage - 1)}
-          >
-            {l("Назад", "Previous")}
-          </button>
-          <span className="group-admin-pagination__status">
-            {l(
-              `Стр. ${safePage + 1} из ${totalPages} · ${filteredCount}`,
-              `Page ${safePage + 1} of ${totalPages} · ${filteredCount}`
-            )}
-          </span>
-          <button
-            type="button"
-            className="btn-sec group-admin-pagination__nav"
-            disabled={safePage >= totalPages - 1}
-            onClick={() => setParticipantPage(safePage + 1)}
-          >
-            {l("Далее", "Next")}
-          </button>
-          {totalPages > 1 && totalPages <= 8 && (
-            <div className="group-admin-pagination__pages">
-              {Array.from({ length: totalPages }, (_, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  className={`group-admin-page-btn${i === safePage ? " group-admin-page-btn--active" : ""}`}
-                  aria-current={i === safePage ? "page" : undefined}
-                  onClick={() => setParticipantPage(i)}
-                >
-                  {i + 1}
-                </button>
-              ))}
-            </div>
-          )}
-        </nav>
       </section>
 
       {!canManage && (

@@ -1192,6 +1192,27 @@ button{color:inherit}
   text-align:center;
   box-shadow:none;
 }
+.group-mute-banner{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  flex-wrap:wrap;
+  margin:8px 14px 0;
+  padding:10px 14px;
+  border-radius:18px;
+  background:var(--bg2);
+  border:1px solid var(--bdr);
+  color:var(--t2);
+  font-size:13px;
+  font-weight:700;
+  line-height:1.35;
+  text-align:center;
+}
+.group-mute-banner__icon{
+  font-size:16px;
+  line-height:1;
+}
 .new-chat-drawer-user-main{
   flex:1;
   min-width:0;
@@ -2769,53 +2790,6 @@ button{color:inherit}
 .user-profile-screen .group-admin-unified-card .group-participant-picker{
   max-height:min(38vh,320px);
   margin-bottom:4px;
-}
-.user-profile-screen .group-admin-pagination{
-  display:flex;
-  flex-wrap:wrap;
-  align-items:center;
-  gap:10px 12px;
-  margin-top:10px;
-  padding-top:10px;
-  border-top:1px solid color-mix(in srgb, var(--bdr) 55%, transparent);
-}
-.user-profile-screen .group-admin-pagination__status{
-  font-size:13px;
-  color:var(--t2);
-  font-weight:650;
-  flex:1;
-  min-width:140px;
-}
-.user-profile-screen .group-admin-pagination__nav{
-  min-width:88px;
-}
-.user-profile-screen .group-admin-pagination__pages{
-  display:flex;
-  flex-wrap:wrap;
-  gap:6px;
-  width:100%;
-  justify-content:flex-start;
-}
-.user-profile-screen .group-admin-page-btn{
-  min-width:36px;
-  height:36px;
-  padding:0 8px;
-  border-radius:12px;
-  border:none;
-  background:var(--bg2);
-  color:var(--t1);
-  font-weight:800;
-  font-size:13px;
-  cursor:pointer;
-  box-shadow:var(--soft-shadow);
-}
-.user-profile-screen .group-admin-page-btn--active{
-  box-shadow:inset 0 0 0 2px var(--acc);
-  background:var(--acc2);
-}
-.user-profile-screen .group-admin-page-btn:disabled{
-  opacity:.45;
-  cursor:default;
 }
 .chat-tools-panel .group-admin-role-line{
   margin-bottom:10px;
