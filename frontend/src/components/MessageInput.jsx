@@ -66,7 +66,9 @@ export default function MessageInput({ onSend, replyTo, onОтменаОтвет
   const [voiceFile, setVoiceFile] = useState(null);
   const [recording, setRecording] = useState(false);
   const [recordingLocked, setRecordingLocked] = useState(false);
+  const [recordingPaused, setRecordingPaused] = useState(false);
   const [recordingMs, setRecordingMs] = useState(0);
+  const [voiceLevels, setVoiceLevels] = useState(() => Array(24).fill(0.18));
   const [voiceError, setVoiceError] = useState("");
   const inpRef = useRef(null);
   const fileRef = useRef(null);
@@ -79,6 +81,12 @@ export default function MessageInput({ onSend, replyTo, onОтменаОтвет
   const recordingStartYRef = useRef(0);
   const autoSendVoiceRef = useRef(false);
   const discardVoiceRef = useRef(false);
+  const audioContextRef = useRef(null);
+  const analyserRef = useRef(null);
+  const analyserFrameRef = useRef(null);
+  const recordingPausedRef = useRef(false);
+  const pauseStartedAtRef = useRef(0);
+  const pausedTotalMsRef = useRef(0);
   
   const emojiRootRef = useRef(null);
 const typingTimerRef = useRef(null);
@@ -196,6 +204,60 @@ const typingTimerRef = useRef(null);
     mediaStreamRef.current = null;
   };
 
+  const stopVoiceAnalyser = () => {
+    if (analyserFrameRef.current) {
+      cancelAnimationFrame(analyserFrameRef.current);
+      analyserFrameRef.current = null;
+    }
+    audioContextRef.current?.close?.().catch(() => {});
+    audioContextRef.current = null;
+    analyserRef.current = null;
+  };
+
+  const effectiveRecordingMs = () => {
+    const pausedNow = pauseStartedAtRef.current ? Date.now() - pauseStartedAtRef.current : 0;
+    return Math.max(0, Date.now() - recordingStartedAtRef.current - pausedTotalMsRef.current - pausedNow);
+  };
+
+  const startVoiceAnalyser = (stream) => {
+    stopVoiceAnalyser();
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+
+    try {
+      const ctx = new AudioCtx();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 128;
+      ctx.createMediaStreamSource(stream).connect(analyser);
+      audioContextRef.current = ctx;
+      analyserRef.current = analyser;
+
+      const data = new Uint8Array(analyser.fftSize);
+      const tick = () => {
+        const current = analyserRef.current;
+        if (!current) return;
+
+        if (!recordingPausedRef.current) {
+          current.getByteTimeDomainData(data);
+          let sum = 0;
+          for (let i = 0; i < data.length; i += 1) {
+            const centered = (data[i] - 128) / 128;
+            sum += centered * centered;
+          }
+          const rms = Math.sqrt(sum / data.length);
+          const level = Math.min(1, Math.max(0.08, rms * 5));
+          setVoiceLevels(prev => [...prev.slice(1), level]);
+        }
+
+        analyserFrameRef.current = requestAnimationFrame(tick);
+      };
+
+      tick();
+    } catch (_) {
+      stopVoiceAnalyser();
+    }
+  };
+
   const stopRecording = (autoSend = false) => {
     autoSendVoiceRef.current = autoSend;
     const recorder = mediaRecorderRef.current;
@@ -223,10 +285,16 @@ const typingTimerRef = useRef(null);
       mediaStreamRef.current = stream;
       mediaRecorderRef.current = recorder;
       recordingStartedAtRef.current = Date.now();
+      pauseStartedAtRef.current = 0;
+      pausedTotalMsRef.current = 0;
       autoSendVoiceRef.current = false;
       setRecording(true);
       setRecordingLocked(false);
+      recordingPausedRef.current = false;
+      setRecordingPaused(false);
       setRecordingMs(0);
+      setVoiceLevels(Array(24).fill(0.18));
+      startVoiceAnalyser(stream);
 
       recorder.ondataavailable = (event) => {
         if (event.data?.size) voiceChunksRef.current.push(event.data);
@@ -235,14 +303,17 @@ const typingTimerRef = useRef(null);
       recorder.onstop = () => {
         stopRecordingTimer();
         cleanupRecordingStream();
+        stopVoiceAnalyser();
         const shouldAutoSend = autoSendVoiceRef.current;
         const shouldDiscard = discardVoiceRef.current;
         autoSendVoiceRef.current = false;
         discardVoiceRef.current = false;
         setRecording(false);
         setRecordingLocked(false);
+        recordingPausedRef.current = false;
+        setRecordingPaused(false);
 
-        const durationMs = Math.min(MAX_VOICE_MS, Date.now() - recordingStartedAtRef.current);
+        const durationMs = Math.min(MAX_VOICE_MS, effectiveRecordingMs());
         const blob = new Blob(voiceChunksRef.current, { type: recorder.mimeType || "audio/webm" });
         voiceChunksRef.current = [];
 
@@ -282,13 +353,16 @@ const typingTimerRef = useRef(null);
 
       recorder.start();
       recordingTimerRef.current = setInterval(() => {
-        const elapsed = Date.now() - recordingStartedAtRef.current;
+        const elapsed = effectiveRecordingMs();
         setRecordingMs(Math.min(MAX_VOICE_MS, elapsed));
         if (elapsed >= MAX_VOICE_MS) stopRecording(true);
       }, 200);
     } catch (e) {
       cleanupRecordingStream();
+      stopVoiceAnalyser();
       setRecording(false);
+      recordingPausedRef.current = false;
+      setRecordingPaused(false);
       setVoiceError(e?.message || "Could not access microphone");
     }
   };
@@ -306,12 +380,41 @@ const typingTimerRef = useRef(null);
     setRecordingLocked(false);
     stopRecordingTimer();
     cleanupRecordingStream();
+    stopVoiceAnalyser();
     const recorder = mediaRecorderRef.current;
     if (recorder && recorder.state !== "inactive") {
       recorder.stop();
     } else {
       setRecording(false);
+      recordingPausedRef.current = false;
+      setRecordingPaused(false);
     }
+  };
+
+  const toggleRecordingPause = (e) => {
+    e?.stopPropagation?.();
+    const recorder = mediaRecorderRef.current;
+    if (!recorder || recorder.state === "inactive") return;
+
+    if (recordingPausedRef.current) {
+      if (typeof recorder.resume === "function" && recorder.state === "paused") {
+        recorder.resume();
+      }
+      if (pauseStartedAtRef.current) {
+        pausedTotalMsRef.current += Date.now() - pauseStartedAtRef.current;
+      }
+      pauseStartedAtRef.current = 0;
+      recordingPausedRef.current = false;
+      setRecordingPaused(false);
+      return;
+    }
+
+    if (typeof recorder.pause === "function" && recorder.state === "recording") {
+      recorder.pause();
+    }
+    pauseStartedAtRef.current = Date.now();
+    recordingPausedRef.current = true;
+    setRecordingPaused(true);
   };
 
   const canQuickRecord = !text.trim() && !imgFile && !voiceFile;
@@ -345,7 +448,11 @@ const typingTimerRef = useRef(null);
   };
 
   const onPrimaryClick = (e) => {
-    if (recording || canQuickRecord) return;
+    if (recording) {
+      if (recordingLocked) stopRecording(true);
+      return;
+    }
+    if (canQuickRecord) return;
     e.stopPropagation();
     handleSend();
   };
@@ -394,6 +501,7 @@ const typingTimerRef = useRef(null);
   useEffect(() => () => {
     stopRecordingTimer();
     cleanupRecordingStream();
+    stopVoiceAnalyser();
     if (voiceFile?.previewUrl) URL.revokeObjectURL(voiceFile.previewUrl);
   }, [voiceFile?.previewUrl]);
 
@@ -444,11 +552,11 @@ return (
         <div className="voice-error">{voiceError}</div>
       )}
 
-      {recording && (
+      {false && recording && (
         <div className={`recording-panel${recordingLocked ? " locked" : ""}`} onClick={e => e.stopPropagation()}>
           <div className="recording-pulse" />
           <span>{formatDuration(recordingMs)}</span>
-          <b>{recordingLocked ? "Locked" : "Swipe up to lock"}</b>
+          <b>{recordingLocked ? "" : ""}</b>
           {recordingLocked && (
             <>
               <button type="button" className="recording-cancel" onClick={cancelRecording}>Cancel</button>
@@ -509,7 +617,22 @@ return (
           </div>
         )}
 
-        <div className="inp-area" onClick={focusInput}>
+        <div className={`inp-area${recording ? " recording-inline" : ""}`} onClick={recording ? e => e.stopPropagation() : focusInput}>
+          {recording && (
+            <>
+              <button type="button" className="recording-inline-cancel" onClick={cancelRecording}>×</button>
+              <div className="recording-pulse" />
+              <span className="recording-time">{formatDuration(recordingMs)}</span>
+              <div className={`voice-live-wave${recordingPaused ? " paused" : ""}`}>
+                {voiceLevels.map((level, index) => (
+                  <i key={index} style={{ height: `${Math.max(5, Math.round(level * 28))}px` }} />
+                ))}
+              </div>
+              <button type="button" className="recording-pause" onClick={toggleRecordingPause} title={recordingPaused ? "Resume" : "Pause"}>
+                {recordingPaused ? <PlayIcon /> : <PauseIcon />}
+              </button>
+            </>
+          )}
           <button type="button" className="emoji-trigger" onClick={toggleEmoji}>😊</button>
           <textarea
             ref={inpRef}
@@ -533,10 +656,10 @@ return (
           onPointerMove={onPrimaryPointerMove}
           onPointerUp={onPrimaryPointerUp}
           onPointerCancel={cancelRecording}
-          disabled={disabled || (recording && recordingLocked)}
-          title={canQuickRecord ? "Hold to record" : "Send"}
+          disabled={disabled}
+          title={recordingLocked ? "Send voice" : canQuickRecord ? "Hold to record" : "Send"}
         >
-          {canQuickRecord ? <MicIcon /> : <SendIcon />}
+          {recordingLocked ? <SendIcon /> : canQuickRecord ? <MicIcon /> : <SendIcon />}
         </button>
       </div>
     </>
@@ -577,6 +700,23 @@ function SendIcon() {
     <svg className="btn-icon send-icon" viewBox="0 0 24 24" aria-hidden="true">
       <path d="M4.5 12h14" />
       <path d="M13 6.5 18.5 12 13 17.5" />
+    </svg>
+  );
+}
+
+function PauseIcon() {
+  return (
+    <svg className="btn-icon pause-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M9 7v10" />
+      <path d="M15 7v10" />
+    </svg>
+  );
+}
+
+function PlayIcon() {
+  return (
+    <svg className="btn-icon play-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M9 6.5v11l8-5.5-8-5.5Z" />
     </svg>
   );
 }

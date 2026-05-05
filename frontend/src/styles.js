@@ -773,6 +773,73 @@ button{color:inherit}
   padding:8px 8px 8px 12px;
   cursor:text;
 }
+.inp-area.recording-inline{
+  align-items:center;
+  padding:8px 10px;
+  cursor:default;
+}
+.inp-area.recording-inline>.emoji-trigger,
+.inp-area.recording-inline>.msg-inp,
+.inp-area.recording-inline>input{
+  display:none;
+}
+.recording-inline-cancel,
+.recording-pause{
+  border:none;
+  background:transparent;
+  color:var(--t2);
+  cursor:pointer;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.recording-inline-cancel{
+  width:30px;
+  height:30px;
+  border-radius:50%;
+  background:var(--bg2);
+  color:var(--t1);
+  font-size:20px;
+  line-height:1;
+}
+.recording-time{
+  color:var(--t1);
+  font-size:14px;
+  font-weight:900;
+  min-width:42px;
+}
+.voice-live-wave{
+  flex:1;
+  min-width:80px;
+  height:32px;
+  display:flex;
+  align-items:center;
+  gap:2px;
+  overflow:hidden;
+}
+.voice-live-wave i{
+  width:3px;
+  min-height:5px;
+  border-radius:999px;
+  background:var(--t2);
+  opacity:.72;
+  transition:height .08s linear, opacity .12s;
+}
+.voice-live-wave.paused i{
+  opacity:.32;
+}
+.recording-pause{
+  width:34px;
+  height:34px;
+  border-radius:50%;
+  background:var(--bg2);
+  color:var(--t1);
+  flex-shrink:0;
+}
+.recording-pause .btn-icon{
+  width:19px;
+  height:19px;
+}
 .msg-inp{
   flex:1;
   min-height:30px;
@@ -949,7 +1016,7 @@ button{color:inherit}
   box-shadow:0 14px 34px rgba(229,72,77,.3);
 }
 .send-btn.locked{
-  opacity:.7;
+  opacity:1;
 }
 .emoji-picker{
   position:absolute;
