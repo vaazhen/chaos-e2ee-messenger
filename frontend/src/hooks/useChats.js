@@ -16,7 +16,8 @@ export function useChats(myId) {
     try {
       const data = await api.getChats();
       if (Array.isArray(data)) {
-        setChats(data.map(c => mapChat(c, resolvedId)));
+        const mapped = data.map(c => mapChat(c, resolvedId));
+        setChats(prev => reconcileChats(prev, mapped));
       }
     } catch (e) {
       console.error("loadChats:", e);
@@ -56,8 +57,12 @@ export function useChats(myId) {
   }, []);
 
   const markChatOnlineStatus = useCallback((username, isOnline) => {
+    const normalized = String(username || "").trim().toLowerCase();
+    if (!normalized) return;
     setChats(prev => prev.map(c =>
-      c.username === username ? { ...c, online: isOnline } : c
+      String(c.username || "").trim().toLowerCase() === normalized
+        ? { ...c, online: isOnline }
+        : c
     ));
   }, []);
 
@@ -124,4 +129,22 @@ function sortChatsByActivity(chats) {
 
     return Number(b.id || 0) - Number(a.id || 0);
   });
+}
+
+function reconcileChats(prevChats, nextChats) {
+  const prevById = new Map((prevChats || []).map(chat => [String(chat.id), chat]));
+  const merged = (nextChats || []).map(next => {
+    const prev = prevById.get(String(next.id));
+    if (!prev) return next;
+
+    return {
+      ...prev,
+      ...next,
+      // Preserve optimistic preview until server side catches up.
+      preview: next.preview || prev.preview || "",
+      time: next.time || prev.time || "",
+      lastActivityAt: next.lastActivityAt || prev.lastActivityAt || next.lastMessageAt || prev.lastMessageAt || null,
+    };
+  });
+  return sortChatsByActivity(merged);
 }
