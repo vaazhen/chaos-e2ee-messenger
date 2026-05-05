@@ -25,6 +25,7 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
             select distinct on (m.chat_id) *
             from messages m
             where m.chat_id in (:chatIds)
+              and m.deleted_at is null
             order by m.chat_id, m.created_at desc, m.id desc
             """, nativeQuery = true)
     List<Message> findLatestByChatIds(@Param("chatIds") List<Long> chatIds);
