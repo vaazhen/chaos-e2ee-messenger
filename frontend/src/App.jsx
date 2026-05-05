@@ -287,11 +287,11 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
 
   const beginDelete = (msg) => { setCtx(null); setDeleteTarget(msg); };
 
-  const confirmDelete = (scope) => {
+  const confirmDelete = async (scope) => {
     if (!deleteTarget || !chatStore.activeId) return;
-    msgStore.deleteMessage(chatStore.activeId, deleteTarget, scope);
+    const deleted = await msgStore.deleteMessage(chatStore.activeId, deleteTarget, scope);
     setDeleteTarget(null);
-    if (scope === "everyone") {
+    if (deleted && scope === "everyone") {
       setTimeout(() => chatStore.loadChats(auth.me?.id), 250);
     }
   };
