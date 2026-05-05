@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 const mocks = vi.hoisted(() => ({
@@ -44,6 +44,10 @@ function buildChat(overrides = {}) {
 }
 
 describe("GroupAdminPanel", () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
@@ -87,7 +91,7 @@ describe("GroupAdminPanel", () => {
     expect(screen.getByRole("menuitem", { name: /Remove from group/i })).toBeInTheDocument();
   });
 
-  it('renders "Show more" when filtered list exceeds page size', async () => {
+  it("paginates participants when list exceeds page size (30 per page)", async () => {
     const { default: GroupAdminPanel } = await import("../components/GroupAdminPanel");
     const many = Array.from({ length: 160 }, (_, i) => ({
       userId: 1000 + i,
@@ -97,7 +101,41 @@ describe("GroupAdminPanel", () => {
     }));
     render(<GroupAdminPanel me={{ id: 99 }} chat={buildChat({ groupParticipants: many })} l={l} onRefreshGroup={vi.fn()} />);
 
-    expect(screen.getByRole("button", { name: /Show more/i })).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: /Participant list pages/i })).toBeInTheDocument();
+    expect(screen.getByText(/Page 1 of 6/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Next$/i })).toBeEnabled();
+
+    expect(screen.getByText("User0")).toBeInTheDocument();
+    expect(screen.queryByText("User31")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^Next$/i }));
+    expect(screen.queryByText("User0")).not.toBeInTheDocument();
+    expect(screen.getByText("User31")).toBeInTheDocument();
+  });
+
+  it("filters participants by role", async () => {
+    const { default: GroupAdminPanel } = await import("../components/GroupAdminPanel");
+    render(<GroupAdminPanel me={{ id: 99 }} chat={buildChat()} l={l} onRefreshGroup={vi.fn()} />);
+
+    expect(screen.getByText("Alice")).toBeInTheDocument();
+    const roleSelect = document.getElementById("ga-participant-role-filter");
+    fireEvent.change(roleSelect, { target: { value: "ADMIN" } });
+
+    expect(screen.queryByText("Alice")).not.toBeInTheDocument();
+    expect(screen.getByText("Carol")).toBeInTheDocument();
+  });
+
+  it("shows muted-only filter when payload includes muted participants", async () => {
+    const { default: GroupAdminPanel } = await import("../components/GroupAdminPanel");
+    const participants = [
+      { userId: 1, firstName: "Alice", username: "alice", role: "MEMBER" },
+      { userId: 2, firstName: "Bob", username: "bob", role: "MEMBER", mutedUntil: "2099-01-01T00:00:00.000Z" },
+    ];
+    render(<GroupAdminPanel me={{ id: 99 }} chat={buildChat({ groupParticipants: participants })} l={l} onRefreshGroup={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /Muted only/i }));
+
+    expect(screen.queryByText("Alice")).not.toBeInTheDocument();
+    expect(screen.getByText("Bob")).toBeInTheDocument();
   });
 });
 
@@ -113,7 +151,7 @@ describe("GroupAdminModal", () => {
     );
 
     expect(screen.getByRole("dialog", { name: /Group management/i })).toBeInTheDocument();
-    expect(container.querySelector(".user-profile-screen")).toBeTruthy();
+    expect(container.querySelector(".user-profile-screen.group-admin-modal-screen")).toBeTruthy();
     expect(container.querySelector(".user-profile-modal-bg")).toBeTruthy();
   });
 });

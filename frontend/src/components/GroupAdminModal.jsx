@@ -17,12 +17,24 @@ export default function GroupAdminModal({ me, chat, l, onRefreshGroup, onClose }
 
   return (
     <div className="modal-bg user-profile-modal-bg" onClick={onClose} role="presentation">
-      <div className="user-profile-screen" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="group-admin-modal-title">
+      <div
+        className="user-profile-screen group-admin-modal-screen"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="group-admin-modal-title"
+      >
         <div className="sheet-head">
           <div id="group-admin-modal-title" className="sheet-title">
             {l("Управление группой", "Group management")}
           </div>
-          <button type="button" className="round-action" onClick={onClose} aria-label={l("Закрыть", "Close")}>
+          <button
+            type="button"
+            className="round-action"
+            onClick={onClose}
+            title={l("Закрыть", "Close")}
+            aria-label={l("Закрыть", "Close")}
+          >
             ×
           </button>
         </div>
