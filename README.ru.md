@@ -133,8 +133,9 @@ messageKey   = HMAC-SHA256(chainKey, 0x01)
 | **Multi-device** | Отдельный конверт на устройство · UI управления · Отзыв доступа |
 | **Авторизация** | Phone + SMS OTP · Email + пароль · JWT access/refresh · Redis rate limiting |
 | **Сообщения** | Личные и групповые чаты · Realtime WebSocket/STOMP · Typing indicator |
+| **Админка групп** | Роли в payload (`OWNER/ADMIN/MODERATOR/MEMBER`) · Поля политик write/edit/invite |
 | **Операции** | Ответ · Редактирование · Soft delete · Фото · Статусы прочтения ✓✓ · Presence · Поиск пользователей |
-| **Backend** | Spring Boot 3 · PostgreSQL 16 · Flyway 21 миграция · Redis 7 · Docker Compose |
+| **Backend** | Spring Boot 3 · PostgreSQL 16 · Flyway-миграции (V1–V29) · Redis 7 · Docker Compose |
 | **Наблюдаемость** | Actuator · Prometheus · Grafana (провизионирован, без настройки) |
 | **Тесты** | 24 backend (Testcontainers) · 12 frontend (Vitest) · E2E (Playwright) |
 | **DX** | GitHub Actions CI · OpenAPI 3.1 · Swagger UI · запуск одной командой |
@@ -214,6 +215,76 @@ cd frontend && npm install && npm run dev
 | **Profile** | Получение · Обновление · Аватар · Проверка username |
 | **Users** | Поиск по username |
 
+### Групповые чаты — роли и политики
+
+Роли хранятся для каждого участника в `chat_participants.role`. Порядок полномочий (от большего к меньшему): **`OWNER` → `ADMIN` → `MODERATOR` → `MEMBER`**.
+
+| Роль | Назначение |
+|------|------------|
+| **OWNER** | Создатель группы; единственная роль, которая может менять политики (`whoCan*`) и архивировать группу; может передать владение (прежний владелец становится `ADMIN`). |
+| **ADMIN** | Может приглашать (по `whoCanInvite`), править профиль группы (по `whoCanEditInfo`), менять роли (с ограничениями относительно других админов), удалять/мутить/банить участников и модераторов; владельца затронуть нельзя. |
+| **MODERATOR** | Может мутить/банить/удалять **только участников** (`MEMBER`); не меняет роли. |
+| **MEMBER** | Дефолт для приглашённых; без модерации и смены ролей. |
+
+Поля политик в строке `chats` задают, кто может выполнять действие. API принимает строковые значения (без учёта регистра):
+
+| Поле | Допустимые значения | Смысл |
+|------|---------------------|--------|
+| **`whoCanWrite`** | `ALL`, `MODERATORS`, `ADMINS`, `OWNER` | Кто может отправлять сообщения. `ALL` — любой участник, не замьюченный и не забаненный. |
+| **`whoCanEditInfo`** | `ANYONE`, `MODERATORS`, `ADMINS`, `OWNER` | Кто может менять название, URL аватара и описание группы (`PATCH .../group/settings`). `ANYONE` — любой участник с достаточной ролью. |
+| **`whoCanInvite`** | `ANYONE`, `MODERATORS`, `ADMINS`, `OWNER` | Кто может добавлять участников (`POST .../group/participants`). |
+
+**Дефолты при создании:** создатель — `OWNER`; приглашённые — `MEMBER`; `whoCanWrite=ALL`, `whoCanEditInfo=ADMINS`, `whoCanInvite=ADMINS`.
+
+**`ChatResponse` (группа):** содержит `groupAvatarUrl`, `groupBio`, `whoCanWrite`, `whoCanEditInfo`, `whoCanInvite`, `myRole`, `groupParticipants[]`. В каждом `GroupParticipantInfo` — `userId`, поля профиля, `role`, `mutedUntil`, `banned` (boolean).
+
+### HTTP API администрирования групп
+
+Все маршруты под `/api/chats`, требуют `Authorization: Bearer <jwt>` и `X-Device-Id`; где указано — возвращают `ChatResponse`.
+
+| Метод | Путь | Тело / query | Примечание |
+|--------|------|--------------|------------|
+| `POST` | `/group` | `{ "name": "Team", "memberIds": [2,3,4] }` | Создание группы; ответ `{ "chatId": ... }`. |
+| `GET` | `/my` | `offset`, `limit` | Список чатов с политиками и участниками групп. |
+| `POST` | `/{chatId}/group/participants` | `{ "userIds": [5,6] }` | Приглашение; ограничено `whoCanInvite`. |
+| `PATCH` | `/{chatId}/group/settings` | `{ "name"?, "avatarUrl"?, "bio"? }` | `null` — не менять; пустая строка — очистить. Ограничено `whoCanEditInfo`. |
+| `PATCH` | `/{chatId}/group/participants/{participantUserId}/role` | `{ "role": "ADMIN" }` | Смена роли: только владелец может назначить `OWNER` (передача владения); у админов/модераторов свои ограничения (см. правила в сервисе). |
+| `PATCH` | `/{chatId}/group/permissions` | `{ "whoCanWrite"?, "whoCanEditInfo"?, "whoCanInvite"? }` | **Только `OWNER`.** |
+| `DELETE` | `/{chatId}/group/participants/{participantUserId}` | — | Исключение участника; нужны права модерации (см. ниже). |
+| `DELETE` | `/{chatId}/group` | — | Архивация группы; **только `OWNER`** (мягкое удаление через `deleted_at`). |
+
+**Запросы на личный чат** (без изменений; используются вместе с группами):
+
+| Метод | Путь | Примечание |
+|--------|------|------------|
+| `GET` | `/requests` | Входящие запросы для текущего пользователя. |
+| `POST` | `/{chatId}/requests/accept` | Принять. |
+| `POST` | `/{chatId}/requests/decline` | Отклонить. |
+
+### Модерация группы (mute / ban)
+
+Данные хранятся в `chat_participants`: `muted_until`, `banned_at`, `banned_by`, `ban_reason` (миграция Flyway `V29`).
+
+| Метод | Путь | Параметры | Поведение |
+|--------|------|-----------|-----------|
+| `POST` | `/{chatId}/group/participants/{participantUserId}/mute` | `minutes` (обязателен, 1–43200) | `muted_until = сейчас + minutes`. |
+| `DELETE` | `/{chatId}/group/participants/{participantUserId}/mute` | — | Снять мут. |
+| `POST` | `/{chatId}/group/participants/{participantUserId}/ban` | `reason` (опционально) | Бан; мут сбрасывается; причина до 255 символов. |
+| `DELETE` | `/{chatId}/group/participants/{participantUserId}/ban` | — | Снять бан. |
+
+**Отправка сообщений:** `MessageService` отклоняет отправку для **забаненных** (`"You are banned in this group"`) и **замьюченных** (`"You are muted in this group"`). Самомодерация и воздействие на **владельца** запрещены. **Модераторы** действуют только против **участников**; **админы** — против участников и модераторов, не против владельца и других админов.
+
+Успешные операции возвращают обновлённый `ChatResponse` и уведомляют подписчиков списка чатов по WebSocket.
+
+### Подсказки контактов при создании группы
+
+Отдельного backend-эндпоинта с рекомендациями **нет**. В UI **нового чата / новой группы**, пока строка поиска пуста или короче двух символов, клиент показывает **контакты из существующих личных чатов** (собеседник в каждом `direct`-чате). Поиск по username по-прежнему через `GET /api/users/search?q=...` при вводе от двух символов.
+
+### Поиск и запросы в UI нового чата
+
+- Явный поиск пользователей: `GET /api/users/search?q=...` (минимальная длина запроса задаётся в UI).
+- Входящие запросы на личный чат: `GET /api/chats/requests`.
+
 **WebSocket-топики** (STOMP, JWT аутентификация):
 
 ```
@@ -251,7 +322,7 @@ chaos-messenger/
 │   ├── user/          # Пользователи · профили
 │   └── common/        # Ошибки · i18n · утилиты
 ├── backend/src/main/resources/
-│   ├── db/migration/  # V1–V22 Flyway (21 файл, нет V3)
+│   ├── db/migration/  # V1–V29 Flyway: админка групп, модерация, direct requests, bio профиля
 │   ├── messages.properties      # EN сообщения об ошибках
 │   └── messages_ru.properties   # RU сообщения об ошибках
 ├── frontend/src/
@@ -294,6 +365,21 @@ VITE_API_BASE=http://localhost:8080/api
 VITE_WS_URL=http://localhost:8080/ws
 ```
 </details>
+
+---
+
+## Миграции и setup-заметки
+
+При старте **Spring Boot выполняет Flyway** для настроенной PostgreSQL и применяет новые скрипты из `backend/src/main/resources/db/migration/` по возрастанию версии. Для уже существующей БД убедитесь, что схема доведена как минимум до **`V29`**, иначе модерация и часть admin API будут неконсистентны.
+
+Последние миграции:
+
+| Версия | Файл | Назначение |
+|--------|------|------------|
+| V26 | `V26__direct_chat_requests.sql` | Жизненный цикл запроса в личный чат (`PENDING` / принятие / отклонение). |
+| V27 | `V27__add_user_bio.sql` | Поле `bio` в профиле пользователя. |
+| V28 | `V28__group_admin_features.sql` | Роли группы; `who_can_write` / `who_can_edit_info` / `who_can_invite`; `avatar_url`, `bio`, `deleted_at` у группы; backfill `OWNER` для существующих групп (самый ранний участник). |
+| V29 | `V29__group_moderation_controls.sql` | На участнике: `muted_until`, `banned_at`, `banned_by`, `ban_reason`. |
 
 ---
 
