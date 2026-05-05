@@ -88,6 +88,22 @@ describe("crypto-engine frontend safety checks", () => {
     expect(localStorage.getItem("cm_device_id")).toBe(first);
   });
 
+  it("resetLocalDeviceIdentity clears local device keys and creates a fresh id", async () => {
+    await loadCryptoEngine();
+
+    localStorage.setItem("cm_device_id", "device-old");
+    localStorage.setItem("cm_device_bundle_v2", JSON.stringify({ deviceId: "device-old" }));
+    localStorage.setItem("cm_e2ee_sessions_v4", JSON.stringify({ session: true }));
+
+    window.e2ee.resetLocalDeviceIdentity();
+
+    expect(localStorage.getItem("cm_device_bundle_v2")).toBeNull();
+    expect(localStorage.getItem("cm_e2ee_sessions_v4")).toBeNull();
+    expect(localStorage.getItem("cm_device_id")).toBeNull();
+    expect(window.e2ee.getOrCreateDeviceId()).toMatch(/^device-/);
+    expect(window.e2ee.getOrCreateDeviceId()).not.toBe("device-old");
+  });
+
   it("decryptEnvelope fails clearly when local bundle is missing", async () => {
     await loadCryptoEngine();
 

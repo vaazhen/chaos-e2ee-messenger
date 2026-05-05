@@ -61,16 +61,34 @@ export async function ensureDeviceRegistered(deviceRegistrationToken) {
     });
     if (!r.ok) {
       const body = await r.json().catch(() => ({}));
-      throw new Error(body?.message || `${r.status}`);
+      const error = new Error(body?.message || `${r.status}`);
+      error.status = r.status;
+      error.code = body?.code;
+      throw error;
     }
     return r.json().catch(() => null);
   };
   apiFn.__canRegisterDevice = Boolean(deviceRegistrationToken);
 
-  await window.e2ee.ensureDeviceRegistered(apiFn);
+  try {
+    await window.e2ee.ensureDeviceRegistered(apiFn);
+  } catch (error) {
+    if (!isDeviceIdentityConflict(error) || !window.e2ee?.resetLocalDeviceIdentity) {
+      throw error;
+    }
+
+    console.warn("[E2EE] Device id conflict, resetting local identity and retrying registration");
+    window.e2ee.resetLocalDeviceIdentity();
+    await window.e2ee.ensureDeviceRegistered(apiFn);
+  }
   const deviceId = window.e2ee.getOrCreateDeviceId();
   console.log("[E2EE] Device registered:", deviceId);
   return deviceId;
+}
+
+function isDeviceIdentityConflict(error) {
+  const message = String(error?.message || "").toLowerCase();
+  return error?.status === 409 && message.includes("device id");
 }
 
 /**

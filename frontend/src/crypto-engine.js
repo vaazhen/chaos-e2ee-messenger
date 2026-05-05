@@ -226,6 +226,15 @@
     function loadSessions()         { return loadJson(SESSION_KEY_PREFIX) || {}; }
     function saveSessions(sessions) { saveJson(SESSION_KEY_PREFIX, sessions); }
 
+    function resetLocalDeviceIdentity() {
+        localStorage.removeItem(DEVICE_KEY_PREFIX);
+        localStorage.removeItem(SESSION_KEY_PREFIX);
+        localStorage.removeItem(DEVICE_ID_KEY_PREFIX);
+        registrationPromise = null;
+        registrationPromiseUsername = null;
+        log('[E2EE] Local device identity reset');
+    }
+
     function sessionKey(localDeviceId, remoteDeviceId) {
         return `device:${localDeviceId}:remote:${remoteDeviceId}`;
     }
@@ -610,6 +619,7 @@
     window.e2ee = {
         getOrCreateDeviceId,
         getLocalDeviceBundle,
+        resetLocalDeviceIdentity,
         ensureDeviceRegistered,
         buildFanoutRequest,
         decryptEnvelope
