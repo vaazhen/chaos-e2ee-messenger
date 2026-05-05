@@ -70,22 +70,22 @@ class PreKeyServiceTest {
 
         PreKeyBundleResponse response = preKeyService.getBundleByUsername("alice");
 
-        assertThat(response.getUsername()).isEqualTo("alice");
-        assertThat(response.getDevices()).hasSize(1);
+        assertThat(response.username()).isEqualTo("alice");
+        assertThat(response.devices()).hasSize(1);
 
-        DeviceBundleDto dto = response.getDevices().get(0);
-        assertThat(dto.getUserId()).isEqualTo(alice.getId());
-        assertThat(dto.getDeviceDbId()).isEqualTo(10L);
-        assertThat(dto.getDeviceId()).isEqualTo("alice-phone");
-        assertThat(dto.getRegistrationId()).isEqualTo(123);
-        assertThat(dto.getIdentityPublicKey()).isEqualTo("identity-alice-phone");
+        DeviceBundleDto dto = response.devices().get(0);
+        assertThat(dto.userId()).isEqualTo(alice.getId());
+        assertThat(dto.deviceDbId()).isEqualTo(10L);
+        assertThat(dto.deviceId()).isEqualTo("alice-phone");
+        assertThat(dto.registrationId()).isEqualTo(123);
+        assertThat(dto.identityPublicKey()).isEqualTo("identity-alice-phone");
 
-        assertThat(dto.getSignedPreKey().getPreKeyId()).isEqualTo(7);
-        assertThat(dto.getSignedPreKey().getPublicKey()).isEqualTo("signed-public");
-        assertThat(dto.getSignedPreKey().getSignature()).isEqualTo("signature");
+        assertThat(dto.signedPreKey().preKeyId()).isEqualTo(7);
+        assertThat(dto.signedPreKey().publicKey()).isEqualTo("signed-public");
+        assertThat(dto.signedPreKey().signature()).isEqualTo("signature");
 
-        assertThat(dto.getOneTimePreKey().getPreKeyId()).isEqualTo(101);
-        assertThat(dto.getOneTimePreKey().getPublicKey()).isEqualTo("otp-public");
+        assertThat(dto.oneTimePreKey().preKeyId()).isEqualTo(101);
+        assertThat(dto.oneTimePreKey().publicKey()).isEqualTo("otp-public");
 
         verify(oneTimePreKeyRepository, never()).findAvailableForUpdate(10L);
         verify(oneTimePreKeyRepository, never()).save(oneTime);
@@ -104,9 +104,9 @@ class PreKeyServiceTest {
 
         PreKeyBundleResponse response = preKeyService.getBundleByUsername("alice");
 
-        DeviceBundleDto dto = response.getDevices().get(0);
-        assertThat(dto.getSignedPreKey()).isNull();
-        assertThat(dto.getOneTimePreKey()).isNull();
+        DeviceBundleDto dto = response.devices().get(0);
+        assertThat(dto.signedPreKey()).isNull();
+        assertThat(dto.oneTimePreKey()).isNull();
     }
 
     @Test
@@ -156,17 +156,17 @@ class PreKeyServiceTest {
 
         ResolvedChatDevicesResponse response = preKeyService.resolveChatDevices("alice", 100L);
 
-        assertThat(response.getChatId()).isEqualTo(100L);
-        assertThat(response.getUsername()).isEqualTo("alice");
-        assertThat(response.getCurrentDeviceId()).isEqualTo("alice-phone");
-        assertThat(response.getTargetDevices()).extracting(DeviceBundleDto::getDeviceId)
+        assertThat(response.chatId()).isEqualTo(100L);
+        assertThat(response.username()).isEqualTo("alice");
+        assertThat(response.currentDeviceId()).isEqualTo("alice-phone");
+        assertThat(response.targetDevices()).extracting(DeviceBundleDto::deviceId)
                 .containsExactly("alice-phone", "bob-laptop");
 
-        DeviceBundleDto aliceDto = response.getTargetDevices().get(0);
-        assertThat(aliceDto.getOneTimePreKey().getPublicKey()).isEqualTo("alice-otp");
+        DeviceBundleDto aliceDto = response.targetDevices().get(0);
+        assertThat(aliceDto.oneTimePreKey().publicKey()).isEqualTo("alice-otp");
 
-        DeviceBundleDto bobDto = response.getTargetDevices().get(1);
-        assertThat(bobDto.getOneTimePreKey().getPublicKey()).isEqualTo("bob-otp");
+        DeviceBundleDto bobDto = response.targetDevices().get(1);
+        assertThat(bobDto.oneTimePreKey().publicKey()).isEqualTo("bob-otp");
 
         assertThat(aliceOtp.getUsedAt()).isNull();
         assertThat(bobOtp.getUsedAt()).isNotNull();
@@ -201,7 +201,7 @@ class PreKeyServiceTest {
 
         ResolvedChatDevicesResponse response = preKeyService.resolveChatDevices("alice", 100L);
 
-        assertThat(response.getTargetDevices()).extracting(DeviceBundleDto::getDeviceId)
+        assertThat(response.targetDevices()).extracting(DeviceBundleDto::deviceId)
                 .containsExactly("alice-phone", "same-device-id");
 
         verify(oneTimePreKeyRepository, never()).findAvailableForUpdate(21L);
@@ -243,3 +243,5 @@ class PreKeyServiceTest {
                 .build();
     }
 }
+
+

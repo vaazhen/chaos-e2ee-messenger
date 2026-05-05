@@ -15,9 +15,18 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
 
     Optional<Message> findTopByChatIdOrderByCreatedAtDesc(Long chatId);
 
-    Optional<Message> findByClientMessageId(String clientMessageId);
+    Optional<Message> findBySenderIdAndSenderDeviceIdAndClientMessageId(
+            Long senderId,
+            String senderDeviceId,
+            String clientMessageId
+    );
 
-    @Query("select m from Message m where m.chatId in :chatIds and m.createdAt = (select max(m2.createdAt) from Message m2 where m2.chatId = m.chatId)")
+    @Query(value = """
+            select distinct on (m.chat_id) *
+            from messages m
+            where m.chat_id in (:chatIds)
+            order by m.chat_id, m.created_at desc, m.id desc
+            """, nativeQuery = true)
     List<Message> findLatestByChatIds(@Param("chatIds") List<Long> chatIds);
 
     @Query("select m from Message m where m.chatId = :chatId and (:beforeId is null or m.id < :beforeId) order by m.id desc")
