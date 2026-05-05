@@ -7,6 +7,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.core.Authentication;
 import ru.messenger.chaosmessenger.chat.dto.ChatResponse;
+import ru.messenger.chaosmessenger.chat.dto.CreateGroupRequest;
 import ru.messenger.chaosmessenger.chat.service.ChatService;
 
 import java.time.LocalDateTime;
@@ -90,9 +91,7 @@ class ChatControllerTest {
 
     @Test
     void createGroupChatDelegatesNameAndMemberIds() {
-        ChatController.CreateGroupRequest request = new ChatController.CreateGroupRequest();
-        request.setName("Team");
-        request.setMemberIds(List.of(2L, 3L));
+        CreateGroupRequest request = new CreateGroupRequest("Team", List.of(2L, 3L));
 
         when(authentication.getName()).thenReturn("alice");
         when(chatService.createGroupChat("alice", "Team", List.of(2L, 3L))).thenReturn(200L);
