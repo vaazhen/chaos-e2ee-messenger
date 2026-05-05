@@ -67,6 +67,17 @@ public class DeviceService {
         Optional<UserDevice> existingDevice = userDeviceRepository
                 .findByUserUsernameAndDeviceId(username, request.deviceId());
 
+        if (existingDevice.isEmpty()) {
+            userDeviceRepository.findByDeviceId(request.deviceId())
+                    .ifPresent(device -> {
+                        Long ownerId = device.getUser() == null ? null : device.getUser().getId();
+                        if (!user.getId().equals(ownerId)) {
+                            throw new IllegalStateException(
+                                    "Device id is already registered to another account. Reset local device identity and retry.");
+                        }
+                    });
+        }
+
         boolean newDevice = existingDevice.isEmpty();
         if (newDevice && (request.oneTimePreKeys() == null || request.oneTimePreKeys().isEmpty())) {
             throw new IllegalArgumentException("At least one one-time pre-key is required");
