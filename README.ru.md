@@ -229,7 +229,7 @@ cd frontend && npm install && npm run dev
 ## Тесты
 
 ```bash
-cd backend && mvn test                   # JUnit 5 + Testcontainers
+cd backend && ./mvnw verify              # JUnit 5 + Testcontainers + JaCoCo checks
 cd frontend && npm test                  # Vitest
 cd frontend && npm run test:e2e          # Playwright
 ```

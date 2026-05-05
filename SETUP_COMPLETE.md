@@ -210,7 +210,7 @@ Backend:
 
 ```bash
 cd backend
-mvn test
+./mvnw verify
 ```
 
 Frontend:

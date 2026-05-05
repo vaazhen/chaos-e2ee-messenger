@@ -12,6 +12,32 @@ async function loadCryptoEngine() {
   await import("../crypto-engine.js");
 }
 
+function bytesToB64(bytes) {
+  return btoa(String.fromCharCode(...bytes));
+}
+
+function testBundle() {
+  return {
+    deviceId: "device-self",
+    registrationId: 1,
+    identity: {
+      publicKey: bytesToB64(new Uint8Array(32).fill(7)),
+      privateKeyPkcs8: bytesToB64(new Uint8Array(64).fill(13)),
+    },
+    signingKey: {
+      publicKeySpki: "signing-public",
+      privateKeyPkcs8: "signing-private",
+    },
+    signedPreKey: {
+      preKeyId: 1,
+      publicKey: "signed-pre-key-public",
+      privateKeyPkcs8: "signed-pre-key-private",
+      signature: "signature",
+    },
+    oneTimePreKeys: [],
+  };
+}
+
 describe("crypto-engine frontend safety checks", () => {
   beforeEach(() => {
     vi.resetModules();
@@ -70,5 +96,37 @@ describe("crypto-engine frontend safety checks", () => {
       ciphertext: "bad",
       nonce: "bad",
     })).rejects.toThrow("Local device bundle is missing");
+  });
+
+  it("encrypts self envelopes with private identity material instead of public key material", async () => {
+    await loadCryptoEngine();
+
+    const bundle = testBundle();
+    localStorage.setItem("cm_device_bundle_v2", JSON.stringify(bundle));
+
+    const api = vi.fn(async (path) => {
+      expect(path).toBe("/api/crypto/resolve-chat-devices/100");
+      return {
+        targetDevices: [{
+          userId: 1,
+          deviceId: bundle.deviceId,
+        }],
+      };
+    });
+
+    const request = await window.e2ee.buildFanoutRequest(api, 100, "private self secret");
+    const selfEnvelope = request.envelopes[0];
+
+    expect(selfEnvelope.messageType).toBe("SELF_WHISPER");
+
+    localStorage.setItem("cm_device_bundle_v2", JSON.stringify({
+      ...bundle,
+      identity: {
+        ...bundle.identity,
+        publicKey: bytesToB64(new Uint8Array(32).fill(99)),
+      },
+    }));
+
+    await expect(window.e2ee.decryptEnvelope(selfEnvelope)).resolves.toBe("private self secret");
   });
 });
