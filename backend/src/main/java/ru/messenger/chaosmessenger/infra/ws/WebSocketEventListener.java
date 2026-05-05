@@ -25,12 +25,14 @@ public class WebSocketEventListener {
 
         if (accessor.getUser() != null) {
             String username = accessor.getUser().getName();
+            String sessionId = accessor.getSessionId();
 
-            log.info("USER CONNECTED: {}", username);
+            log.info("USER CONNECTED: {} sessionId={}", username, sessionId);
 
-            onlineService.setOnline(username);
-            messagingTemplate.convertAndSend("/topic/user/status",
-                    new UserStatusEvent(username, "ONLINE", System.currentTimeMillis()));
+            if (onlineService.markSessionOnline(username, sessionId)) {
+                messagingTemplate.convertAndSend("/topic/user/status",
+                        new UserStatusEvent(username, "ONLINE", System.currentTimeMillis()));
+            }
         }
     }
 
@@ -40,12 +42,14 @@ public class WebSocketEventListener {
 
         if (accessor.getUser() != null) {
             String username = accessor.getUser().getName();
+            String sessionId = accessor.getSessionId();
 
-            log.info("USER DISCONNECTED: {}", username);
+            log.info("USER DISCONNECTED: {} sessionId={}", username, sessionId);
 
-            onlineService.setOffline(username);
-            messagingTemplate.convertAndSend("/topic/user/status",
-                    new UserStatusEvent(username, "OFFLINE", System.currentTimeMillis()));
+            if (onlineService.markSessionOffline(username, sessionId)) {
+                messagingTemplate.convertAndSend("/topic/user/status",
+                        new UserStatusEvent(username, "OFFLINE", System.currentTimeMillis()));
+            }
         }
     }
 }

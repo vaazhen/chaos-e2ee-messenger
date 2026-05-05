@@ -1,20 +1,24 @@
 package ru.messenger.chaosmessenger.infra.ws;
 
-import lombok.AllArgsConstructor;
+import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
-import ru.messenger.chaosmessenger.infra.ws.WebSocketAuthChannelInterceptor;
+import java.util.Arrays;
 
 @Configuration
 @EnableWebSocketMessageBroker
-@AllArgsConstructor
+@RequiredArgsConstructor
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final WebSocketAuthChannelInterceptor webSocketAuthChannelInterceptor;
+
+    @Value("${chaos.websocket.allowed-origin-patterns:${chaos.cors.allowed-origin-patterns:${chaos.cors.allowed-origins:http://localhost:5173}}}")
+    private String allowedOriginPatterns;
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry registry) {
@@ -25,16 +29,13 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
+        String[] origins = Arrays.stream(allowedOriginPatterns.split(","))
+                .map(String::trim)
+                .filter(origin -> !origin.isBlank())
+                .toArray(String[]::new);
+
         registry.addEndpoint("/ws")
-                .setAllowedOriginPatterns(
-                        "http://localhost:*",
-                        "http://127.0.0.1:*",
-                        "https://*.trycloudflare.com",
-                        "https://*.loca.lt",
-                        "https://*.ngrok-free.app",
-                        "https://*.ngrok-free.dev",
-                        "https://*.ngrok.io"
-                )
+                .setAllowedOriginPatterns(origins)
                 .withSockJS();
     }
 
