@@ -482,8 +482,9 @@ export default function GroupAdminPanel({ me, chat, l, onRefreshGroup, onClose, 
       )}
       {groupActionError && <div className="profile-error">{groupActionError}</div>}
 
-      <section className="group-admin-participants-block" aria-label={l("Участники", "Participants")}>
-        <h3 className="group-admin-participants-block__title">{l("Участники", "Participants")}</h3>
+      <div className="group-admin-unified-card">
+      <section className="group-admin-section group-admin-section--participants" aria-label={l("Участники", "Participants")}>
+        <h3 className="group-admin-section__title">{l("Участники", "Participants")}</h3>
 
         <div className="group-admin-filters">
           <div className="group-admin-filters__row">
@@ -544,7 +545,7 @@ export default function GroupAdminPanel({ me, chat, l, onRefreshGroup, onClose, 
             )}
           </div>
         </div>
-        <p id="ga-participant-filter-hint" className="tool-note group-admin-hint group-admin-participants-block__hint">
+        <p id="ga-participant-filter-hint" className="tool-note group-admin-hint group-admin-section__hint">
           {l(
             "Поиск и фильтры выполняются на устройстве. Список ниже прокручивается отдельно; страницы по 30 совпадений.",
             "Search and filters run on this device. The list below scrolls on its own; pages show 30 matches each."
@@ -687,6 +688,7 @@ export default function GroupAdminPanel({ me, chat, l, onRefreshGroup, onClose, 
 
       {fullAdmin && (
         <>
+          <div className="group-admin-section-divider" role="presentation" />
           <div className="group-admin-section-label tool-note">{l("Профиль группы", "Group profile")}</div>
           <label className="field-label" htmlFor="ga-group-name">
             {l("Название", "Name")}
@@ -734,6 +736,7 @@ export default function GroupAdminPanel({ me, chat, l, onRefreshGroup, onClose, 
 
       {canChangePermissions && (
         <>
+          <div className="group-admin-section-divider" role="presentation" />
           <div className="group-admin-section-label tool-note">
             {l("Политики группы (только владелец)", "Group policies (owner only)")}
           </div>
@@ -810,6 +813,7 @@ export default function GroupAdminPanel({ me, chat, l, onRefreshGroup, onClose, 
 
       {fullAdmin && (
         <>
+          <div className="group-admin-section-divider" role="presentation" />
           <div className="group-admin-section-label tool-note">{l("Приглашения", "Invites")}</div>
           <label className="field-label" htmlFor="ga-invite-search">
             {l("Найти по имени пользователя", "Find by username")}
@@ -842,6 +846,7 @@ export default function GroupAdminPanel({ me, chat, l, onRefreshGroup, onClose, 
         </>
       )}
 
+      <div className="group-admin-section-divider group-admin-section-divider--footer" role="presentation" />
       <div className="profile-bottom-actions single group-admin-footer-actions">
         {fullAdmin && (
           <button
@@ -898,6 +903,7 @@ export default function GroupAdminPanel({ me, chat, l, onRefreshGroup, onClose, 
             {l("Удалить группу", "Delete group")}
           </button>
         )}
+      </div>
       </div>
     </div>
   );
