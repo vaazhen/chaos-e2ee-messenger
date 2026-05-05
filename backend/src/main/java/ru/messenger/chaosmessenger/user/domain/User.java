@@ -11,7 +11,7 @@ import java.time.LocalDateTime;
  * <p>Authentication is JWT-based. The password is stored as a bcrypt hash in {@link #passwordHash}.
  * SMS-code login is optionally supported via the {@link #phone} field.
  *
- * <p>Profile information ({@link #firstName}, {@link #lastName}, {@link #avatarUrl})
+ * <p>Profile information ({@link #firstName}, {@link #lastName}, {@link #bio}, {@link #avatarUrl})
  * has no bearing on security and is visible to all participants in shared chats.
  *
  * <p>{@link #publicKey} is a legacy V1 migration field that predates per-device keys.
@@ -71,6 +71,10 @@ public class User {
     /** Avatar URL (stored as an external link). */
     @Column(name = "avatar_url", columnDefinition = "text")
     private String avatarUrl;
+
+    /** Short profile bio/about text shown in profile cards. */
+    @Column(name = "bio", length = 280)
+    private String bio;
 
     /**
      * Phone number in E.164 format (e.g. {@code +79001234567}).

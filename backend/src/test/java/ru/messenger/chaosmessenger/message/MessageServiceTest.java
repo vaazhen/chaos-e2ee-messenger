@@ -14,7 +14,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import ru.messenger.chaosmessenger.TestFixtures;
 import ru.messenger.chaosmessenger.chat.domain.Message;
+import ru.messenger.chaosmessenger.chat.domain.Chat;
+import ru.messenger.chaosmessenger.chat.domain.ChatParticipant;
+import ru.messenger.chaosmessenger.chat.domain.GroupRole;
 import ru.messenger.chaosmessenger.chat.repository.ChatParticipantRepository;
+import ru.messenger.chaosmessenger.chat.repository.ChatRepository;
 import ru.messenger.chaosmessenger.common.exception.MessageException;
 import ru.messenger.chaosmessenger.crypto.device.CurrentDeviceService;
 import ru.messenger.chaosmessenger.crypto.device.UserDevice;
@@ -36,6 +40,7 @@ import ru.messenger.chaosmessenger.user.service.UserIdentityService;
 
 import java.util.List;
 import java.util.Optional;
+import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -57,6 +62,7 @@ class MessageServiceTest {
     @Mock MessageReceiptRepository messageReceiptRepository;
     @Mock MessageReactionRepository messageReactionRepository;
     @Mock ChatParticipantRepository participantRepository;
+    @Mock ChatRepository chatRepository;
     @Mock UserRepository userRepository;
     @Mock UserIdentityService userIdentityService;
     @Mock UserDeviceRepository userDeviceRepository;
@@ -203,6 +209,74 @@ class MessageServiceTest {
                         && reaction.getUserId().equals(1L)
                         && reaction.getEmoji().equals("👍")
         ));
+    }
+
+    @Test
+    void rejectsGroupMessageWhenWhoCanWritePolicyBlocksSender() {
+        Chat group = new Chat();
+        group.setId(5L);
+        group.setType("GROUP");
+        group.setWhoCanWrite("ADMINS");
+
+        when(userIdentityService.require("alice")).thenReturn(alice);
+        when(currentDeviceService.requireCurrentDevice()).thenReturn(aliceDevice);
+        when(participantRepository.existsByChatIdAndUserId(5L, 1L)).thenReturn(true);
+        when(chatRepository.findById(5L)).thenReturn(Optional.of(group));
+        when(participantRepository.findByChatIdAndUserId(5L, 1L))
+                .thenReturn(Optional.of(new ChatParticipant(5L, 1L, GroupRole.MEMBER)));
+        when(messageRepository.findBySenderIdAndSenderDeviceIdAndClientMessageId(1L, "device-alice-1", "client-100"))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> messageService.sendEncryptedMessageV2(
+                "alice",
+                sendRequest(5L, "client-100", "device-alice-1")
+        ))
+                .isInstanceOf(MessageException.class)
+                .hasMessageContaining("cannot write");
+    }
+
+    @Test
+    void rejectsGroupMessageWhenSenderIsMuted() {
+        Chat group = new Chat();
+        group.setId(5L);
+        group.setType("GROUP");
+        group.setWhoCanWrite("ALL");
+        ChatParticipant participant = new ChatParticipant(5L, 1L, GroupRole.MEMBER);
+        participant.setMutedUntil(LocalDateTime.now().plusMinutes(5));
+
+        when(userIdentityService.require("alice")).thenReturn(alice);
+        when(currentDeviceService.requireCurrentDevice()).thenReturn(aliceDevice);
+        when(participantRepository.existsByChatIdAndUserId(5L, 1L)).thenReturn(true);
+        when(chatRepository.findById(5L)).thenReturn(Optional.of(group));
+        when(participantRepository.findByChatIdAndUserId(5L, 1L)).thenReturn(Optional.of(participant));
+        when(messageRepository.findBySenderIdAndSenderDeviceIdAndClientMessageId(1L, "device-alice-1", "client-100"))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> messageService.sendEncryptedMessageV2("alice", sendRequest(5L, "client-100", "device-alice-1")))
+                .isInstanceOf(MessageException.class)
+                .hasMessageContaining("muted");
+    }
+
+    @Test
+    void rejectsGroupMessageWhenSenderIsBanned() {
+        Chat group = new Chat();
+        group.setId(5L);
+        group.setType("GROUP");
+        group.setWhoCanWrite("ALL");
+        ChatParticipant participant = new ChatParticipant(5L, 1L, GroupRole.MEMBER);
+        participant.setBannedAt(LocalDateTime.now());
+
+        when(userIdentityService.require("alice")).thenReturn(alice);
+        when(currentDeviceService.requireCurrentDevice()).thenReturn(aliceDevice);
+        when(participantRepository.existsByChatIdAndUserId(5L, 1L)).thenReturn(true);
+        when(chatRepository.findById(5L)).thenReturn(Optional.of(group));
+        when(participantRepository.findByChatIdAndUserId(5L, 1L)).thenReturn(Optional.of(participant));
+        when(messageRepository.findBySenderIdAndSenderDeviceIdAndClientMessageId(1L, "device-alice-1", "client-100"))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> messageService.sendEncryptedMessageV2("alice", sendRequest(5L, "client-100", "device-alice-1")))
+                .isInstanceOf(MessageException.class)
+                .hasMessageContaining("banned");
     }
 
     private static EncryptedSendMessageRequestV2 sendRequest(Long chatId, String clientMessageId, String senderDeviceId) {

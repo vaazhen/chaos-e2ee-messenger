@@ -15,6 +15,7 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import ru.messenger.chaosmessenger.TestFixtures;
 import ru.messenger.chaosmessenger.chat.domain.Message;
 import ru.messenger.chaosmessenger.chat.repository.ChatParticipantRepository;
+import ru.messenger.chaosmessenger.chat.repository.ChatRepository;
 import ru.messenger.chaosmessenger.common.exception.ChatException;
 import ru.messenger.chaosmessenger.common.exception.MessageException;
 import ru.messenger.chaosmessenger.crypto.device.CurrentDeviceService;
@@ -66,6 +67,7 @@ class MessageServiceAdvancedTest {
     @Mock MessageReceiptRepository messageReceiptRepository;
     @Mock MessageReactionRepository messageReactionRepository;
     @Mock ChatParticipantRepository participantRepository;
+    @Mock ChatRepository chatRepository;
     @Mock UserIdentityService userIdentityService;
     @Mock UserDeviceRepository userDeviceRepository;
     @Mock CurrentDeviceService currentDeviceService;
@@ -97,6 +99,7 @@ class MessageServiceAdvancedTest {
                 messageReceiptRepository,
                 messageReactionRepository,
                 participantRepository,
+                chatRepository,
                 userIdentityService,
                 userDeviceRepository,
                 currentDeviceService,
