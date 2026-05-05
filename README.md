@@ -133,8 +133,9 @@ The server receives an opaque ciphertext envelope and routes one copy to every r
 | **Multi-device** | Separate envelope per device · Device management UI · Revoke access |
 | **Auth** | Phone + SMS OTP · Email + password · JWT access/refresh · Redis rate limiting |
 | **Messaging** | Direct and group chats · Realtime via WebSocket/STOMP · Typing indicator |
+| **Group admin** | Group roles in payload (`OWNER/ADMIN/MODERATOR/MEMBER`) · Write/edit/invite policy fields |
 | **Message ops** | Reply · Edit · Soft delete · Photo attachments · Read receipts ✓✓ · Presence · User search |
-| **Backend** | Spring Boot 3 · PostgreSQL 16 · Flyway 21 migrations · Redis 7 · Docker Compose |
+| **Backend** | Spring Boot 3 · PostgreSQL 16 · Flyway migrations (V1–V29) · Redis 7 · Docker Compose |
 | **Observability** | Actuator · Prometheus · Grafana (pre-provisioned, zero config) |
 | **Tests** | 24 backend (Testcontainers) · 12 frontend (Vitest) · E2E (Playwright) |
 | **DX** | GitHub Actions CI · OpenAPI 3.1 · Swagger UI · one-command startup |
@@ -214,6 +215,76 @@ Every protected endpoint requires `Authorization: Bearer <jwt>` and `X-Device-Id
 | **Profile** | Get · Update · Avatar · Username check |
 | **Users** | Search by username |
 
+### Group chats — roles and policies
+
+Roles are stored per participant in `chat_participants.role`. Order of authority (highest to lowest): **`OWNER` → `ADMIN` → `MODERATOR` → `MEMBER`**.
+
+| Role | Typical use |
+|------|-------------|
+| **OWNER** | Creates the group; sole role that can change permission policies (`whoCan*`) or archive the group; can transfer ownership (previous owner becomes `ADMIN`). |
+| **ADMIN** | Can invite (per `whoCanInvite`), edit group profile (per `whoCanEditInfo`), change roles (with restrictions vs other admins), remove/mute/ban members and moderators; cannot target the owner. |
+| **MODERATOR** | Can mute/ban/remove **members only**; cannot change roles. |
+| **MEMBER** | Default for invites; no moderation or role changes. |
+
+Policies on the `chats` row control who may perform an action. The API accepts these string values (case-insensitive):
+
+| Field | Allowed values | Meaning |
+|-------|----------------|---------|
+| **`whoCanWrite`** | `ALL`, `MODERATORS`, `ADMINS`, `OWNER` | Who may send messages. `ALL` = any participant who is not muted/banned. |
+| **`whoCanEditInfo`** | `ANYONE`, `MODERATORS`, `ADMINS`, `OWNER` | Who may change group name, avatar URL, and bio (`PATCH .../group/settings`). `ANYONE` = any participant meeting the minimum role. |
+| **`whoCanInvite`** | `ANYONE`, `MODERATORS`, `ADMINS`, `OWNER` | Who may add members (`POST .../group/participants`). |
+
+**Creation defaults:** creator is `OWNER`; invited users are `MEMBER`; `whoCanWrite=ALL`, `whoCanEditInfo=ADMINS`, `whoCanInvite=ADMINS`.
+
+**`ChatResponse` (group):** includes `groupAvatarUrl`, `groupBio`, `whoCanWrite`, `whoCanEditInfo`, `whoCanInvite`, `myRole`, and `groupParticipants[]`. Each `GroupParticipantInfo` entry exposes `userId`, profile fields, `role`, `mutedUntil`, and `banned` (boolean).
+
+### Group admin HTTP API
+
+All routes are under `/api/chats`, require `Authorization: Bearer <jwt>` and `X-Device-Id`, and return `ChatResponse` where noted.
+
+| Method | Path | Body / query | Notes |
+|--------|------|--------------|--------|
+| `POST` | `/group` | `{ "name": "Team", "memberIds": [2,3,4] }` | Creates group; returns `{ "chatId": ... }`. |
+| `GET` | `/my` | `offset`, `limit` | Lists chats including group policy and participants. |
+| `POST` | `/{chatId}/group/participants` | `{ "userIds": [5,6] }` | Invite members; gated by `whoCanInvite`. |
+| `PATCH` | `/{chatId}/group/settings` | `{ "name"?, "avatarUrl"?, "bio"? }` | `null` = no change; empty string clears. Gated by `whoCanEditInfo`. |
+| `PATCH` | `/{chatId}/group/participants/{participantUserId}/role` | `{ "role": "ADMIN" }` | Role changes: only owner may assign `OWNER` (transfer); admins/moderators have limits (see service rules). |
+| `PATCH` | `/{chatId}/group/permissions` | `{ "whoCanWrite"?, "whoCanEditInfo"?, "whoCanInvite"? }` | **`OWNER` only.** |
+| `DELETE` | `/{chatId}/group/participants/{participantUserId}` | — | Remove member; requires moderation rights (see below). |
+| `DELETE` | `/{chatId}/group` | — | Archive group; **`OWNER` only** (soft-delete via `deleted_at`). |
+
+**Direct chat requests** (unchanged; used alongside groups):
+
+| Method | Path | Notes |
+|--------|------|--------|
+| `GET` | `/requests` | Pending direct requests for the current user. |
+| `POST` | `/{chatId}/requests/accept` | Accept. |
+| `POST` | `/{chatId}/requests/decline` | Decline. |
+
+### Group moderation (mute / ban)
+
+Moderation is stored on `chat_participants`: `muted_until`, `banned_at`, `banned_by`, `ban_reason` (see Flyway `V29`).
+
+| Method | Path | Parameters | Behavior |
+|--------|------|------------|----------|
+| `POST` | `/{chatId}/group/participants/{participantUserId}/mute` | `minutes` (required, 1–43200) | Sets `muted_until = now + minutes`. |
+| `DELETE` | `/{chatId}/group/participants/{participantUserId}/mute` | — | Clears mute. |
+| `POST` | `/{chatId}/group/participants/{participantUserId}/ban` | `reason` (optional) | Sets ban; clears mute; stores optional reason (max 255 chars). |
+| `DELETE` | `/{chatId}/group/participants/{participantUserId}/ban` | — | Removes ban. |
+
+**Sending messages:** `MessageService` rejects sends from users who are **banned** (`"You are banned in this group"`) or **muted** (`"You are muted in this group"`). Self-moderation and targeting the **owner** are forbidden. **Moderators** may only moderate **members**; **admins** may moderate members and moderators, not owner/other admins.
+
+Successful actions return an updated `ChatResponse` (mute/ban/unmute/unban) and notify chat list subscribers over WebSocket.
+
+### Suggested contacts when creating groups
+
+There is **no** backend recommendation endpoint. In the **new chat / new group** UI, while the group name query is empty or shorter than two characters, the client shows **suggested contacts derived from existing direct chats** (the other participant of each `direct` chat). Username search still uses `GET /api/users/search?q=...` when the user types two or more characters.
+
+### Search and direct requests in the new-chat UI
+
+- Explicit user search: `GET /api/users/search?q=...` (minimum query length enforced in the UI).
+- Incoming direct requests appear via `GET /api/chats/requests`.
+
 **WebSocket topics** (STOMP, JWT authenticated):
 
 ```
@@ -251,7 +322,7 @@ chaos-messenger/
 │   ├── user/          # Users · profiles
 │   └── common/        # Errors · i18n · utils
 ├── backend/src/main/resources/
-│   ├── db/migration/  # V1–V22 Flyway (21 files, no V3)
+│   ├── db/migration/  # V1–V29 Flyway migrations (group admin, moderation, direct requests, profile bio)
 │   ├── messages.properties      # EN error messages
 │   └── messages_ru.properties   # RU error messages
 ├── frontend/src/
@@ -294,6 +365,21 @@ VITE_API_BASE=http://localhost:8080/api
 VITE_WS_URL=http://localhost:8080/ws
 ```
 </details>
+
+---
+
+## Migrations and setup notes
+
+On startup, **Spring Boot runs Flyway** against the configured PostgreSQL database and applies any pending scripts under `backend/src/main/resources/db/migration/` in version order. For an existing database, ensure the instance can reach the latest version (currently **`V29`**) before relying on group moderation or admin APIs.
+
+Recent migrations:
+
+| Version | File | Purpose |
+|---------|------|---------|
+| V26 | `V26__direct_chat_requests.sql` | Direct chat request lifecycle (`PENDING` / accept / decline). |
+| V27 | `V27__add_user_bio.sql` | User profile `bio` field. |
+| V28 | `V28__group_admin_features.sql` | Group roles; `who_can_write` / `who_can_edit_info` / `who_can_invite`; group `avatar_url`, `bio`, `deleted_at`; backfill `OWNER` per existing group (earliest participant). |
+| V29 | `V29__group_moderation_controls.sql` | Per-participant `muted_until`, `banned_at`, `banned_by`, `ban_reason`. |
 
 ---
 
