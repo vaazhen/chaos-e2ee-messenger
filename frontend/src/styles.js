@@ -771,6 +771,7 @@ button{color:inherit}
   align-items:flex-end;
   gap:8px;
   padding:8px 8px 8px 12px;
+  cursor:text;
 }
 .msg-inp{
   flex:1;
@@ -911,14 +912,35 @@ button{color:inherit}
   box-shadow:var(--soft-shadow);
   touch-action:none;
   user-select:none;
+  display:flex;
+  align-items:center;
+  justify-content:center;
 }
 [data-theme='dark'] .send-btn{background:#f3f5f8;color:#08090b}
 .send-btn:disabled{opacity:.35;cursor:default}
+.btn-icon{
+  width:23px;
+  height:23px;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:1.8;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+.mic-icon{
+  width:22px;
+  height:22px;
+  stroke-width:1.7;
+}
 .send-btn.voice-ready{
   background:var(--bg1);
-  color:var(--red);
+  color:#111;
   box-shadow:var(--soft-shadow);
   font-size:18px;
+}
+[data-theme='dark'] .send-btn.voice-ready{
+  background:var(--bg1);
+  color:var(--acc);
 }
 .send-btn.recording{
   background:var(--red);

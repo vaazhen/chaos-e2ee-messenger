@@ -171,6 +171,10 @@ const typingTimerRef = useRef(null);
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
 
+  const focusInput = () => {
+    if (!disabled) inpRef.current?.focus();
+  };
+
   const onFileChange = e => {
     const file = e.target.files[0]; if (!file) return;
     cancelVoice();
@@ -392,6 +396,27 @@ const typingTimerRef = useRef(null);
     cleanupRecordingStream();
     if (voiceFile?.previewUrl) URL.revokeObjectURL(voiceFile.previewUrl);
   }, [voiceFile?.previewUrl]);
+
+  useEffect(() => {
+    const onGlobalType = (event) => {
+      if (disabled || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (event.key.length !== 1 && event.key !== "Backspace") return;
+
+      const target = event.target;
+      const tag = target?.tagName?.toLowerCase();
+      const isTypingTarget =
+        tag === "input" ||
+        tag === "textarea" ||
+        target?.isContentEditable;
+
+      if (!isTypingTarget) {
+        inpRef.current?.focus();
+      }
+    };
+
+    window.addEventListener("keydown", onGlobalType);
+    return () => window.removeEventListener("keydown", onGlobalType);
+  }, [disabled]);
 return (
     <>
       {replyTo && (
@@ -484,7 +509,7 @@ return (
           </div>
         )}
 
-        <div className="inp-area">
+        <div className="inp-area" onClick={focusInput}>
           <button type="button" className="emoji-trigger" onClick={toggleEmoji}>😊</button>
           <textarea
             ref={inpRef}
@@ -498,18 +523,6 @@ return (
           />
           <button className="emoji-trigger" onClick={e => { e.stopPropagation(); fileRef.current?.click(); }}>📎</button>
           <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onFileChange} />
-          <button
-            type="button"
-            className="emoji-trigger old-voice-trigger"
-            onClick={e => {
-              e.stopPropagation();
-              recording ? stopRecording() : startRecording();
-            }}
-            title={recording ? formatDuration(recordingMs) : "Voice message"}
-            disabled={disabled}
-          >
-            {recording ? "■" : "●"}
-          </button>
         </div>
 
         <button
@@ -523,7 +536,7 @@ return (
           disabled={disabled || (recording && recordingLocked)}
           title={canQuickRecord ? "Hold to record" : "Send"}
         >
-          {canQuickRecord ? "●" : "➤"}
+          {canQuickRecord ? <MicIcon /> : <SendIcon />}
         </button>
       </div>
     </>
@@ -546,4 +559,24 @@ function replyPreview(msg) {
   if (msg?._img) return "Photo";
   if (msg?._voice) return "Voice message";
   return msg?._text || "";
+}
+
+function MicIcon() {
+  return (
+    <svg className="btn-icon mic-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="9" y="3.5" width="6" height="11" rx="3" />
+      <path d="M5.8 11.5a6.2 6.2 0 0 0 12.4 0" />
+      <path d="M12 17.7V21" />
+      <path d="M8.7 21h6.6" />
+    </svg>
+  );
+}
+
+function SendIcon() {
+  return (
+    <svg className="btn-icon send-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4.5 12h14" />
+      <path d="M13 6.5 18.5 12 13 17.5" />
+    </svg>
+  );
 }
