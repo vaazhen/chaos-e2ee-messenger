@@ -358,8 +358,8 @@ export function useMessages(myId) {
   }, [myId]);
 
   // ── Delete ──────────────────────────────────────────────────────────────────
-  const deleteMessage = useCallback((chatId, msg, scope = "everyone") => {
-    if (!msg?.id) return;
+  const deleteMessage = useCallback(async (chatId, msg, scope = "everyone") => {
+    if (!msg?.id) return false;
 
     setMsgs(prev => ({
       ...prev,
@@ -368,10 +368,26 @@ export function useMessages(myId) {
 
     if (scope === "me" || msg._temp) {
       addHiddenMessageId(myId, msg.id);
-      return;
+      return true;
     }
 
-    api.deleteMsg(msg.id).catch(console.error);
+    try {
+      await api.deleteMsg(msg.id);
+      return true;
+    } catch (e) {
+      console.error("[Delete] error:", e);
+      setMsgs(prev => {
+        const current = prev[chatId] || [];
+        if (current.some(m => String(m.id) === String(msg.id))) {
+          return prev;
+        }
+        return {
+          ...prev,
+          [chatId]: [...current, msg].sort(compareMessages),
+        };
+      });
+      return false;
+    }
   }, [myId]);
 
   return {
@@ -454,6 +470,13 @@ function adjustReactionSummary(summary, emoji, delta) {
   else next[emoji] = value;
 
   return next;
+}
+
+function compareMessages(a, b) {
+  const aTime = Date.parse(a?.createdAt || "") || 0;
+  const bTime = Date.parse(b?.createdAt || "") || 0;
+  if (aTime !== bTime) return aTime - bTime;
+  return String(a?.id || "").localeCompare(String(b?.id || ""));
 }
 
 function parseMessagePayload(raw) {

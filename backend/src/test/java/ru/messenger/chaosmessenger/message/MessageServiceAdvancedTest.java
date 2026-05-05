@@ -275,12 +275,14 @@ class MessageServiceAdvancedTest {
     }
 
     @Test
-    void getChatTimelineCapsLimitReversesMessagesAndAddsCurrentDeviceEnvelopeAndReactions() {
+    void getChatTimelineCapsLimitReversesMessagesSkipsDeletedAndAddsCurrentDeviceEnvelopeAndReactions() {
         stubAuthenticated(bob, bobDevice);
         stubParticipant(100L, bob.getId());
 
         Message newest = TestFixtures.sentMessage(2L, 100L, alice.getId(), "alice-phone");
         Message oldest = TestFixtures.sentMessage(1L, 100L, alice.getId(), "alice-phone");
+        Message deleted = TestFixtures.sentMessage(3L, 100L, alice.getId(), "alice-phone");
+        deleted.setDeletedAt(LocalDateTime.now());
 
         MessageEnvelope bobEnvelopeForOldest = envelopeEntity(
                 1L,
@@ -296,7 +298,7 @@ class MessageServiceAdvancedTest {
         when(messageReactionRepository.findByMessageIdIn(List.of(1L, 2L))).thenReturn(List.of(bobReaction));
 
         when(messageRepository.findByChatIdBefore(eq(100L), eq(99L), any(Pageable.class)))
-                .thenReturn(new java.util.ArrayList<>(List.of(newest, oldest)));
+                .thenReturn(new java.util.ArrayList<>(List.of(deleted, newest, oldest)));
         when(messageEnvelopeRepository.findByMessageIdInAndTargetDeviceId(List.of(1L, 2L), "bob-phone"))
                 .thenReturn(List.of(bobEnvelopeForOldest));
 
