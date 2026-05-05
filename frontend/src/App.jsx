@@ -1037,6 +1037,20 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
                 </div>
               )}
 
+              {myGroupMuteUntilMs && (
+                <div className="group-mute-banner" role="status" aria-live="polite">
+                  <span className="group-mute-banner__icon" aria-hidden>
+                    🔇
+                  </span>
+                  <span>
+                    {l(
+                      `Вы в муте в этой группе. Осталось: ${myGroupMuteCountdown || "…"}`,
+                      `You are muted in this group. Time left: ${myGroupMuteCountdown || "…"}`
+                    )}
+                  </span>
+                </div>
+              )}
+
               <div className="enc-notice">
                 <span>🔒</span>
                 <span>{t.encrypted_notice || "Encrypted on device"}</span>
