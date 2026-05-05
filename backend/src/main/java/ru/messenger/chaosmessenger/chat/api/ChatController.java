@@ -1,13 +1,13 @@
 package ru.messenger.chaosmessenger.chat.api;
-import jakarta.validation.Valid;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import lombok.Data;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import ru.messenger.chaosmessenger.chat.dto.CreateGroupRequest;
 import ru.messenger.chaosmessenger.chat.dto.ChatIdResponse;
 import ru.messenger.chaosmessenger.chat.dto.ChatResponse;
 import ru.messenger.chaosmessenger.chat.service.ChatService;
@@ -57,12 +57,6 @@ public class ChatController {
     )
     @PostMapping("/group")
     public ChatIdResponse createGroupChat(@Valid @RequestBody CreateGroupRequest body, Authentication auth) {
-        return new ChatIdResponse(chatService.createGroupChat(auth.getName(), body.getName(), body.getMemberIds()));
-    }
-
-    @Data
-    static class CreateGroupRequest {
-        private String name;
-        private List<Long> memberIds;
+        return new ChatIdResponse(chatService.createGroupChat(auth.getName(), body.name(), body.memberIds()));
     }
 }

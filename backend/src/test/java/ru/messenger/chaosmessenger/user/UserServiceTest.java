@@ -54,8 +54,8 @@ class UserServiceTest {
 
         var response = userService.findByUsername("alice");
 
-        assertThat(response.getId()).isEqualTo(1L);
-        assertThat(response.getUsername()).isEqualTo("alice");
+        assertThat(response.id()).isEqualTo(1L);
+        assertThat(response.username()).isEqualTo("alice");
     }
 
     @Test
@@ -73,13 +73,13 @@ class UserServiceTest {
 
         var response = userService.getCurrentUser("alice");
 
-        assertThat(response.getId()).isEqualTo(1L);
-        assertThat(response.getUsername()).isEqualTo("alice");
-        assertThat(response.getEmail()).isEqualTo("alice@test.com");
-        assertThat(response.getFirstName()).isEqualTo("Alice");
-        assertThat(response.getLastName()).isEqualTo("Smith");
-        assertThat(response.getAvatarUrl()).isEqualTo("avatar.png");
-        assertThat(response.getPublicKey()).isEqualTo("legacy-public-key");
+        assertThat(response.id()).isEqualTo(1L);
+        assertThat(response.username()).isEqualTo("alice");
+        assertThat(response.email()).isEqualTo("alice@test.com");
+        assertThat(response.firstName()).isEqualTo("Alice");
+        assertThat(response.lastName()).isEqualTo("Smith");
+        assertThat(response.avatarUrl()).isEqualTo("avatar.png");
+        assertThat(response.publicKey()).isEqualTo("legacy-public-key");
     }
 
     @Test
@@ -88,21 +88,17 @@ class UserServiceTest {
 
         var response = userService.getProfile("alice");
 
-        assertThat(response.getId()).isEqualTo(1L);
-        assertThat(response.getUsername()).isEqualTo("alice");
-        assertThat(response.getEmail()).isEqualTo("alice@test.com");
-        assertThat(response.getFirstName()).isEqualTo("Alice");
-        assertThat(response.getLastName()).isEqualTo("Smith");
-        assertThat(response.getAvatarUrl()).isEqualTo("avatar.png");
+        assertThat(response.id()).isEqualTo(1L);
+        assertThat(response.username()).isEqualTo("alice");
+        assertThat(response.email()).isEqualTo("alice@test.com");
+        assertThat(response.firstName()).isEqualTo("Alice");
+        assertThat(response.lastName()).isEqualTo("Smith");
+        assertThat(response.avatarUrl()).isEqualTo("avatar.png");
     }
 
     @Test
     void updateProfileTrimsNamesAvatarAndLowercasesUsername() {
-        UpdateProfileRequest request = new UpdateProfileRequest();
-        request.setFirstName("  John  ");
-        request.setLastName("  Doe  ");
-        request.setAvatarUrl("  data:image/jpeg;base64,abc  ");
-        request.setUsername("  New_Name  ");
+        UpdateProfileRequest request = new UpdateProfileRequest("  John  ", "  Doe  ", "  data:image/jpeg;base64,abc  ", "  New_Name  ");
 
         when(userIdentityService.require("alice")).thenReturn(alice);
         when(userRepository.existsByUsername("new_name")).thenReturn(false);
@@ -125,8 +121,7 @@ class UserServiceTest {
 
     @Test
     void updateProfileDoesNotCheckAvailabilityWhenUsernameIsSameIgnoringCase() {
-        UpdateProfileRequest request = new UpdateProfileRequest();
-        request.setUsername("ALICE");
+        UpdateProfileRequest request = new UpdateProfileRequest(null, null, null, "ALICE");
 
         when(userIdentityService.require("alice")).thenReturn(alice);
         when(userRepository.save(alice)).thenReturn(alice);
@@ -140,8 +135,7 @@ class UserServiceTest {
 
     @Test
     void updateProfileIgnoresBlankUsername() {
-        UpdateProfileRequest request = new UpdateProfileRequest();
-        request.setUsername("   ");
+        UpdateProfileRequest request = new UpdateProfileRequest(null, null, null, "   ");
 
         when(userIdentityService.require("alice")).thenReturn(alice);
         when(userRepository.save(alice)).thenReturn(alice);
@@ -155,8 +149,7 @@ class UserServiceTest {
 
     @Test
     void updateProfileRejectsInvalidUsername() {
-        UpdateProfileRequest request = new UpdateProfileRequest();
-        request.setUsername("bad-name!");
+        UpdateProfileRequest request = new UpdateProfileRequest(null, null, null, "bad-name!");
 
         when(userIdentityService.require("alice")).thenReturn(alice);
 
@@ -169,8 +162,7 @@ class UserServiceTest {
 
     @Test
     void updateProfileRejectsTakenUsername() {
-        UpdateProfileRequest request = new UpdateProfileRequest();
-        request.setUsername("bob");
+        UpdateProfileRequest request = new UpdateProfileRequest(null, null, null, "bob");
 
         when(userIdentityService.require("alice")).thenReturn(alice);
         when(userRepository.existsByUsername("bob")).thenReturn(true);
@@ -182,3 +174,4 @@ class UserServiceTest {
         verify(userRepository, never()).save(alice);
     }
 }
+
