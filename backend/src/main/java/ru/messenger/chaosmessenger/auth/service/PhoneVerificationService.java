@@ -1,6 +1,5 @@
 package ru.messenger.chaosmessenger.auth.service;
 
-import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -146,17 +145,12 @@ public class PhoneVerificationService {
         return "user_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
     }
 
-    @Data
-    public static class VerificationResult {
-        private final String status;
-        private final boolean existingUser;
-        private final boolean newUser;
-        private final String token;
-        private final Long userId;
-        private final String username;
-
-        public boolean isNewUser() {
-            return newUser;
-        }
-    }
+    public record VerificationResult(
+            String status,
+            boolean existingUser,
+            boolean newUser,
+            String token,
+            Long userId,
+            String username
+    ) {}
 }

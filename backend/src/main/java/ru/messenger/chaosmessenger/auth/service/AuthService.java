@@ -66,22 +66,22 @@ public class AuthService {
         Long userId = null;
         String username = null;
 
-        if (result.getToken() != null) {
-            if (result.isNewUser()) {
+        if (result.token() != null) {
+            if (result.newUser()) {
                 setupToken = setupTokenService.issue(normalized);
             } else {
-                token = result.getToken();
-                refreshToken = refreshTokenService.issue(result.getUsername());
-                deviceRegistrationToken = deviceRegTokenService.issue(result.getUsername());
-                userId = result.getUserId();
-                username = result.getUsername();
+                token = result.token();
+                refreshToken = refreshTokenService.issue(result.username());
+                deviceRegistrationToken = deviceRegTokenService.issue(result.username());
+                userId = result.userId();
+                username = result.username();
             }
         }
 
         return new VerifyCodeResponse(
-                result.getStatus(),
-                result.isExistingUser(),
-                result.isNewUser(),
+                result.status(),
+                result.existingUser(),
+                result.newUser(),
                 normalized,
                 setupToken,
                 token,
@@ -94,7 +94,7 @@ public class AuthService {
 
     @Transactional
     public AuthResponse completeSetup(String setupToken, String username, String firstName, String lastName, String avatarUrl) {
-        String phone = setupTokenService.consumePhone(setupToken);
+        String phone = setupTokenService.getPhone(setupToken);
         if (phone == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid_or_expired_setup_token");
         }
@@ -107,8 +107,18 @@ public class AuthService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Username already taken");
         }
 
+        String cleanFirstName = trimToNull(firstName);
+        if (cleanFirstName == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "First name is required");
+        }
+
+        String consumedPhone = setupTokenService.consumePhone(setupToken);
+        if (!phone.equals(consumedPhone)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid_or_expired_setup_token");
+        }
+
         user.setUsername(newUsername);
-        user.setFirstName(firstName.trim());
+        user.setFirstName(cleanFirstName);
         user.setLastName(trimToNull(lastName));
         user.setAvatarUrl(trimToNull(avatarUrl));
 
