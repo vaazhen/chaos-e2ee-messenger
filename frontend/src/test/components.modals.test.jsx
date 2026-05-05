@@ -234,7 +234,9 @@ describe("NewChatModal critical UI flow", () => {
     expect(onCreated).toHaveBeenCalledWith(20);
 
     fireEvent.click(screen.getByText("×"));
-    expect(onClose).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(onClose).toHaveBeenCalled();
+    });
   });
 
   it("creates group chat with selected users", async () => {
@@ -247,10 +249,13 @@ describe("NewChatModal critical UI flow", () => {
         me={{ id: 1, username: "alice" }}
         onClose={vi.fn()}
         onCreated={onCreated}
+        suggestedContacts={[{ id: 2, username: "bob", firstName: "Bob Brown", avatarUrl: "" }]}
       />
     );
 
     fireEvent.click(screen.getByText("Группа"));
+
+    expect(screen.getByText("Bob Brown")).toBeInTheDocument();
 
     fireEvent.change(screen.getByPlaceholderText("Команда, семья, проект..."), {
       target: { value: "Project Team" },
@@ -374,13 +379,14 @@ describe("ProfileModal critical UI flow", () => {
     const onLogout = vi.fn();
     const onClose = vi.fn();
 
-    render(
+    const { container } = render(
       <ProfileModal
         me={{
           id: 1,
           username: "alice",
           firstName: "Alice",
           lastName: "Smith",
+          bio: "",
           avatarUrl: "",
         }}
         lang="ru"
@@ -393,8 +399,14 @@ describe("ProfileModal critical UI flow", () => {
       />
     );
 
-    expect(screen.getByText("Настройки")).toBeInTheDocument();
+    expect(screen.getByText("Параметры")).toBeInTheDocument();
     expect(screen.getByText("@alice")).toBeInTheDocument();
+    expect(screen.getByText("Био ещё не заполнено")).toBeInTheDocument();
+
+    const avatarEl = container.querySelector(".profile-big-avatar");
+    const headerCard = container.querySelector(".profile-main-card");
+    expect(avatarEl).not.toBeNull();
+    expect(headerCard).not.toBeNull();
 
     fireEvent.change(screen.getByPlaceholderText("Имя"), {
       target: { value: "  Alice  " },
@@ -404,11 +416,9 @@ describe("ProfileModal critical UI flow", () => {
       target: { value: "  Updated  " },
     });
 
-    fireEvent.click(screen.getByText("Оформление"));
-    expect(onToggleTheme).toHaveBeenCalled();
-
-    fireEvent.click(screen.getByText("Язык"));
-    expect(onSwitchLang).toHaveBeenCalled();
+    fireEvent.change(screen.getByPlaceholderText("Несколько слов о себе"), {
+      target: { value: "  О себе коротко  " },
+    });
 
     fireEvent.click(screen.getByText("Сохранить"));
 
@@ -417,6 +427,7 @@ describe("ProfileModal critical UI flow", () => {
         firstName: "Alice",
         lastName: "Updated",
         username: "alice",
+        bio: "О себе коротко",
         avatarUrl: "",
       });
     });
@@ -426,6 +437,13 @@ describe("ProfileModal critical UI flow", () => {
       username: "alice",
       lastName: "Updated",
     }));
+
+    fireEvent.click(screen.getByText("Настройки"));
+    fireEvent.click(screen.getByText("Оформление"));
+    expect(onToggleTheme).toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText("Язык"));
+    expect(onSwitchLang).toHaveBeenCalled();
 
     fireEvent.click(screen.getByText("Выйти из аккаунта"));
     expect(onLogout).toHaveBeenCalled();

@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState, useEffect } from "react";
+import VoiceMessage from "./VoiceMessage";
 
 const EMOJI_STORAGE_KEY = "cm_recent_emojis";
 const MAX_RECENT_EMOJIS = 16;
@@ -56,7 +57,7 @@ function saveRecentEmojis(list) {
   }
 }
 
-export default function MessageInput({ onSend, replyTo, onОтменаОтветить, disabled, onTyping }) {
+export default function MessageInput({ onSend, replyTo, onОтменаОтветить, disabled, onTyping, pendingFirstMessageOnly = false }) {
   const [text, setText] = useState("");
   const [showEmoji, setShowEmoji] = useState(false);
   const [emojiClosing, setEmojiClosing] = useState(false);
@@ -372,6 +373,13 @@ const typingTimerRef = useRef(null);
     setVoiceFile(null);
     setVoiceError("");
   };
+  useEffect(() => {
+    if (!pendingFirstMessageOnly) return;
+    if (recording) cancelRecording();
+    if (imgFile) setImgFile(null);
+    if (voiceFile?.previewUrl) URL.revokeObjectURL(voiceFile.previewUrl);
+    if (voiceFile) setVoiceFile(null);
+  }, [pendingFirstMessageOnly]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const cancelRecording = () => {
     autoSendVoiceRef.current = false;
@@ -417,10 +425,10 @@ const typingTimerRef = useRef(null);
     setRecordingPaused(true);
   };
 
-  const canQuickRecord = !text.trim() && !imgFile && !voiceFile;
+  const canQuickRecord = !pendingFirstMessageOnly && !text.trim() && !imgFile && !voiceFile;
 
   const onPrimaryPointerDown = (e) => {
-    if (disabled || !canQuickRecord || recording) return;
+    if (pendingFirstMessageOnly || disabled || !canQuickRecord || recording) return;
     e.preventDefault();
     e.stopPropagation();
     recordingStartYRef.current = e.clientY || e.touches?.[0]?.clientY || 0;
@@ -429,6 +437,7 @@ const typingTimerRef = useRef(null);
   };
 
   const onPrimaryPointerMove = (e) => {
+    if (pendingFirstMessageOnly) return;
     if (!recording || recordingLocked) return;
     const startY = recordingStartYRef.current;
     const currentY = e.clientY || e.touches?.[0]?.clientY || startY;
@@ -438,6 +447,7 @@ const typingTimerRef = useRef(null);
   };
 
   const onPrimaryPointerUp = (e) => {
+    if (pendingFirstMessageOnly) return;
     if (!recording) return;
     e.preventDefault();
     e.stopPropagation();
@@ -538,7 +548,7 @@ return (
         </div>
       )}
 
-      {imgFile && (
+      {!pendingFirstMessageOnly && imgFile && (
         <div style={{ padding: "8px 14px 0", background: "var(--bg1)", display: "flex", alignItems: "flex-start", gap: 8 }}>
           <div style={{ position: "relative" }}>
             <img style={{ width: 80, height: 80, borderRadius: 8, objectFit: "cover", border: "1px solid var(--bdr2)" }} src={imgFile.src} alt="" />
@@ -566,11 +576,14 @@ return (
         </div>
       )}
 
-      {voiceFile && (
-        <div className="voice-preview" onClick={e => e.stopPropagation()}>
-          <audio src={voiceFile.previewUrl} controls />
-          <span>{formatDuration(voiceFile.durationMs)}</span>
-          <button type="button" onClick={cancelVoice}>Г—</button>
+      {!pendingFirstMessageOnly && voiceFile && (
+        <div className="voice-preview-wrap" onClick={e => e.stopPropagation()}>
+          <VoiceMessage
+            variant="preview"
+            src={voiceFile.previewUrl}
+            durationMs={voiceFile.durationMs}
+            onCancel={cancelVoice}
+          />
         </div>
       )}
 
@@ -644,8 +657,12 @@ return (
             onKeyDown={handleKey}
             disabled={disabled}
           />
-          <button className="emoji-trigger" onClick={e => { e.stopPropagation(); fileRef.current?.click(); }}>📎</button>
-          <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onFileChange} />
+          {!pendingFirstMessageOnly && (
+            <>
+              <button className="emoji-trigger" onClick={e => { e.stopPropagation(); fileRef.current?.click(); }}>📎</button>
+              <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onFileChange} />
+            </>
+          )}
         </div>
 
         <button
@@ -655,7 +672,7 @@ return (
           onPointerDown={onPrimaryPointerDown}
           onPointerMove={onPrimaryPointerMove}
           onPointerUp={onPrimaryPointerUp}
-          onPointerCancel={cancelRecording}
+          onPointerCancel={pendingFirstMessageOnly ? undefined : cancelRecording}
           disabled={disabled}
           title={recordingLocked ? "Send voice" : canQuickRecord ? "Hold to record" : "Send"}
         >
