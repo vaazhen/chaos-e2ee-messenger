@@ -165,7 +165,10 @@ public class MessageService {
         requireParticipant(chatId, user.getId());
 
         PageRequest pageable = PageRequest.of(0, Math.max(1, Math.min(limit, 200)));
-        List<Message> messages = messageRepository.findByChatIdBefore(chatId, beforeMessageId, pageable);
+        List<Message> messages = messageRepository.findByChatIdBefore(chatId, beforeMessageId, pageable)
+                .stream()
+                .filter(message -> message.getDeletedAt() == null)
+                .collect(Collectors.toCollection(ArrayList::new));
         Collections.reverse(messages);
 
         List<Long> messageIds = messages.stream().map(Message::getId).toList();
