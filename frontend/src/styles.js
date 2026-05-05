@@ -542,6 +542,11 @@ button{color:inherit}
 }
 
 /* AVATARS */
+.av-wrap{
+  position:relative;
+  display:inline-flex;
+  flex-shrink:0;
+}
 .av{
   width:48px;height:48px;border-radius:50%;
   display:flex;align-items:center;justify-content:center;
@@ -552,8 +557,8 @@ button{color:inherit}
 .av.md{width:44px;height:44px;font-size:15px}
 .online-dot{
   position:absolute;
-  right:-1px;
-  bottom:-1px;
+  right:-3px;
+  bottom:-3px;
   width:13px;
   height:13px;
   border-radius:50%;

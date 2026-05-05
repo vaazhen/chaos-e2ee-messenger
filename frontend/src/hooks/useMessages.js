@@ -3,6 +3,9 @@ import { api, call, getToken, API_BASE } from "../api";
 import { getOrCreateDeviceId } from "../deviceId";
 import { getTime } from "../helpers";
 import { saveMessagePreview } from "../previewCache";
+import { compressImageToDataUrl, IMAGE_PROFILES } from "../imagePipeline";
+
+const MAX_ENCRYPTED_PAYLOAD_CHARS = 180_000;
 
 /**
  * Manages per-chat message maps, loading, sending (E2EE), editing, deleting.
@@ -22,6 +25,7 @@ export function useMessages(myId) {
       const decrypted = await Promise.all(
         data
           .filter(msg => !hidden.has(String(msg.id || msg.messageId)))
+          .filter(msg => !(msg.deleted === true || msg.deletedAt))
           .map(msg => decryptMsg(msg, myId, chatId))
       );
       setMsgs(prev => ({ ...prev, [chatId]: decrypted }));
@@ -173,6 +177,10 @@ export function useMessages(myId) {
       }
     } catch (e) {
       console.error("[Send] image prepare error:", e);
+      return null;
+    }
+    if (encryptedPlaintext.length > MAX_ENCRYPTED_PAYLOAD_CHARS) {
+      console.error("[Send] payload too large after compression");
       return null;
     }
 
@@ -573,48 +581,16 @@ function addHiddenMessageId(myId, messageId) {
 }
 
 async function compressImageFile(file) {
-  const maxSide = 1280;
-  const quality = 0.82;
-  const dataUrl = await readFileAsDataUrl(file);
-  const img = await loadImage(dataUrl);
-  const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
-  const width = Math.max(1, Math.round(img.width * scale));
-  const height = Math.max(1, Math.round(img.height * scale));
-
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  ctx.drawImage(img, 0, 0, width, height);
-  const outputMime = file.type === "image/png" && file.size < 650_000 ? "image/png" : "image/jpeg";
-  const output = canvas.toDataURL(outputMime, outputMime === "image/jpeg" ? quality : undefined);
+  const compressed = await compressImageToDataUrl(file, IMAGE_PROFILES.chatImage);
 
   return {
-    dataUrl: output,
-    mime: outputMime,
+    dataUrl: compressed.dataUrl,
+    mime: compressed.mime,
     name: file.name || "image",
     originalMime: file.type || null,
     originalSize: file.size || 0,
-    size: Math.round((output.length * 3) / 4),
-    width,
-    height,
+    size: compressed.bytes,
+    width: compressed.width,
+    height: compressed.height,
   };
-}
-
-function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(reader.error || new Error("Cannot read image"));
-    reader.readAsDataURL(file);
-  });
-}
-
-function loadImage(src) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error("Cannot load image"));
-    img.src = src;
-  });
 }

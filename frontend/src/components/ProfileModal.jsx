@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, getCurrentDeviceId } from "../api";
+import { compressImageToDataUrl, IMAGE_PROFILES } from "../imagePipeline";
 
 const AVATARS = ["🦊", "🐺", "🦁", "🐯", "🐼", "🐨", "🐵", "🐸", "🐙", "🦉"];
 
@@ -58,58 +59,6 @@ function deviceSub(device, lang = "ru") {
   return id.length > 28 ? `${id.slice(0, 18)}…${id.slice(-6)}` : id;
 }
 
-
-function resizeAvatarFile(file) {
-  return new Promise((resolve, reject) => {
-    if (!file || !file.type?.startsWith("image/")) {
-      reject(new Error("Выберите файл изображения"));
-      return;
-    }
-
-    if (file.size > 7 * 1024 * 1024) {
-      reject(new Error("Файл слишком большой. Выберите изображение до 7 МБ."));
-      return;
-    }
-
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-
-    img.onload = () => {
-      try {
-        const size = 512;
-        const canvas = document.createElement("canvas");
-        canvas.width = size;
-        canvas.height = size;
-
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          throw new Error("Canvas недоступен");
-        }
-
-        const minSide = Math.min(img.width, img.height);
-        const sx = Math.floor((img.width - minSide) / 2);
-        const sy = Math.floor((img.height - minSide) / 2);
-
-        ctx.clearRect(0, 0, size, size);
-        ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, size, size);
-
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.88);
-        URL.revokeObjectURL(url);
-        resolve(dataUrl);
-      } catch (e) {
-        URL.revokeObjectURL(url);
-        reject(e);
-      }
-    };
-
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error("Не удалось прочитать изображение"));
-    };
-
-    img.src = url;
-  });
-}
 
 function renderProfileAvatar(value, fallback) {
   if (value?.startsWith("preset:")) {
@@ -267,8 +216,8 @@ const [devices, setDevices] = useState([]);
     setAvatarError("");
 
     try {
-      const dataUrl = await resizeAvatarFile(file);
-      setField("avatarUrl", dataUrl);
+      const compressed = await compressImageToDataUrl(file, IMAGE_PROFILES.avatar);
+      setField("avatarUrl", compressed.dataUrl);
     } catch (e) {
       setAvatarError(e?.message || l("Не удалось загрузить аватар", "Failed to upload avatar"));
     }

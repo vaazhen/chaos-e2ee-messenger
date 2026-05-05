@@ -78,6 +78,14 @@ describe("useMessages critical flow", () => {
         createdAt: "2026-04-28T10:01:00.000Z",
         content: "hidden",
       },
+      {
+        id: 1001,
+        chatId: 100,
+        senderId: 2,
+        createdAt: "2026-04-28T10:02:00.000Z",
+        content: "[encrypted]",
+        deleted: true,
+      },
     ]);
 
     const { result } = renderHook(() => useMessages(1));

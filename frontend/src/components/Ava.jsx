@@ -55,27 +55,31 @@ export default function Ava(props) {
 
   if (isImageAvatar(avatarUrl)) {
     return (
-      <div className={className} title={name}>
-        <img
-          src={avatarUrl}
-          alt={name}
-          draggable="false"
-          style={{
-            width: "100%",
-            height: "100%",
-            objectFit: "cover",
-            display: "block",
-            borderRadius: "inherit",
-          }}
-        />
+      <div className="av-wrap">
+        <div className={className} title={name}>
+          <img
+            src={avatarUrl}
+            alt={name}
+            draggable="false"
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              display: "block",
+              borderRadius: "inherit",
+            }}
+          />
+        </div>
         {props.online && <span className="online-dot" />}
       </div>
     );
   }
 
   return (
-    <div className={className} title={name}>
-      {initialsFrom(name)}
+    <div className="av-wrap">
+      <div className={className} title={name}>
+        {initialsFrom(name)}
+      </div>
       {props.online && <span className="online-dot" />}
     </div>
   );

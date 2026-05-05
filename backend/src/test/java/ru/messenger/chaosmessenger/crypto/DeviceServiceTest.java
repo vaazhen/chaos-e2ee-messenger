@@ -57,10 +57,12 @@ class DeviceServiceTest {
     @InjectMocks DeviceService deviceService;
 
     private User alice;
+    private User bob;
 
     @BeforeEach
     void setUp() {
         alice = TestFixtures.user(1L, "alice");
+        bob = TestFixtures.user(2L, "bob");
     }
 
     @Nested
@@ -179,6 +181,28 @@ class DeviceServiceTest {
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("signedPreKey.signature verification failed");
 
+            verify(signedPreKeyRepository, never()).save(any());
+            verify(oneTimePreKeyRepository, never()).save(any());
+        }
+
+        @Test
+        void rejectsDeviceIdOwnedByAnotherUserBeforeInsert() throws Exception {
+            DeviceRegistrationRequest request = validRegistrationRequest("dev-1");
+
+            UserDevice bobDevice = TestFixtures.device(20L, bob.getId(), "dev-1");
+            bobDevice.setUser(bob);
+
+            when(userIdentityService.require("alice")).thenReturn(alice);
+            when(userDeviceRepository.findByUserUsernameAndDeviceId("alice", "dev-1"))
+                    .thenReturn(Optional.empty());
+            when(userDeviceRepository.findByDeviceId("dev-1"))
+                    .thenReturn(Optional.of(bobDevice));
+
+            assertThatThrownBy(() -> deviceService.registerDevice("alice", request))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("Device id is already registered to another account");
+
+            verify(userDeviceRepository, never()).save(any());
             verify(signedPreKeyRepository, never()).save(any());
             verify(oneTimePreKeyRepository, never()).save(any());
         }

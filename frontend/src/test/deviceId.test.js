@@ -89,6 +89,28 @@ describe("deviceId", () => {
     expect(secondHeaders["X-Device-Registration-Token"]).toBeUndefined();
   });
 
+  it("ensureDeviceRegistered resets local identity and retries once on device id conflict", async () => {
+    localStorage.setItem("cm_token", "jwt-token");
+
+    const conflict = new Error("Device id is already registered to another account");
+    conflict.status = 409;
+
+    window.e2ee = {
+      getOrCreateDeviceId: vi.fn(() => "device-new"),
+      resetLocalDeviceIdentity: vi.fn(),
+      ensureDeviceRegistered: vi.fn()
+        .mockRejectedValueOnce(conflict)
+        .mockResolvedValueOnce({}),
+    };
+
+    const { ensureDeviceRegistered } = await import("../deviceId");
+
+    await expect(ensureDeviceRegistered("device-registration-token")).resolves.toBe("device-new");
+
+    expect(window.e2ee.resetLocalDeviceIdentity).toHaveBeenCalledTimes(1);
+    expect(window.e2ee.ensureDeviceRegistered).toHaveBeenCalledTimes(2);
+  });
+
   it("ensureDeviceRegistered falls back to local device id when crypto engine is not loaded", async () => {
     const { ensureDeviceRegistered } = await import("../deviceId");
 

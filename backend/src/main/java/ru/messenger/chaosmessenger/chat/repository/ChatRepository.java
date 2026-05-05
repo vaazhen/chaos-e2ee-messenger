@@ -23,6 +23,7 @@ public interface ChatRepository extends JpaRepository<Chat, Long> {
                 select m.created_at as last_message_at, m.id as last_message_id
                 from messages m
                 where m.chat_id = c.id
+                  and m.deleted_at is null
                 order by m.created_at desc nulls last, m.id desc
                 limit 1
             ) lm on true
