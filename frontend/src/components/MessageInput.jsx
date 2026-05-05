@@ -1,5 +1,4 @@
 import { useMemo, useRef, useState, useEffect } from "react";
-import VoiceMessage from "./VoiceMessage";
 
 const EMOJI_STORAGE_KEY = "cm_recent_emojis";
 const MAX_RECENT_EMOJIS = 16;
@@ -57,17 +56,7 @@ function saveRecentEmojis(list) {
   }
 }
 
-export default function MessageInput({
-  onSend,
-  replyTo,
-  onОтменаОтветить,
-  disabled,
-  onTyping,
-  pendingFirstMessageOnly = false,
-  muteInlineNotice = null,
-  messagePlaceholder = "Сообщение...",
-  replyPreviewTitle = "Ответить",
-}) {
+export default function MessageInput({ onSend, replyTo, onОтменаОтветить, disabled, onTyping }) {
   const [text, setText] = useState("");
   const [showEmoji, setShowEmoji] = useState(false);
   const [emojiClosing, setEmojiClosing] = useState(false);
@@ -77,9 +66,7 @@ export default function MessageInput({
   const [voiceFile, setVoiceFile] = useState(null);
   const [recording, setRecording] = useState(false);
   const [recordingLocked, setRecordingLocked] = useState(false);
-  const [recordingPaused, setRecordingPaused] = useState(false);
   const [recordingMs, setRecordingMs] = useState(0);
-  const [voiceLevels, setVoiceLevels] = useState(() => Array(24).fill(0.18));
   const [voiceError, setVoiceError] = useState("");
   const inpRef = useRef(null);
   const fileRef = useRef(null);
@@ -92,12 +79,6 @@ export default function MessageInput({
   const recordingStartYRef = useRef(0);
   const autoSendVoiceRef = useRef(false);
   const discardVoiceRef = useRef(false);
-  const audioContextRef = useRef(null);
-  const analyserRef = useRef(null);
-  const analyserFrameRef = useRef(null);
-  const recordingPausedRef = useRef(false);
-  const pauseStartedAtRef = useRef(0);
-  const pausedTotalMsRef = useRef(0);
   
   const emojiRootRef = useRef(null);
 const typingTimerRef = useRef(null);
@@ -136,14 +117,6 @@ const typingTimerRef = useRef(null);
     setEmojiClosing(false);
     setShowEmoji(true);
   };
-
-  const groupMuteLocksInput = Boolean(muteInlineNotice) && !recording;
-
-  useEffect(() => {
-    if (!muteInlineNotice) return;
-    setShowEmoji(false);
-    setEmojiClosing(false);
-  }, [muteInlineNotice]);
 
   useEffect(() => {
     if (!showEmoji) return;
@@ -198,10 +171,6 @@ const typingTimerRef = useRef(null);
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
 
-  const focusInput = () => {
-    if (!disabled) inpRef.current?.focus();
-  };
-
   const onFileChange = e => {
     const file = e.target.files[0]; if (!file) return;
     cancelVoice();
@@ -221,60 +190,6 @@ const typingTimerRef = useRef(null);
   const cleanupRecordingStream = () => {
     mediaStreamRef.current?.getTracks?.().forEach(track => track.stop());
     mediaStreamRef.current = null;
-  };
-
-  const stopVoiceAnalyser = () => {
-    if (analyserFrameRef.current) {
-      cancelAnimationFrame(analyserFrameRef.current);
-      analyserFrameRef.current = null;
-    }
-    audioContextRef.current?.close?.().catch(() => {});
-    audioContextRef.current = null;
-    analyserRef.current = null;
-  };
-
-  const effectiveRecordingMs = () => {
-    const pausedNow = pauseStartedAtRef.current ? Date.now() - pauseStartedAtRef.current : 0;
-    return Math.max(0, Date.now() - recordingStartedAtRef.current - pausedTotalMsRef.current - pausedNow);
-  };
-
-  const startVoiceAnalyser = (stream) => {
-    stopVoiceAnalyser();
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (!AudioCtx) return;
-
-    try {
-      const ctx = new AudioCtx();
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 128;
-      ctx.createMediaStreamSource(stream).connect(analyser);
-      audioContextRef.current = ctx;
-      analyserRef.current = analyser;
-
-      const data = new Uint8Array(analyser.fftSize);
-      const tick = () => {
-        const current = analyserRef.current;
-        if (!current) return;
-
-        if (!recordingPausedRef.current) {
-          current.getByteTimeDomainData(data);
-          let sum = 0;
-          for (let i = 0; i < data.length; i += 1) {
-            const centered = (data[i] - 128) / 128;
-            sum += centered * centered;
-          }
-          const rms = Math.sqrt(sum / data.length);
-          const level = Math.min(1, Math.max(0.08, rms * 5));
-          setVoiceLevels(prev => [...prev.slice(1), level]);
-        }
-
-        analyserFrameRef.current = requestAnimationFrame(tick);
-      };
-
-      tick();
-    } catch (_) {
-      stopVoiceAnalyser();
-    }
   };
 
   const stopRecording = (autoSend = false) => {
@@ -304,16 +219,10 @@ const typingTimerRef = useRef(null);
       mediaStreamRef.current = stream;
       mediaRecorderRef.current = recorder;
       recordingStartedAtRef.current = Date.now();
-      pauseStartedAtRef.current = 0;
-      pausedTotalMsRef.current = 0;
       autoSendVoiceRef.current = false;
       setRecording(true);
       setRecordingLocked(false);
-      recordingPausedRef.current = false;
-      setRecordingPaused(false);
       setRecordingMs(0);
-      setVoiceLevels(Array(24).fill(0.18));
-      startVoiceAnalyser(stream);
 
       recorder.ondataavailable = (event) => {
         if (event.data?.size) voiceChunksRef.current.push(event.data);
@@ -322,17 +231,14 @@ const typingTimerRef = useRef(null);
       recorder.onstop = () => {
         stopRecordingTimer();
         cleanupRecordingStream();
-        stopVoiceAnalyser();
         const shouldAutoSend = autoSendVoiceRef.current;
         const shouldDiscard = discardVoiceRef.current;
         autoSendVoiceRef.current = false;
         discardVoiceRef.current = false;
         setRecording(false);
         setRecordingLocked(false);
-        recordingPausedRef.current = false;
-        setRecordingPaused(false);
 
-        const durationMs = Math.min(MAX_VOICE_MS, effectiveRecordingMs());
+        const durationMs = Math.min(MAX_VOICE_MS, Date.now() - recordingStartedAtRef.current);
         const blob = new Blob(voiceChunksRef.current, { type: recorder.mimeType || "audio/webm" });
         voiceChunksRef.current = [];
 
@@ -372,16 +278,13 @@ const typingTimerRef = useRef(null);
 
       recorder.start();
       recordingTimerRef.current = setInterval(() => {
-        const elapsed = effectiveRecordingMs();
+        const elapsed = Date.now() - recordingStartedAtRef.current;
         setRecordingMs(Math.min(MAX_VOICE_MS, elapsed));
         if (elapsed >= MAX_VOICE_MS) stopRecording(true);
       }, 200);
     } catch (e) {
       cleanupRecordingStream();
-      stopVoiceAnalyser();
       setRecording(false);
-      recordingPausedRef.current = false;
-      setRecordingPaused(false);
       setVoiceError(e?.message || "Could not access microphone");
     }
   };
@@ -391,13 +294,6 @@ const typingTimerRef = useRef(null);
     setVoiceFile(null);
     setVoiceError("");
   };
-  useEffect(() => {
-    if (!pendingFirstMessageOnly) return;
-    if (recording) cancelRecording();
-    if (imgFile) setImgFile(null);
-    if (voiceFile?.previewUrl) URL.revokeObjectURL(voiceFile.previewUrl);
-    if (voiceFile) setVoiceFile(null);
-  }, [pendingFirstMessageOnly]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const cancelRecording = () => {
     autoSendVoiceRef.current = false;
@@ -406,47 +302,18 @@ const typingTimerRef = useRef(null);
     setRecordingLocked(false);
     stopRecordingTimer();
     cleanupRecordingStream();
-    stopVoiceAnalyser();
     const recorder = mediaRecorderRef.current;
     if (recorder && recorder.state !== "inactive") {
       recorder.stop();
     } else {
       setRecording(false);
-      recordingPausedRef.current = false;
-      setRecordingPaused(false);
     }
   };
 
-  const toggleRecordingPause = (e) => {
-    e?.stopPropagation?.();
-    const recorder = mediaRecorderRef.current;
-    if (!recorder || recorder.state === "inactive") return;
-
-    if (recordingPausedRef.current) {
-      if (typeof recorder.resume === "function" && recorder.state === "paused") {
-        recorder.resume();
-      }
-      if (pauseStartedAtRef.current) {
-        pausedTotalMsRef.current += Date.now() - pauseStartedAtRef.current;
-      }
-      pauseStartedAtRef.current = 0;
-      recordingPausedRef.current = false;
-      setRecordingPaused(false);
-      return;
-    }
-
-    if (typeof recorder.pause === "function" && recorder.state === "recording") {
-      recorder.pause();
-    }
-    pauseStartedAtRef.current = Date.now();
-    recordingPausedRef.current = true;
-    setRecordingPaused(true);
-  };
-
-  const canQuickRecord = !pendingFirstMessageOnly && !text.trim() && !imgFile && !voiceFile;
+  const canQuickRecord = !text.trim() && !imgFile && !voiceFile;
 
   const onPrimaryPointerDown = (e) => {
-    if (pendingFirstMessageOnly || disabled || !canQuickRecord || recording) return;
+    if (disabled || !canQuickRecord || recording) return;
     e.preventDefault();
     e.stopPropagation();
     recordingStartYRef.current = e.clientY || e.touches?.[0]?.clientY || 0;
@@ -455,7 +322,6 @@ const typingTimerRef = useRef(null);
   };
 
   const onPrimaryPointerMove = (e) => {
-    if (pendingFirstMessageOnly) return;
     if (!recording || recordingLocked) return;
     const startY = recordingStartYRef.current;
     const currentY = e.clientY || e.touches?.[0]?.clientY || startY;
@@ -465,7 +331,6 @@ const typingTimerRef = useRef(null);
   };
 
   const onPrimaryPointerUp = (e) => {
-    if (pendingFirstMessageOnly) return;
     if (!recording) return;
     e.preventDefault();
     e.stopPropagation();
@@ -476,11 +341,7 @@ const typingTimerRef = useRef(null);
   };
 
   const onPrimaryClick = (e) => {
-    if (recording) {
-      if (recordingLocked) stopRecording(true);
-      return;
-    }
-    if (canQuickRecord) return;
+    if (recording || canQuickRecord) return;
     e.stopPropagation();
     handleSend();
   };
@@ -529,44 +390,22 @@ const typingTimerRef = useRef(null);
   useEffect(() => () => {
     stopRecordingTimer();
     cleanupRecordingStream();
-    stopVoiceAnalyser();
     if (voiceFile?.previewUrl) URL.revokeObjectURL(voiceFile.previewUrl);
   }, [voiceFile?.previewUrl]);
-
-  useEffect(() => {
-    const onGlobalType = (event) => {
-      if (disabled || event.ctrlKey || event.metaKey || event.altKey) return;
-      if (event.key.length !== 1 && event.key !== "Backspace") return;
-
-      const target = event.target;
-      const tag = target?.tagName?.toLowerCase();
-      const isTypingTarget =
-        tag === "input" ||
-        tag === "textarea" ||
-        target?.isContentEditable;
-
-      if (!isTypingTarget) {
-        inpRef.current?.focus();
-      }
-    };
-
-    window.addEventListener("keydown", onGlobalType);
-    return () => window.removeEventListener("keydown", onGlobalType);
-  }, [disabled]);
 return (
     <>
       {replyTo && (
         <div className="reply-prev" onClick={e => e.stopPropagation()}>
           <div style={{ color: "var(--acc)", fontSize: 18 }}>↩</div>
           <div className="reply-prev-inner">
-            <div className="reply-prev-name">{replyPreviewTitle}</div>
+            <div className="reply-prev-name">Ответить</div>
             <div className="reply-prev-txt">{replyPreview(replyTo)}</div>
           </div>
           <button className="modal-close" onClick={onОтменаОтветить}>×</button>
         </div>
       )}
 
-      {!pendingFirstMessageOnly && imgFile && (
+      {imgFile && (
         <div style={{ padding: "8px 14px 0", background: "var(--bg1)", display: "flex", alignItems: "flex-start", gap: 8 }}>
           <div style={{ position: "relative" }}>
             <img style={{ width: 80, height: 80, borderRadius: 8, objectFit: "cover", border: "1px solid var(--bdr2)" }} src={imgFile.src} alt="" />
@@ -580,11 +419,11 @@ return (
         <div className="voice-error">{voiceError}</div>
       )}
 
-      {false && recording && (
+      {recording && (
         <div className={`recording-panel${recordingLocked ? " locked" : ""}`} onClick={e => e.stopPropagation()}>
           <div className="recording-pulse" />
           <span>{formatDuration(recordingMs)}</span>
-          <b>{recordingLocked ? "" : ""}</b>
+          <b>{recordingLocked ? "Locked" : "Swipe up to lock"}</b>
           {recordingLocked && (
             <>
               <button type="button" className="recording-cancel" onClick={cancelRecording}>Cancel</button>
@@ -594,19 +433,16 @@ return (
         </div>
       )}
 
-      {!pendingFirstMessageOnly && voiceFile && (
-        <div className="voice-preview-wrap" onClick={e => e.stopPropagation()}>
-          <VoiceMessage
-            variant="preview"
-            src={voiceFile.previewUrl}
-            durationMs={voiceFile.durationMs}
-            onCancel={cancelVoice}
-          />
+      {voiceFile && (
+        <div className="voice-preview" onClick={e => e.stopPropagation()}>
+          <audio src={voiceFile.previewUrl} controls />
+          <span>{formatDuration(voiceFile.durationMs)}</span>
+          <button type="button" onClick={cancelVoice}>Г—</button>
         </div>
       )}
 
       <div ref={emojiRootRef} className="input-bar" onClick={e => e.stopPropagation()}>
-        {!groupMuteLocksInput && showEmoji && (
+        {showEmoji && (
           <div className={`emoji-picker${emojiClosing ? " closing" : ""}`} onClick={e => e.stopPropagation()}>
             <div className="emoji-cats">
               {emojiCategories.map((cat) => (
@@ -648,68 +484,47 @@ return (
           </div>
         )}
 
-        <div
-          className={`inp-area${recording ? " recording-inline" : ""}${groupMuteLocksInput ? " inp-area--group-muted" : ""}`}
-          onClick={recording ? e => e.stopPropagation() : focusInput}
-        >
-          {recording && (
-            <>
-              <button type="button" className="recording-inline-cancel" onClick={cancelRecording}>×</button>
-              <div className="recording-pulse" />
-              <span className="recording-time">{formatDuration(recordingMs)}</span>
-              <div className={`voice-live-wave${recordingPaused ? " paused" : ""}`}>
-                {voiceLevels.map((level, index) => (
-                  <i key={index} style={{ height: `${Math.max(5, Math.round(level * 28))}px` }} />
-                ))}
-              </div>
-              <button type="button" className="recording-pause" onClick={toggleRecordingPause} title={recordingPaused ? "Resume" : "Pause"}>
-                {recordingPaused ? <PlayIcon /> : <PauseIcon />}
-              </button>
-            </>
-          )}
-          {!groupMuteLocksInput && (
-            <button type="button" className="emoji-trigger" onClick={toggleEmoji}>😊</button>
-          )}
-          <div className={`msg-inp-wrap${muteInlineNotice && !recording ? " msg-inp-wrap--mute" : ""}`}>
-            {muteInlineNotice && !recording && (
-              <div className="group-mute-in-inp" role="status" aria-live="polite">
-                <span className="group-mute-in-inp__text">{muteInlineNotice}</span>
-              </div>
-            )}
-            <textarea
-              ref={inpRef}
-              className="msg-inp"
-              rows={1}
-              placeholder={muteInlineNotice && !recording ? "" : messagePlaceholder}
-              value={text}
-              onChange={handleTextChange}
-              onKeyDown={handleKey}
-              disabled={disabled}
-            />
-          </div>
-          {!pendingFirstMessageOnly && !groupMuteLocksInput && (
-            <>
-              <button className="emoji-trigger" onClick={e => { e.stopPropagation(); fileRef.current?.click(); }}>📎</button>
-              <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onFileChange} />
-            </>
-          )}
-        </div>
-
-        {!groupMuteLocksInput && (
+        <div className="inp-area">
+          <button type="button" className="emoji-trigger" onClick={toggleEmoji}>😊</button>
+          <textarea
+            ref={inpRef}
+            className="msg-inp"
+            rows={1}
+            placeholder="Сообщение..."
+            value={text}
+            onChange={handleTextChange}
+            onKeyDown={handleKey}
+            disabled={disabled}
+          />
+          <button className="emoji-trigger" onClick={e => { e.stopPropagation(); fileRef.current?.click(); }}>📎</button>
+          <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onFileChange} />
           <button
             type="button"
-            className={`send-btn${canQuickRecord ? " voice-ready" : ""}${recording ? " recording" : ""}${recordingLocked ? " locked" : ""}`}
-            onClick={onPrimaryClick}
-            onPointerDown={onPrimaryPointerDown}
-            onPointerMove={onPrimaryPointerMove}
-            onPointerUp={onPrimaryPointerUp}
-            onPointerCancel={pendingFirstMessageOnly ? undefined : cancelRecording}
+            className="emoji-trigger old-voice-trigger"
+            onClick={e => {
+              e.stopPropagation();
+              recording ? stopRecording() : startRecording();
+            }}
+            title={recording ? formatDuration(recordingMs) : "Voice message"}
             disabled={disabled}
-            title={recordingLocked ? "Send voice" : canQuickRecord ? "Hold to record" : "Send"}
           >
-            {recordingLocked ? <SendIcon /> : canQuickRecord ? <MicIcon /> : <SendIcon />}
+            {recording ? "■" : "●"}
           </button>
-        )}
+        </div>
+
+        <button
+          type="button"
+          className={`send-btn${canQuickRecord ? " voice-ready" : ""}${recording ? " recording" : ""}${recordingLocked ? " locked" : ""}`}
+          onClick={onPrimaryClick}
+          onPointerDown={onPrimaryPointerDown}
+          onPointerMove={onPrimaryPointerMove}
+          onPointerUp={onPrimaryPointerUp}
+          onPointerCancel={cancelRecording}
+          disabled={disabled || (recording && recordingLocked)}
+          title={canQuickRecord ? "Hold to record" : "Send"}
+        >
+          {canQuickRecord ? "●" : "➤"}
+        </button>
       </div>
     </>
   );
@@ -731,41 +546,4 @@ function replyPreview(msg) {
   if (msg?._img) return "Photo";
   if (msg?._voice) return "Voice message";
   return msg?._text || "";
-}
-
-function MicIcon() {
-  return (
-    <svg className="btn-icon mic-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <rect x="9" y="3.5" width="6" height="11" rx="3" />
-      <path d="M5.8 11.5a6.2 6.2 0 0 0 12.4 0" />
-      <path d="M12 17.7V21" />
-      <path d="M8.7 21h6.6" />
-    </svg>
-  );
-}
-
-function SendIcon() {
-  return (
-    <svg className="btn-icon send-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M4.5 12h14" />
-      <path d="M13 6.5 18.5 12 13 17.5" />
-    </svg>
-  );
-}
-
-function PauseIcon() {
-  return (
-    <svg className="btn-icon pause-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M9 7v10" />
-      <path d="M15 7v10" />
-    </svg>
-  );
-}
-
-function PlayIcon() {
-  return (
-    <svg className="btn-icon play-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M9 6.5v11l8-5.5-8-5.5Z" />
-    </svg>
-  );
 }

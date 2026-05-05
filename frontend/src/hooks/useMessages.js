@@ -3,6 +3,9 @@ import { api, call, getToken, API_BASE } from "../api";
 import { getOrCreateDeviceId } from "../deviceId";
 import { getTime } from "../helpers";
 import { saveMessagePreview } from "../previewCache";
+import { compressImageToDataUrl, IMAGE_PROFILES } from "../imagePipeline";
+
+const MAX_ENCRYPTED_PAYLOAD_CHARS = 180_000;
 
 /**
  * Manages per-chat message maps, loading, sending (E2EE), editing, deleting.
@@ -22,6 +25,7 @@ export function useMessages(myId) {
       const decrypted = await Promise.all(
         data
           .filter(msg => !hidden.has(String(msg.id || msg.messageId)))
+          .filter(msg => !(msg.deleted === true || msg.deletedAt))
           .map(msg => decryptMsg(msg, myId, chatId))
       );
       setMsgs(prev => ({ ...prev, [chatId]: decrypted }));
@@ -102,6 +106,7 @@ export function useMessages(myId) {
       _out:      isOut,
       _text:     parsed.text,
       _img:      parsed.img,
+      _voice:    parsed.voice,
       _payload:  parsed.payload,
       _time:     getTime(event.createdAt),
     };
@@ -146,14 +151,15 @@ export function useMessages(myId) {
   const sendMessage = useCallback(async (chatId, input) => {
     const text = typeof input === "string" ? input : String(input?.text || "").trim();
     const imgFile = typeof input === "string" ? null : input?.imgFile;
-    if ((!text && !imgFile) || !chatId) return null;
+    const voiceFile = typeof input === "string" ? null : input?.voiceFile;
+    if ((!text && !imgFile && !voiceFile) || !chatId) return null;
     if (!window.e2ee?.buildFanoutRequest) {
       console.error("[Send] crypto-engine is not loaded");
       return null;
     }
 
     const clientMessageId = "tmp_" + Date.now();
-    let parsedPayload = { text, img: null, payload: null };
+    let parsedPayload = { text, img: null, voice: null, payload: null };
     let encryptedPlaintext = text;
 
     try {
@@ -170,9 +176,27 @@ export function useMessages(myId) {
           },
         };
         encryptedPlaintext = JSON.stringify(parsedPayload.payload);
+      } else if (voiceFile) {
+        const voice = await prepareVoiceFile(voiceFile);
+        parsedPayload = {
+          text,
+          img: null,
+          voice,
+          payload: {
+            v: 1,
+            type: "voice",
+            text,
+            voice,
+          },
+        };
+        encryptedPlaintext = JSON.stringify(parsedPayload.payload);
       }
     } catch (e) {
-      console.error("[Send] image prepare error:", e);
+      console.error("[Send] media prepare error:", e);
+      return null;
+    }
+    if (encryptedPlaintext.length > MAX_ENCRYPTED_PAYLOAD_CHARS) {
+      console.error("[Send] payload too large after compression");
       return null;
     }
 
@@ -183,6 +207,7 @@ export function useMessages(myId) {
       _out: true,
       _text: parsedPayload.text,
       _img: parsedPayload.img,
+      _voice: parsedPayload.voice,
       _payload: parsedPayload.payload,
       _time: getTime(),
       content: encryptedPlaintext,
@@ -304,6 +329,7 @@ export function useMessages(myId) {
               version: (m.version || 1) + 1,
               _text: parsed.text,
               _img: parsed.img,
+              _voice: parsed.voice,
               _payload: parsed.payload,
             }
           : m
@@ -433,6 +459,7 @@ async function decryptMsg(msg, myId, fallbackChatId) {
     content: decryptedText,
     _text: parsed.text,
     _img: parsed.img,
+    _voice: parsed.voice,
     _payload: parsed.payload,
     _out:  msg.senderId === myId,
     _time: getTime(msg.createdAt),
@@ -482,7 +509,7 @@ function compareMessages(a, b) {
 function parseMessagePayload(raw) {
   const fallbackText = String(raw || "");
   if (!fallbackText || fallbackText === "[encrypted]") {
-    return { text: fallbackText, img: null, payload: null };
+    return { text: fallbackText, img: null, voice: null, payload: null };
   }
   try {
     const payload = JSON.parse(fallbackText);
@@ -491,17 +518,28 @@ function parseMessagePayload(raw) {
       return {
         text: String(payload.text || ""),
         img: image.dataUrl || payload.dataUrl || null,
+        voice: null,
+        payload,
+      };
+    }
+    if (payload?.v === 1 && payload?.type === "voice") {
+      const voice = payload.voice || {};
+      return {
+        text: String(payload.text || ""),
+        img: null,
+        voice: voice.dataUrl ? voice : null,
         payload,
       };
     }
   } catch (_) {
     // regular text message
   }
-  return { text: fallbackText, img: null, payload: null };
+  return { text: fallbackText, img: null, voice: null, payload: null };
 }
 
 function messagePreview(parsed) {
   if (parsed?.img) return parsed.text ? `📷 ${parsed.text}` : "📷 Photo";
+  if (parsed?.voice) return parsed.text ? `Voice: ${parsed.text}` : "Voice message";
   return parsed?.text || "";
 }
 
@@ -514,6 +552,21 @@ function buildEditedPayload(msg, text) {
       parsed: {
         text,
         img: image.dataUrl || payload.dataUrl || msg._img || null,
+        voice: null,
+        payload,
+      },
+    };
+  }
+
+  if (msg?._payload?.v === 1 && msg?._payload?.type === "voice") {
+    const payload = { ...msg._payload, text };
+    const voice = payload.voice || {};
+    return {
+      plaintext: JSON.stringify(payload),
+      parsed: {
+        text,
+        img: null,
+        voice: voice.dataUrl ? voice : msg._voice || null,
         payload,
       },
     };
@@ -521,7 +574,7 @@ function buildEditedPayload(msg, text) {
 
   return {
     plaintext: text,
-    parsed: { text, img: null, payload: null },
+    parsed: { text, img: null, voice: null, payload: null },
   };
 }
 
@@ -573,48 +626,37 @@ function addHiddenMessageId(myId, messageId) {
 }
 
 async function compressImageFile(file) {
-  const maxSide = 1280;
-  const quality = 0.82;
-  const dataUrl = await readFileAsDataUrl(file);
-  const img = await loadImage(dataUrl);
-  const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
-  const width = Math.max(1, Math.round(img.width * scale));
-  const height = Math.max(1, Math.round(img.height * scale));
-
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  ctx.drawImage(img, 0, 0, width, height);
-  const outputMime = file.type === "image/png" && file.size < 650_000 ? "image/png" : "image/jpeg";
-  const output = canvas.toDataURL(outputMime, outputMime === "image/jpeg" ? quality : undefined);
+  const compressed = await compressImageToDataUrl(file, IMAGE_PROFILES.chatImage);
 
   return {
-    dataUrl: output,
-    mime: outputMime,
+    dataUrl: compressed.dataUrl,
+    mime: compressed.mime,
     name: file.name || "image",
     originalMime: file.type || null,
     originalSize: file.size || 0,
-    size: Math.round((output.length * 3) / 4),
-    width,
-    height,
+    size: compressed.bytes,
+    width: compressed.width,
+    height: compressed.height,
   };
 }
 
-function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(reader.error || new Error("Cannot read image"));
-    reader.readAsDataURL(file);
-  });
+async function prepareVoiceFile(input) {
+  const dataUrl = input.dataUrl || await blobToDataUrl(input.blob || input.file);
+  return {
+    dataUrl,
+    mime: input.mime || input.blob?.type || input.file?.type || "audio/webm",
+    name: input.name || "voice-message.webm",
+    size: input.size || input.blob?.size || input.file?.size || Math.round((String(dataUrl).length * 3) / 4),
+    durationMs: Math.max(0, Math.round(Number(input.durationMs || 0))),
+  };
 }
 
-function loadImage(src) {
+function blobToDataUrl(blob) {
+  if (!blob) return Promise.reject(new Error("Voice blob is missing"));
   return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error("Cannot load image"));
-    img.src = src;
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("Cannot read voice"));
+    reader.readAsDataURL(blob);
   });
 }
