@@ -168,6 +168,42 @@ class ChatServiceTest {
         }
 
         @Test
+        @DisplayName("deduplicates members and ignores creator id")
+        void deduplicatesMembersAndIgnoresCreatorId() {
+            when(userRepository.findByUsername("alice")).thenReturn(Optional.of(alice));
+            when(userRepository.findAllById(List.of(2L))).thenReturn(List.of(bob));
+
+            Chat saved = TestFixtures.groupChat(20L, "Team");
+            when(chatRepository.save(any())).thenReturn(saved);
+            when(participantRepository.saveAll(anyList())).thenAnswer(inv -> inv.getArgument(0));
+
+            Long chatId = chatService.createGroupChat("alice", "Team", List.of(1L, 2L, 2L));
+
+            assertThat(chatId).isEqualTo(20L);
+            verify(userRepository).findAllById(List.of(2L));
+            verify(participantRepository).saveAll(argThat((Iterable<ChatParticipant> participants) -> {
+                List<Long> userIds = new java.util.ArrayList<>();
+                for (ChatParticipant participant : participants) {
+                    userIds.add(participant.getUserId());
+                }
+                return userIds.equals(List.of(1L, 2L));
+            }));
+        }
+
+        @Test
+        @DisplayName("rejects a group where creator is the only member")
+        void rejectsCreatorOnlyGroup() {
+            when(userRepository.findByUsername("alice")).thenReturn(Optional.of(alice));
+
+            assertThatThrownBy(() -> chatService.createGroupChat("alice", "Group", List.of(1L, 1L)))
+                    .isInstanceOf(ChatException.class)
+                    .hasMessageContaining("other member");
+
+            verify(userRepository, never()).findAllById(anyList());
+            verify(chatRepository, never()).save(any());
+        }
+
+        @Test
         @DisplayName("rejects creating a group without a name")
         void rejectsBlankName() {
             // Validation happens before userRepository is called, so no stub is needed
@@ -220,11 +256,11 @@ class ChatServiceTest {
 
             assertThat(result).hasSize(1);
             ChatResponse r = result.get(0);
-            assertThat(r.getChatId()).isEqualTo(5L);
-            assertThat(r.getType()).isEqualTo("DIRECT");
-            assertThat(r.getOtherUsername()).isEqualTo("bob");
-            assertThat(r.getUnreadCount()).isEqualTo(3L);
-            assertThat(r.isOnline()).isTrue();
+            assertThat(r.chatId()).isEqualTo(5L);
+            assertThat(r.type()).isEqualTo("DIRECT");
+            assertThat(r.otherUsername()).isEqualTo("bob");
+            assertThat(r.unreadCount()).isEqualTo(3L);
+            assertThat(r.online()).isTrue();
         }
 
         @Test
@@ -245,9 +281,9 @@ class ChatServiceTest {
 
             assertThat(result).hasSize(1);
             ChatResponse r = result.get(0);
-            assertThat(r.getType()).isEqualTo("GROUP");
-            assertThat(r.getName()).isEqualTo("Project X");
-            assertThat(r.getOtherUsername()).isNull();
+            assertThat(r.type()).isEqualTo("GROUP");
+            assertThat(r.name()).isEqualTo("Project X");
+            assertThat(r.otherUsername()).isNull();
         }
     }
 }

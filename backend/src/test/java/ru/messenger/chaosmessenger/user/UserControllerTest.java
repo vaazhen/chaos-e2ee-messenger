@@ -115,8 +115,7 @@ class UserControllerTest {
 
     @Test
     void updateProfileReturnsNewTokenAndNotifiesSharedChats() {
-        UpdateProfileRequest request = new UpdateProfileRequest();
-        request.setUsername("alice_new");
+        UpdateProfileRequest request = new UpdateProfileRequest(null, null, null, "alice_new");
 
         UpdateProfileResponse updated = new UpdateProfileResponse(
                 1L,

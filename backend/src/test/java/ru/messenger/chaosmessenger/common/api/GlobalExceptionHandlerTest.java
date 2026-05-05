@@ -51,10 +51,10 @@ class GlobalExceptionHandlerTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         ApiErrorResponse body = Objects.requireNonNull(response.getBody());
-        assertThat(body.getStatus()).isEqualTo(404);
-        assertThat(body.getError()).isEqualTo("NOT_FOUND");
-        assertThat(body.getMessage()).isEqualTo("Entity not found");
-        assertThat(body.getTimestamp()).isNotNull();
+        assertThat(body.status()).isEqualTo(404);
+        assertThat(body.error()).isEqualTo("NOT_FOUND");
+        assertThat(body.message()).isEqualTo("Entity not found");
+        assertThat(body.timestamp()).isNotNull();
     }
 
     @Test
@@ -62,8 +62,8 @@ class GlobalExceptionHandlerTest {
         var response = handler.handleBadRequest(new IllegalArgumentException("bad"));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(Objects.requireNonNull(response.getBody()).getError()).isEqualTo("BAD_REQUEST");
-        assertThat(response.getBody().getMessage()).isEqualTo("Bad request");
+        assertThat(Objects.requireNonNull(response.getBody()).error()).isEqualTo("BAD_REQUEST");
+        assertThat(response.getBody().message()).isEqualTo("Bad request");
     }
 
     @Test
@@ -71,7 +71,7 @@ class GlobalExceptionHandlerTest {
         var response = handler.handleConflict(new IllegalStateException("conflict"));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
-        assertThat(Objects.requireNonNull(response.getBody()).getError()).isEqualTo("CONFLICT");
+        assertThat(Objects.requireNonNull(response.getBody()).error()).isEqualTo("CONFLICT");
     }
 
     @Test
@@ -79,8 +79,8 @@ class GlobalExceptionHandlerTest {
         var response = handler.handleAuth(new AuthException("bad token"));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
-        assertThat(Objects.requireNonNull(response.getBody()).getError()).isEqualTo("AUTH_ERROR");
-        assertThat(response.getBody().getMessage()).isEqualTo("bad token");
+        assertThat(Objects.requireNonNull(response.getBody()).error()).isEqualTo("AUTH_ERROR");
+        assertThat(response.getBody().message()).isEqualTo("bad token");
     }
 
     @Test
@@ -89,8 +89,8 @@ class GlobalExceptionHandlerTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
         assertThat(response.getHeaders().getFirst("Retry-After")).isEqualTo("33");
-        assertThat(Objects.requireNonNull(response.getBody()).getError()).isEqualTo("RATE_LIMIT_EXCEEDED");
-        assertThat(response.getBody().getMessage()).isEqualTo("too many");
+        assertThat(Objects.requireNonNull(response.getBody()).error()).isEqualTo("RATE_LIMIT_EXCEEDED");
+        assertThat(response.getBody().message()).isEqualTo("too many");
     }
 
     @Test
@@ -100,13 +100,13 @@ class GlobalExceptionHandlerTest {
         var crypto = handler.handleCryptoException(new CryptoException("crypto error"));
 
         assertThat(chat.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(Objects.requireNonNull(chat.getBody()).getError()).isEqualTo("CHAT_ERROR");
+        assertThat(Objects.requireNonNull(chat.getBody()).error()).isEqualTo("CHAT_ERROR");
 
         assertThat(message.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
-        assertThat(Objects.requireNonNull(message.getBody()).getError()).isEqualTo("MESSAGE_ERROR");
+        assertThat(Objects.requireNonNull(message.getBody()).error()).isEqualTo("MESSAGE_ERROR");
 
         assertThat(crypto.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
-        assertThat(Objects.requireNonNull(crypto.getBody()).getError()).isEqualTo("CRYPTO_ERROR");
+        assertThat(Objects.requireNonNull(crypto.getBody()).error()).isEqualTo("CRYPTO_ERROR");
     }
 
     @Test
@@ -114,8 +114,8 @@ class GlobalExceptionHandlerTest {
         var response = handler.handleForbidden(new AccessDeniedException("denied"));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
-        assertThat(Objects.requireNonNull(response.getBody()).getError()).isEqualTo("FORBIDDEN");
-        assertThat(response.getBody().getMessage()).isEqualTo("Access is denied");
+        assertThat(Objects.requireNonNull(response.getBody()).error()).isEqualTo("FORBIDDEN");
+        assertThat(response.getBody().message()).isEqualTo("Access is denied");
     }
 
     @Test
@@ -123,8 +123,8 @@ class GlobalExceptionHandlerTest {
         var response = handler.handleConstraintViolation(new ConstraintViolationException(Set.of()));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(Objects.requireNonNull(response.getBody()).getError()).isEqualTo("VALIDATION_ERROR");
-        assertThat(response.getBody().getMessage()).isEqualTo("Validation failed");
+        assertThat(Objects.requireNonNull(response.getBody()).error()).isEqualTo("VALIDATION_ERROR");
+        assertThat(response.getBody().message()).isEqualTo("Validation failed");
     }
 
     @Test
@@ -134,9 +134,9 @@ class GlobalExceptionHandlerTest {
         );
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
-        assertThat(Objects.requireNonNull(response.getBody()).getStatus()).isEqualTo(409);
-        assertThat(response.getBody().getError()).isEqualTo("CONFLICT");
-        assertThat(response.getBody().getMessage()).isEqualTo("username taken");
+        assertThat(Objects.requireNonNull(response.getBody()).status()).isEqualTo(409);
+        assertThat(response.getBody().error()).isEqualTo("CONFLICT");
+        assertThat(response.getBody().message()).isEqualTo("username taken");
     }
 
     @Test
@@ -146,7 +146,7 @@ class GlobalExceptionHandlerTest {
         );
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
-        assertThat(Objects.requireNonNull(response.getBody()).getMessage()).isEqualTo("Not Found");
+        assertThat(Objects.requireNonNull(response.getBody()).message()).isEqualTo("Not Found");
     }
 
     @Test
@@ -154,7 +154,7 @@ class GlobalExceptionHandlerTest {
         var response = handler.handleOther(new RuntimeException("boom"));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
-        assertThat(Objects.requireNonNull(response.getBody()).getError()).isEqualTo("INTERNAL_SERVER_ERROR");
-        assertThat(response.getBody().getMessage()).isEqualTo("Internal server error");
+        assertThat(Objects.requireNonNull(response.getBody()).error()).isEqualTo("INTERNAL_SERVER_ERROR");
+        assertThat(response.getBody().message()).isEqualTo("Internal server error");
     }
 }
