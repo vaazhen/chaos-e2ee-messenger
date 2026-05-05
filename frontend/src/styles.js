@@ -493,6 +493,14 @@ button{color:inherit}
   flex:1;
   min-width:0;
 }
+.sheet-head.sheet-head--center-title{
+  justify-content:center;
+}
+.sheet-head.sheet-head--center-title .sheet-title{
+  flex:1 1 auto;
+  text-align:center;
+  max-width:100%;
+}
 .screen-title{
   position:absolute;
   left:50%;
@@ -2137,6 +2145,14 @@ button{color:inherit}
   min-height:0;
   align-self:stretch;
 }
+/* One visual card: inner unified block only (avoid tool-card + unified double frame). */
+.user-profile-screen .group-admin-modal-body .group-admin-card.tool-card{
+  margin-top:0;
+  padding:0;
+  background:transparent;
+  box-shadow:none;
+  border-radius:0;
+}
 
 .chat-head-btn.active{
   box-shadow:0 0 0 3px var(--acc2), var(--soft-shadow);
@@ -2667,9 +2683,9 @@ button{color:inherit}
   font-weight:800;
   color:var(--t1);
 }
-.user-profile-screen .group-admin-participants-block{
+.user-profile-screen .group-admin-unified-card{
   margin-top:4px;
-  padding:16px 16px 14px;
+  padding:16px 16px 18px;
   border-radius:26px;
   background:
     linear-gradient(180deg,color-mix(in srgb, var(--bg1) 88%, transparent),color-mix(in srgb, var(--bg1) 62%, transparent)),
@@ -2679,7 +2695,7 @@ button{color:inherit}
     0 10px 22px rgba(16,22,44,.07),
     inset 0 1px 0 color-mix(in srgb, var(--bg0) 40%, transparent);
 }
-[data-theme='dark'] .user-profile-screen .group-admin-participants-block{
+[data-theme='dark'] .user-profile-screen .group-admin-unified-card{
   background:
     linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.03)),
     var(--bg1);
@@ -2688,12 +2704,32 @@ button{color:inherit}
     0 12px 26px rgba(0,0,0,.28),
     inset 0 1px 0 rgba(255,255,255,.06);
 }
-.user-profile-screen .group-admin-participants-block__title{
+.user-profile-screen .group-admin-section__title{
   margin:0 0 12px;
   font-size:17px;
   font-weight:800;
   letter-spacing:-.02em;
   color:var(--t1);
+}
+.user-profile-screen .group-admin-section-divider{
+  height:0;
+  margin:18px 0 14px;
+  border-top:1px solid color-mix(in srgb, var(--bdr) 55%, transparent);
+}
+.user-profile-screen .group-admin-section-divider--footer{
+  margin-top:20px;
+}
+.user-profile-screen .group-admin-unified-card .profile-bottom-actions{
+  width:100%;
+  box-sizing:border-box;
+  margin-top:16px;
+}
+.user-profile-screen .group-admin-unified-card .group-admin-footer-actions{
+  margin-top:12px;
+  padding-top:4px;
+}
+.user-profile-screen .group-admin-section__hint{
+  margin:10px 0 12px;
 }
 .user-profile-screen .group-admin-filters{
   display:flex;
@@ -2730,10 +2766,7 @@ button{color:inherit}
   height:16px;
   accent-color:var(--acc);
 }
-.user-profile-screen .group-admin-participants-block__hint{
-  margin:10px 0 12px;
-}
-.user-profile-screen .group-admin-participants-block .group-participant-picker{
+.user-profile-screen .group-admin-unified-card .group-participant-picker{
   max-height:min(38vh,320px);
   margin-bottom:4px;
 }
@@ -2796,17 +2829,23 @@ button{color:inherit}
 .chat-tools-panel .group-participant-picker{
   display:flex;
   flex-direction:column;
-  gap:6px;
+  gap:8px;
   margin-bottom:8px;
   max-height:min(42vh,320px);
   overflow:auto;
-  padding:2px;
+  padding:4px 2px;
   scrollbar-gutter:stable;
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
 }
 .chat-tools-panel .group-participant-row-wrap{
   border-radius:16px;
+  position:relative;
+  z-index:0;
+  isolation:isolate;
 }
 .chat-tools-panel .group-participant-row-wrap--active{
+  z-index:3;
   box-shadow:0 0 0 2px var(--acc);
 }
 .chat-tools-panel .group-participant-row{
@@ -2832,11 +2871,12 @@ button{color:inherit}
 }
 .chat-tools-panel .group-participant-row--interactive{
   cursor:context-menu;
-  transition:transform .12s ease, box-shadow .12s ease;
+  transition:box-shadow .12s ease, background .12s ease;
 }
-.chat-tools-panel .group-participant-row-wrap:hover .group-participant-row--interactive{
-  transform:translateY(-1px);
-  box-shadow:0 6px 16px rgba(0,0,0,.08);
+@media (hover:hover) and (pointer:fine){
+  .chat-tools-panel .group-participant-row-wrap:hover .group-participant-row--interactive{
+    box-shadow:0 4px 14px rgba(0,0,0,.1);
+  }
 }
 .chat-tools-panel .group-participant-row__main{
   display:flex;
@@ -2873,6 +2913,8 @@ button{color:inherit}
   align-items:center;
   justify-content:center;
   box-shadow:var(--soft-shadow);
+  position:relative;
+  z-index:1;
 }
 .chat-tools-panel .group-participant-overflow-btn:focus-visible{
   outline:2px solid var(--acc);
