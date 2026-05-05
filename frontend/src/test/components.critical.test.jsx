@@ -121,6 +121,9 @@ describe("critical UI components", () => {
     expect(onCancelReply).toHaveBeenCalled();
 
     const textarea = screen.getByPlaceholderText("Сообщение...");
+    textarea.blur();
+    fireEvent.keyDown(window, { key: "a" });
+    expect(textarea).toHaveFocus();
 
     fireEvent.change(textarea, { target: { value: "hello" } });
     expect(onTyping).toHaveBeenCalledTimes(1);
@@ -139,11 +142,12 @@ describe("critical UI components", () => {
     fireEvent.click(screen.getByText("😀"));
     expect(localStorage.getItem("cm_recent_emojis")).toContain("😀");
 
-    fireEvent.click(screen.getByText("➤"));
+    fireEvent.click(screen.getByTitle("Send"));
 
     expect(onSend).toHaveBeenCalledWith({
       text: "hello world!😀",
       imgFile: null,
+      voiceFile: null,
       replyTo: { _text: "old message" },
     });
   });
