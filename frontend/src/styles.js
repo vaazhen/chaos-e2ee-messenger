@@ -657,6 +657,23 @@ button{color:inherit}
   border-radius:16px;
   margin-bottom:6px;
 }
+.msg-voice{
+  min-width:240px;
+  max-width:min(320px,58vw);
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin-bottom:6px;
+}
+.msg-voice audio{
+  width:100%;
+  height:34px;
+}
+.msg-voice span{
+  flex-shrink:0;
+  font-size:12px;
+  opacity:.72;
+}
 .reply-quote{
   background:rgba(0,0,0,.07);
   border-left:3px solid currentColor;
@@ -778,6 +795,52 @@ button{color:inherit}
   display:flex;
   align-items:center;
   justify-content:center;
+}
+.emoji-trigger.recording{
+  color:var(--red);
+  animation:pulseVoice 1s ease-in-out infinite;
+}
+.emoji-trigger:disabled{
+  opacity:.45;
+  cursor:default;
+}
+.voice-error{
+  margin:8px 14px 0;
+  color:var(--red);
+  font-size:13px;
+}
+.voice-preview{
+  margin:8px 14px 0;
+  padding:8px 10px;
+  border-radius:18px;
+  background:var(--bg1);
+  display:flex;
+  align-items:center;
+  gap:10px;
+  box-shadow:var(--soft-shadow);
+}
+.voice-preview audio{
+  flex:1;
+  min-width:0;
+  height:34px;
+}
+.voice-preview span{
+  color:var(--t2);
+  font-size:12px;
+  font-weight:800;
+}
+.voice-preview button{
+  width:28px;
+  height:28px;
+  border:none;
+  border-radius:50%;
+  background:var(--bg2);
+  color:var(--t1);
+  cursor:pointer;
+}
+@keyframes pulseVoice{
+  0%,100%{transform:scale(1);opacity:1}
+  50%{transform:scale(1.08);opacity:.72}
 }
 .send-btn{
   width:52px;height:52px;

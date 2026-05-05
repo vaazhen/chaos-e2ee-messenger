@@ -2,6 +2,8 @@ import { useMemo, useRef, useState, useEffect } from "react";
 
 const EMOJI_STORAGE_KEY = "cm_recent_emojis";
 const MAX_RECENT_EMOJIS = 16;
+const MAX_VOICE_MS = 30_000;
+const MAX_VOICE_BYTES = 110 * 1024;
 
 const EMOJI_CATEGORIES = [
   {
@@ -61,9 +63,18 @@ export default function MessageInput({ onSend, replyTo, onОтменаОтвет
   const [emojiCat, setEmojiCat] = useState("recent");
   const [recentEmojis, setRecentEmojis] = useState(() => loadRecentEmojis());
   const [imgFile, setImgFile] = useState(null);
+  const [voiceFile, setVoiceFile] = useState(null);
+  const [recording, setRecording] = useState(false);
+  const [recordingMs, setRecordingMs] = useState(0);
+  const [voiceError, setVoiceError] = useState("");
   const inpRef = useRef(null);
   const fileRef = useRef(null);
   const inputBarRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const mediaStreamRef = useRef(null);
+  const voiceChunksRef = useRef([]);
+  const recordingStartedAtRef = useRef(0);
+  const recordingTimerRef = useRef(null);
   
   const emojiRootRef = useRef(null);
 const typingTimerRef = useRef(null);
@@ -139,10 +150,12 @@ const typingTimerRef = useRef(null);
   };
 
   const handleSend = () => {
-    if (!text.trim() && !imgFile) return;
-    onSend({ text: text.trim(), imgFile, replyTo });
+    if (!text.trim() && !imgFile && !voiceFile) return;
+    onSend({ text: text.trim(), imgFile, voiceFile, replyTo });
     setText("");
     setImgFile(null);
+    setVoiceFile(null);
+    setVoiceError("");
     setShowEmoji(false);
     setEmojiClosing(false);
     inpRef.current?.focus();
@@ -154,10 +167,106 @@ const typingTimerRef = useRef(null);
 
   const onFileChange = e => {
     const file = e.target.files[0]; if (!file) return;
+    cancelVoice();
     const reader = new FileReader();
     reader.onload = ev => setImgFile({ src: ev.target.result, file });
     reader.readAsDataURL(file);
     e.target.value = "";
+  };
+
+  const stopRecordingTimer = () => {
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+  };
+
+  const cleanupRecordingStream = () => {
+    mediaStreamRef.current?.getTracks?.().forEach(track => track.stop());
+    mediaStreamRef.current = null;
+  };
+
+  const stopRecording = () => {
+    const recorder = mediaRecorderRef.current;
+    if (recorder && recorder.state !== "inactive") {
+      recorder.stop();
+    }
+  };
+
+  const startRecording = async () => {
+    if (disabled || recording) return;
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setVoiceError("Voice recording is not supported in this browser");
+      return;
+    }
+
+    try {
+      setVoiceError("");
+      setImgFile(null);
+      cancelVoice();
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mime = pickVoiceMimeType();
+      const recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+
+      voiceChunksRef.current = [];
+      mediaStreamRef.current = stream;
+      mediaRecorderRef.current = recorder;
+      recordingStartedAtRef.current = Date.now();
+      setRecording(true);
+      setRecordingMs(0);
+
+      recorder.ondataavailable = (event) => {
+        if (event.data?.size) voiceChunksRef.current.push(event.data);
+      };
+
+      recorder.onstop = () => {
+        stopRecordingTimer();
+        cleanupRecordingStream();
+        setRecording(false);
+
+        const durationMs = Math.min(MAX_VOICE_MS, Date.now() - recordingStartedAtRef.current);
+        const blob = new Blob(voiceChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        voiceChunksRef.current = [];
+
+        if (durationMs < 500 || !blob.size) {
+          setVoiceError("Voice message is too short");
+          return;
+        }
+        if (blob.size > MAX_VOICE_BYTES) {
+          setVoiceError("Voice message is too large. Keep it shorter.");
+          return;
+        }
+
+        setVoiceFile(prev => {
+          if (prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl);
+          return {
+            blob,
+            mime: blob.type || "audio/webm",
+            size: blob.size,
+            durationMs,
+            previewUrl: URL.createObjectURL(blob),
+            name: "voice-message.webm",
+          };
+        });
+      };
+
+      recorder.start();
+      recordingTimerRef.current = setInterval(() => {
+        const elapsed = Date.now() - recordingStartedAtRef.current;
+        setRecordingMs(Math.min(MAX_VOICE_MS, elapsed));
+        if (elapsed >= MAX_VOICE_MS) stopRecording();
+      }, 200);
+    } catch (e) {
+      cleanupRecordingStream();
+      setRecording(false);
+      setVoiceError(e?.message || "Could not access microphone");
+    }
+  };
+
+  const cancelVoice = () => {
+    if (voiceFile?.previewUrl) URL.revokeObjectURL(voiceFile.previewUrl);
+    setVoiceFile(null);
+    setVoiceError("");
   };
 
   const addRecentEmoji = (emoji) => {
@@ -200,6 +309,12 @@ const typingTimerRef = useRef(null);
       document.removeEventListener("touchstart", closeEmojiOutside, true);
     };
   }, [showEmoji]);
+
+  useEffect(() => () => {
+    stopRecordingTimer();
+    cleanupRecordingStream();
+    if (voiceFile?.previewUrl) URL.revokeObjectURL(voiceFile.previewUrl);
+  }, [voiceFile?.previewUrl]);
 return (
     <>
       {replyTo && (
@@ -207,7 +322,7 @@ return (
           <div style={{ color: "var(--acc)", fontSize: 18 }}>↩</div>
           <div className="reply-prev-inner">
             <div className="reply-prev-name">Ответить</div>
-            <div className="reply-prev-txt">{replyTo._img ? "📷 Фото" : replyTo._text}</div>
+            <div className="reply-prev-txt">{replyPreview(replyTo)}</div>
           </div>
           <button className="modal-close" onClick={onОтменаОтветить}>×</button>
         </div>
@@ -220,6 +335,18 @@ return (
             <button style={{ position: "absolute", top: -4, right: -4, width: 20, height: 20, borderRadius: "50%", background: "var(--red)", border: "none", color: "#fff", cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center" }}
               onClick={() => setImgFile(null)}>×</button>
           </div>
+        </div>
+      )}
+
+      {voiceError && (
+        <div className="voice-error">{voiceError}</div>
+      )}
+
+      {voiceFile && (
+        <div className="voice-preview" onClick={e => e.stopPropagation()}>
+          <audio src={voiceFile.previewUrl} controls />
+          <span>{formatDuration(voiceFile.durationMs)}</span>
+          <button type="button" onClick={cancelVoice}>Г—</button>
         </div>
       )}
 
@@ -280,10 +407,40 @@ return (
           />
           <button className="emoji-trigger" onClick={e => { e.stopPropagation(); fileRef.current?.click(); }}>📎</button>
           <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onFileChange} />
+          <button
+            type="button"
+            className={`emoji-trigger${recording ? " recording" : ""}`}
+            onClick={e => {
+              e.stopPropagation();
+              recording ? stopRecording() : startRecording();
+            }}
+            title={recording ? formatDuration(recordingMs) : "Voice message"}
+            disabled={disabled}
+          >
+            {recording ? "■" : "●"}
+          </button>
         </div>
 
-        <button className="send-btn" onClick={handleSend} disabled={(!text.trim() && !imgFile) || disabled}>➤</button>
+        <button className="send-btn" onClick={handleSend} disabled={(!text.trim() && !imgFile && !voiceFile) || disabled || recording}>➤</button>
       </div>
     </>
   );
+}
+
+function pickVoiceMimeType() {
+  const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
+  return candidates.find(type => MediaRecorder.isTypeSupported?.(type)) || "";
+}
+
+function formatDuration(ms) {
+  const total = Math.max(0, Math.round(Number(ms || 0) / 1000));
+  const minutes = Math.floor(total / 60);
+  const seconds = String(total % 60).padStart(2, "0");
+  return `${minutes}:${seconds}`;
+}
+
+function replyPreview(msg) {
+  if (msg?._img) return "Photo";
+  if (msg?._voice) return "Voice message";
+  return msg?._text || "";
 }

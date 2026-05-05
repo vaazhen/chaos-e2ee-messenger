@@ -225,14 +225,16 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
     setShowSettings(false);
   };
 
-  const sendMsg = async ({ text, imgFile }) => {
-    if ((!String(text || "").trim() && !imgFile) || !chatStore.activeId) return;
+  const sendMsg = async ({ text, imgFile, voiceFile }) => {
+    if ((!String(text || "").trim() && !imgFile && !voiceFile) || !chatStore.activeId) return;
     const preview = imgFile
       ? (String(text || "").trim() ? `📷 ${String(text).trim()}` : "📷 Фото")
+      : voiceFile
+        ? (String(text || "").trim() ? `Voice: ${String(text).trim()}` : "Voice message")
       : String(text).trim();
     chatStore.updateChatPreview(chatStore.activeId, preview, true, getTime());
     setReplyTo(null);
-    await msgStore.sendMessage(chatStore.activeId, { text, imgFile });
+    await msgStore.sendMessage(chatStore.activeId, { text, imgFile, voiceFile });
   };
 
   const closeCtx = () => {
@@ -494,7 +496,7 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
             ))}
           </div>
           <div className="menu-line" />
-          {ctx.msg?._out && !ctx.msg?._temp && (ctx.msg?._text || ctx.msg?._img) && (
+          {ctx.msg?._out && !ctx.msg?._temp && (ctx.msg?._text || ctx.msg?._img || ctx.msg?._voice) && (
             <button className="ctx-item" onClick={() => beginEdit(ctx.msg)}>
               <span className="ci">✎</span>Edit
             </button>
@@ -529,6 +531,7 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
               onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) submitEdit(); }}
             />
             {editTarget._img && <div className="field-hint">Only the image caption will be changed.</div>}
+            {editTarget._voice && <div className="field-hint">Only the voice caption will be changed.</div>}
             <div className="btn-row">
               <button className="btn-sec" disabled={editLoading} onClick={() => setEditTarget(null)}>Cancel</button>
               <button className="btn-pri" disabled={editLoading || !editText.trim()} onClick={submitEdit}>

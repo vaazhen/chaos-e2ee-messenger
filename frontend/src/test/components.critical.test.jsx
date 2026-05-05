@@ -144,6 +144,7 @@ describe("critical UI components", () => {
     expect(onSend).toHaveBeenCalledWith({
       text: "hello world!😀",
       imgFile: null,
+      voiceFile: null,
       replyTo: { _text: "old message" },
     });
   });

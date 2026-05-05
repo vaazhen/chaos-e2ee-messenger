@@ -77,6 +77,13 @@ export default function MessageList({
 
               {msg._img && <img className="msg-img" src={msg._img} alt="" />}
 
+              {msg._voice && (
+                <div className="msg-voice">
+                  <audio src={msg._voice.dataUrl} controls preload="metadata" />
+                  {msg._voice.durationMs ? <span>{formatDuration(msg._voice.durationMs)}</span> : null}
+                </div>
+              )}
+
               {text && <span>{renderHighlightedText(text, searchQuery)}</span>}
 
               <div className="msg-meta">
@@ -125,6 +132,14 @@ export default function MessageList({
     </div>
   );
 }
+
+function formatDuration(ms) {
+  const total = Math.max(0, Math.round(Number(ms || 0) / 1000));
+  const minutes = Math.floor(total / 60);
+  const seconds = String(total % 60).padStart(2, "0");
+  return `${minutes}:${seconds}`;
+}
+
 function renderHighlightedText(text, query) {
   const q = String(query || "").trim();
   const source = String(text || "");
