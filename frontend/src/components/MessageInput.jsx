@@ -65,6 +65,7 @@ export default function MessageInput({ onSend, replyTo, onОтменаОтвет
   const [imgFile, setImgFile] = useState(null);
   const [voiceFile, setVoiceFile] = useState(null);
   const [recording, setRecording] = useState(false);
+  const [recordingLocked, setRecordingLocked] = useState(false);
   const [recordingMs, setRecordingMs] = useState(0);
   const [voiceError, setVoiceError] = useState("");
   const inpRef = useRef(null);
@@ -75,6 +76,9 @@ export default function MessageInput({ onSend, replyTo, onОтменаОтвет
   const voiceChunksRef = useRef([]);
   const recordingStartedAtRef = useRef(0);
   const recordingTimerRef = useRef(null);
+  const recordingStartYRef = useRef(0);
+  const autoSendVoiceRef = useRef(false);
+  const discardVoiceRef = useRef(false);
   
   const emojiRootRef = useRef(null);
 const typingTimerRef = useRef(null);
@@ -149,12 +153,14 @@ const typingTimerRef = useRef(null);
     }
   };
 
-  const handleSend = () => {
-    if (!text.trim() && !imgFile && !voiceFile) return;
-    onSend({ text: text.trim(), imgFile, voiceFile, replyTo });
+  const handleSend = (overrideVoiceFile = null) => {
+    const nextVoiceFile = overrideVoiceFile || voiceFile;
+    if (!text.trim() && !imgFile && !nextVoiceFile) return;
+    onSend({ text: text.trim(), imgFile, voiceFile: nextVoiceFile, replyTo });
     setText("");
     setImgFile(null);
     setVoiceFile(null);
+    setRecordingLocked(false);
     setVoiceError("");
     setShowEmoji(false);
     setEmojiClosing(false);
@@ -186,7 +192,8 @@ const typingTimerRef = useRef(null);
     mediaStreamRef.current = null;
   };
 
-  const stopRecording = () => {
+  const stopRecording = (autoSend = false) => {
+    autoSendVoiceRef.current = autoSend;
     const recorder = mediaRecorderRef.current;
     if (recorder && recorder.state !== "inactive") {
       recorder.stop();
@@ -212,7 +219,9 @@ const typingTimerRef = useRef(null);
       mediaStreamRef.current = stream;
       mediaRecorderRef.current = recorder;
       recordingStartedAtRef.current = Date.now();
+      autoSendVoiceRef.current = false;
       setRecording(true);
+      setRecordingLocked(false);
       setRecordingMs(0);
 
       recorder.ondataavailable = (event) => {
@@ -222,11 +231,20 @@ const typingTimerRef = useRef(null);
       recorder.onstop = () => {
         stopRecordingTimer();
         cleanupRecordingStream();
+        const shouldAutoSend = autoSendVoiceRef.current;
+        const shouldDiscard = discardVoiceRef.current;
+        autoSendVoiceRef.current = false;
+        discardVoiceRef.current = false;
         setRecording(false);
+        setRecordingLocked(false);
 
         const durationMs = Math.min(MAX_VOICE_MS, Date.now() - recordingStartedAtRef.current);
         const blob = new Blob(voiceChunksRef.current, { type: recorder.mimeType || "audio/webm" });
         voiceChunksRef.current = [];
+
+        if (shouldDiscard) {
+          return;
+        }
 
         if (durationMs < 500 || !blob.size) {
           setVoiceError("Voice message is too short");
@@ -237,16 +255,24 @@ const typingTimerRef = useRef(null);
           return;
         }
 
+        const voice = {
+          blob,
+          mime: blob.type || "audio/webm",
+          size: blob.size,
+          durationMs,
+          previewUrl: URL.createObjectURL(blob),
+          name: "voice-message.webm",
+        };
+
+        if (shouldAutoSend) {
+          handleSend(voice);
+          window.setTimeout(() => URL.revokeObjectURL(voice.previewUrl), 1000);
+          return;
+        }
+
         setVoiceFile(prev => {
           if (prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl);
-          return {
-            blob,
-            mime: blob.type || "audio/webm",
-            size: blob.size,
-            durationMs,
-            previewUrl: URL.createObjectURL(blob),
-            name: "voice-message.webm",
-          };
+          return voice;
         });
       };
 
@@ -254,7 +280,7 @@ const typingTimerRef = useRef(null);
       recordingTimerRef.current = setInterval(() => {
         const elapsed = Date.now() - recordingStartedAtRef.current;
         setRecordingMs(Math.min(MAX_VOICE_MS, elapsed));
-        if (elapsed >= MAX_VOICE_MS) stopRecording();
+        if (elapsed >= MAX_VOICE_MS) stopRecording(true);
       }, 200);
     } catch (e) {
       cleanupRecordingStream();
@@ -267,6 +293,57 @@ const typingTimerRef = useRef(null);
     if (voiceFile?.previewUrl) URL.revokeObjectURL(voiceFile.previewUrl);
     setVoiceFile(null);
     setVoiceError("");
+  };
+
+  const cancelRecording = () => {
+    autoSendVoiceRef.current = false;
+    discardVoiceRef.current = true;
+    voiceChunksRef.current = [];
+    setRecordingLocked(false);
+    stopRecordingTimer();
+    cleanupRecordingStream();
+    const recorder = mediaRecorderRef.current;
+    if (recorder && recorder.state !== "inactive") {
+      recorder.stop();
+    } else {
+      setRecording(false);
+    }
+  };
+
+  const canQuickRecord = !text.trim() && !imgFile && !voiceFile;
+
+  const onPrimaryPointerDown = (e) => {
+    if (disabled || !canQuickRecord || recording) return;
+    e.preventDefault();
+    e.stopPropagation();
+    recordingStartYRef.current = e.clientY || e.touches?.[0]?.clientY || 0;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    startRecording();
+  };
+
+  const onPrimaryPointerMove = (e) => {
+    if (!recording || recordingLocked) return;
+    const startY = recordingStartYRef.current;
+    const currentY = e.clientY || e.touches?.[0]?.clientY || startY;
+    if (startY - currentY > 58) {
+      setRecordingLocked(true);
+    }
+  };
+
+  const onPrimaryPointerUp = (e) => {
+    if (!recording) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+    if (!recordingLocked) {
+      stopRecording(true);
+    }
+  };
+
+  const onPrimaryClick = (e) => {
+    if (recording || canQuickRecord) return;
+    e.stopPropagation();
+    handleSend();
   };
 
   const addRecentEmoji = (emoji) => {
@@ -342,6 +419,20 @@ return (
         <div className="voice-error">{voiceError}</div>
       )}
 
+      {recording && (
+        <div className={`recording-panel${recordingLocked ? " locked" : ""}`} onClick={e => e.stopPropagation()}>
+          <div className="recording-pulse" />
+          <span>{formatDuration(recordingMs)}</span>
+          <b>{recordingLocked ? "Locked" : "Swipe up to lock"}</b>
+          {recordingLocked && (
+            <>
+              <button type="button" className="recording-cancel" onClick={cancelRecording}>Cancel</button>
+              <button type="button" className="recording-send" onClick={() => stopRecording(true)}>вћ¤</button>
+            </>
+          )}
+        </div>
+      )}
+
       {voiceFile && (
         <div className="voice-preview" onClick={e => e.stopPropagation()}>
           <audio src={voiceFile.previewUrl} controls />
@@ -409,7 +500,7 @@ return (
           <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onFileChange} />
           <button
             type="button"
-            className={`emoji-trigger${recording ? " recording" : ""}`}
+            className="emoji-trigger old-voice-trigger"
             onClick={e => {
               e.stopPropagation();
               recording ? stopRecording() : startRecording();
@@ -421,7 +512,19 @@ return (
           </button>
         </div>
 
-        <button className="send-btn" onClick={handleSend} disabled={(!text.trim() && !imgFile && !voiceFile) || disabled || recording}>➤</button>
+        <button
+          type="button"
+          className={`send-btn${canQuickRecord ? " voice-ready" : ""}${recording ? " recording" : ""}${recordingLocked ? " locked" : ""}`}
+          onClick={onPrimaryClick}
+          onPointerDown={onPrimaryPointerDown}
+          onPointerMove={onPrimaryPointerMove}
+          onPointerUp={onPrimaryPointerUp}
+          onPointerCancel={cancelRecording}
+          disabled={disabled || (recording && recordingLocked)}
+          title={canQuickRecord ? "Hold to record" : "Send"}
+        >
+          {canQuickRecord ? "●" : "➤"}
+        </button>
       </div>
     </>
   );
