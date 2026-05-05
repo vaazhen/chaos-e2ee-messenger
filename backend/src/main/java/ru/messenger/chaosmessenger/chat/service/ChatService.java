@@ -57,8 +57,12 @@ public class ChatService {
         Optional<Long> existing = participantRepository.findDirectChatId(currentUser.getId(), targetUser.getId());
         if (existing.isPresent()) {
             Long chatId = existing.get();
-            notifyChatListUpdated(currentUser.getUsername(), chatId, "chat_exists");
-            notifyChatListUpdated(targetUser.getUsername(),  chatId, "chat_exists");
+            String currentUsr = currentUser.getUsername();
+            String targetUsr = targetUser.getUsername();
+            TransactionUtils.afterCommit(() -> {
+                notifyChatListUpdated(currentUsr, chatId, "chat_exists");
+                notifyChatListUpdated(targetUsr, chatId, "chat_exists");
+            });
             return chatId;
         }
 
@@ -123,8 +127,25 @@ public class ChatService {
 
         User creator = userRepository.findByUsername(currentUsername)
                 .orElseThrow(() -> new ChatException("Current user not found"));
-        List<User> members = userRepository.findAllById(memberIds);
-        if (members.size() != memberIds.size()) throw new ChatException("One or more member users not found");
+
+        List<Long> distinctMemberIds = memberIds.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        List<Long> otherMemberIds = distinctMemberIds.stream()
+                .filter(id -> !id.equals(creator.getId()))
+                .toList();
+        if (otherMemberIds.isEmpty()) {
+            throw new ChatException("Group must have at least one other member");
+        }
+
+        List<User> members = userRepository.findAllById(otherMemberIds);
+        Set<Long> foundMemberIds = members.stream()
+                .map(User::getId)
+                .collect(Collectors.toSet());
+        if (!foundMemberIds.containsAll(otherMemberIds)) {
+            throw new ChatException("One or more member users not found");
+        }
 
         Chat chat = new Chat();
         chat.setType("GROUP");
@@ -135,9 +156,7 @@ public class ChatService {
         List<ChatParticipant> participantsToSave = new ArrayList<>();
         participantsToSave.add(new ChatParticipant(chat.getId(), creator.getId()));
         for (User member : members) {
-            if (!member.getId().equals(creator.getId())) {
-                participantsToSave.add(new ChatParticipant(chat.getId(), member.getId()));
-            }
+            participantsToSave.add(new ChatParticipant(chat.getId(), member.getId()));
         }
         participantRepository.saveAll(participantsToSave);
 
@@ -246,7 +265,7 @@ public class ChatService {
                     unread, online, lastSeen
             );
         })
-        .collect(Collectors.toMap(ChatResponse::getChatId, response -> response));
+        .collect(Collectors.toMap(ChatResponse::chatId, response -> response));
 
         return chatIds.stream()
                 .map(responsesByChatId::get)

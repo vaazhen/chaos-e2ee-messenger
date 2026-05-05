@@ -40,10 +40,10 @@ public class PreKeyService {
     public PreKeyBundleResponse getBundleByUsername(String username) {
         List<UserDevice> devices = userDeviceRepository.findActiveByUsernameWithUser(username);
         ReadOnlyPreKeys preKeys = loadReadOnlyPreKeys(devices);
-        return PreKeyBundleResponse.builder()
-                .username(username)
-                .devices(devices.stream().map(device -> toDeviceBundleReadOnly(device, preKeys)).toList())
-                .build();
+        return new PreKeyBundleResponse(
+                username,
+                devices.stream().map(device -> toDeviceBundleReadOnly(device, preKeys)).toList()
+        );
     }
 
     @Transactional
@@ -84,12 +84,7 @@ public class PreKeyService {
             targets.add(toDeviceBundleWithReservedPreKey(device, signedByDeviceId.get(device.getId())));
         }
 
-        return ResolvedChatDevicesResponse.builder()
-                .chatId(chatId)
-                .username(username)
-                .currentDeviceId(currentDevice.getDeviceId())
-                .targetDevices(targets)
-                .build();
+        return new ResolvedChatDevicesResponse(chatId, username, currentDevice.getDeviceId(), targets);
     }
 
     private ReadOnlyPreKeys loadReadOnlyPreKeys(Collection<UserDevice> devices) {
@@ -173,29 +168,28 @@ public class PreKeyService {
     private DeviceBundleDto buildDto(UserDevice device, SignedPreKey signedPreKey, OneTimePreKey oneTimePreKey) {
         SignedPreKeyDto signedDto = null;
         if (signedPreKey != null) {
-            signedDto = new SignedPreKeyDto();
-            signedDto.setPreKeyId(signedPreKey.getPreKeyId());
-            signedDto.setPublicKey(signedPreKey.getPublicKey());
-            signedDto.setSignature(signedPreKey.getSignature());
+            signedDto = new SignedPreKeyDto(
+                    signedPreKey.getPreKeyId(),
+                    signedPreKey.getPublicKey(),
+                    signedPreKey.getSignature()
+            );
         }
 
         OneTimePreKeyDto oneTimeDto = null;
         if (oneTimePreKey != null) {
-            oneTimeDto = new OneTimePreKeyDto();
-            oneTimeDto.setPreKeyId(oneTimePreKey.getPreKeyId());
-            oneTimeDto.setPublicKey(oneTimePreKey.getPublicKey());
+            oneTimeDto = new OneTimePreKeyDto(oneTimePreKey.getPreKeyId(), oneTimePreKey.getPublicKey());
         }
 
-        return DeviceBundleDto.builder()
-                .userId(device.getUser().getId())
-                .deviceDbId(device.getId())
-                .deviceId(device.getDeviceId())
-                .deviceName(device.getDeviceName())
-                .registrationId(device.getRegistrationId())
-                .identityPublicKey(device.getIdentityPublicKey())
-                .signedPreKey(signedDto)
-                .oneTimePreKey(oneTimeDto)
-                .build();
+        return new DeviceBundleDto(
+                device.getUser().getId(),
+                device.getId(),
+                device.getDeviceId(),
+                device.getRegistrationId(),
+                device.getDeviceName(),
+                device.getIdentityPublicKey(),
+                signedDto,
+                oneTimeDto
+        );
     }
 
     private record ReadOnlyPreKeys(

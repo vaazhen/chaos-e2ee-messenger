@@ -78,20 +78,20 @@ public class UserService {
     public UpdateProfileResponse updateProfile(String currentIdentity, UpdateProfileRequest request) {
         var user = userIdentityService.require(currentIdentity);
 
-        if (request.getFirstName() != null) {
-            user.setFirstName(request.getFirstName().trim());
+        if (request.firstName() != null) {
+            user.setFirstName(request.firstName().trim());
         }
 
-        if (request.getLastName() != null) {
-            user.setLastName(request.getLastName().trim());
+        if (request.lastName() != null) {
+            user.setLastName(request.lastName().trim());
         }
 
-        if (request.getAvatarUrl() != null) {
-            user.setAvatarUrl(request.getAvatarUrl().trim());
+        if (request.avatarUrl() != null) {
+            user.setAvatarUrl(request.avatarUrl().trim());
         }
 
-        if (request.getUsername() != null && !request.getUsername().isBlank()) {
-            String newUsername = request.getUsername().trim().toLowerCase();
+        if (request.username() != null && !request.username().isBlank()) {
+            String newUsername = request.username().trim().toLowerCase();
 
             if (!newUsername.matches("^[a-z0-9_]{3,32}$")) {
                 throw new IllegalArgumentException("Username must be 3-32 chars: a-z, 0-9, underscore");
@@ -109,18 +109,18 @@ public class UserService {
 
         user = userRepository.save(user);
         UserProfileResponse updated = toProfileResponse(user);
-        String token = jwtService.generateToken(updated.getUsername());
+        String token = jwtService.generateToken(updated.username());
 
-        Long updatedUserId = updated.getId();
+        Long updatedUserId = updated.id();
         TransactionUtils.afterCommit(() -> notifySharedChatsAboutProfileUpdate(updatedUserId));
 
         return new UpdateProfileResponse(
-                updated.getId(),
-                updated.getUsername(),
-                updated.getEmail(),
-                updated.getFirstName(),
-                updated.getLastName(),
-                updated.getAvatarUrl(),
+                updated.id(),
+                updated.username(),
+                updated.email(),
+                updated.firstName(),
+                updated.lastName(),
+                updated.avatarUrl(),
                 token
         );
     }

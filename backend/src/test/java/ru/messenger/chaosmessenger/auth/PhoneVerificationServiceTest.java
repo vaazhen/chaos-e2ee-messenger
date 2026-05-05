@@ -79,8 +79,8 @@ class PhoneVerificationServiceTest {
 
         PhoneVerificationService.VerificationResult result = service.verifyCode(phone, "123456");
 
-        assertThat(result.getStatus()).isEqualTo("ok");
-        assertThat(result.getToken()).isEqualTo("jwt-token");
+        assertThat(result.status()).isEqualTo("ok");
+        assertThat(result.token()).isEqualTo("jwt-token");
         assertThat(code.getUsedAt()).isNotNull();
         assertThat(code.getCode()).isNotEqualTo("123456");
         assertThat(passwordEncoder.matches("123456", code.getCode())).isTrue();
@@ -94,7 +94,7 @@ class PhoneVerificationServiceTest {
 
         PhoneVerificationService.VerificationResult result = service.verifyCode(phone, "123456");
 
-        assertThat(result.getStatus()).isEqualTo("not_found");
+        assertThat(result.status()).isEqualTo("not_found");
         verify(codeRepo, never()).save(any());
         verifyNoInteractions(userRepository, jwtService);
     }
@@ -108,7 +108,7 @@ class PhoneVerificationServiceTest {
 
         PhoneVerificationService.VerificationResult result = service.verifyCode(phone, "000000");
 
-        assertThat(result.getStatus()).isEqualTo("invalid");
+        assertThat(result.status()).isEqualTo("invalid");
         assertThat(code.getAttempts()).isEqualTo(1);
         assertThat(code.getUsedAt()).isNull();
         verify(codeRepo).save(code);

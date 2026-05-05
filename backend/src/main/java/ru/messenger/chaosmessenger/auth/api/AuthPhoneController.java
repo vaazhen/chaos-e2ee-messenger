@@ -1,32 +1,28 @@
 package ru.messenger.chaosmessenger.auth.api;
 
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
-
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import lombok.Data;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 import ru.messenger.chaosmessenger.auth.dto.AccountExistsResponse;
 import ru.messenger.chaosmessenger.auth.dto.AuthResponse;
+import ru.messenger.chaosmessenger.auth.dto.CompleteSetupRequest;
 import ru.messenger.chaosmessenger.auth.dto.LogoutResponse;
+import ru.messenger.chaosmessenger.auth.dto.RefreshRequest;
+import ru.messenger.chaosmessenger.auth.dto.SendCodeRequest;
 import ru.messenger.chaosmessenger.auth.dto.SendCodeResponse;
 import ru.messenger.chaosmessenger.auth.dto.TokenRefreshResponse;
 import ru.messenger.chaosmessenger.auth.dto.UsernameAvailabilityResponse;
+import ru.messenger.chaosmessenger.auth.dto.VerifyCodeRequest;
 import ru.messenger.chaosmessenger.auth.dto.VerifyCodeResponse;
 import ru.messenger.chaosmessenger.auth.service.AuthService;
 
-/**
- * Phone/SMS authentication and two-phase registration.
- *
- * New user flow:
- *   POST /send-code → POST /verify-code → setupToken
- *   → POST /complete-setup → JWT issued
- *
- * Returning user flow:
- *   POST /send-code → POST /verify-code → JWT issued directly
- */
 @Tag(name = "Authentication", description = "Registration and login")
 @RestController
 @RequestMapping("/api/auth")
@@ -49,66 +45,41 @@ public class AuthPhoneController {
 
     @Operation(summary = "Send SMS verification code")
     @PostMapping("/send-code")
-    public SendCodeResponse sendCode(@Valid @RequestBody SendCodeRequest req) {
-        return authService.sendCode(req.getPhone(), req.getVia());
+    public SendCodeResponse sendCode(@Valid @RequestBody SendCodeRequest request) {
+        return authService.sendCode(request.phone(), request.via());
     }
 
     @Operation(
-        summary = "Verify SMS code",
-        description = "Existing users receive `token`/`refreshToken`/`deviceRegistrationToken`. " +
-                      "New users receive `setupToken` — call `/auth/complete-setup` next."
+            summary = "Verify SMS code",
+            description = "Existing users receive token/refreshToken/deviceRegistrationToken. " +
+                    "New users receive setupToken and must call complete-setup next."
     )
     @PostMapping("/verify-code")
-    public VerifyCodeResponse verifyCode(@Valid @RequestBody VerifyCodeRequest req) {
-        return authService.verifyCode(req.getPhone(), req.getCode());
+    public VerifyCodeResponse verifyCode(@Valid @RequestBody VerifyCodeRequest request) {
+        return authService.verifyCode(request.phone(), request.code());
     }
 
-    @Operation(
-        summary = "Complete phone registration",
-        description = "Exchange `setupToken` for a full JWT session after the user has filled in their profile."
-    )
+    @Operation(summary = "Complete phone registration")
     @PostMapping("/complete-setup")
-    public AuthResponse completeSetup(@Valid @RequestBody CompleteSetupRequest req) {
+    public AuthResponse completeSetup(@Valid @RequestBody CompleteSetupRequest request) {
         return authService.completeSetup(
-                req.getSetupToken(),
-                req.getUsername(),
-                req.getFirstName(),
-                req.getLastName(),
-                req.getAvatarUrl()
+                request.setupToken(),
+                request.username(),
+                request.firstName(),
+                request.lastName(),
+                request.avatarUrl()
         );
     }
 
     @Operation(summary = "Refresh access token")
     @PostMapping("/refresh")
-    public TokenRefreshResponse refresh(@Valid @RequestBody RefreshRequest req) {
-        return authService.refresh(req.getRefreshToken());
+    public TokenRefreshResponse refresh(@Valid @RequestBody RefreshRequest request) {
+        return authService.refresh(request.refreshToken());
     }
 
-    @Operation(summary = "Logout — revoke the refresh token")
+    @Operation(summary = "Logout and revoke the refresh token")
     @PostMapping("/logout")
-    public LogoutResponse logout(@Valid @RequestBody RefreshRequest req) {
-        return authService.logout(req.getRefreshToken());
-    }
-
-    @Data public static class SendCodeRequest {
-        @NotBlank(message = "Phone number is required") private String phone;
-        private String via;
-    }
-
-    @Data public static class VerifyCodeRequest {
-        @NotBlank(message = "Phone number is required")      private String phone;
-        @NotBlank(message = "Verification code is required") private String code;
-    }
-
-    @Data public static class RefreshRequest {
-        @NotBlank(message = "Refresh token is required") private String refreshToken;
-    }
-
-    @Data public static class CompleteSetupRequest {
-        @NotBlank(message = "Setup token is required")  private String setupToken;
-        @NotBlank(message = "First name is required")   private String firstName;
-        private String lastName;
-        @NotBlank(message = "Username is required")     private String username;
-        private String avatarUrl;
+    public LogoutResponse logout(@Valid @RequestBody RefreshRequest request) {
+        return authService.logout(request.refreshToken());
     }
 }

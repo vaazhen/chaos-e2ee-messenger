@@ -6,7 +6,8 @@ import lombok.Setter;
 import ru.messenger.chaosmessenger.user.domain.User;
 
 @Entity
-@Table(name = "chat_participants")
+@Table(name = "chat_participants",
+        uniqueConstraints = @UniqueConstraint(columnNames = {"chat_id", "user_id"}))
 @Getter
 @Setter
 public class ChatParticipant {

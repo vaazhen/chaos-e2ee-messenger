@@ -8,6 +8,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 import ru.messenger.chaosmessenger.auth.dto.AuthResponse;
+import ru.messenger.chaosmessenger.auth.dto.EmailLoginRequest;
+import ru.messenger.chaosmessenger.auth.dto.EmailRegisterRequest;
 import ru.messenger.chaosmessenger.auth.service.AuthService;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -24,11 +26,14 @@ class EmailAuthControllerTest {
 
     @Test
     void registerDelegatesToAuthServiceAndReturnsTypedResponse() {
-        EmailAuthController.EmailRegisterRequest request = registerRequest(" Alice@Test.COM ", "secret123");
-        request.setUsername(" Alice--Profile ");
-        request.setFirstName("  Alice  ");
-        request.setLastName("  Smith  ");
-        request.setAvatarUrl("  avatar.png  ");
+        EmailRegisterRequest request = new EmailRegisterRequest(
+                " Alice@Test.COM ",
+                "secret123",
+                " Alice--Profile ",
+                "  Alice  ",
+                "  Smith  ",
+                "  avatar.png  "
+        );
 
         when(authService.registerEmail(
                 " Alice@Test.COM ",
@@ -73,7 +78,7 @@ class EmailAuthControllerTest {
 
     @Test
     void registerPropagatesDuplicateEmailConflict() {
-        EmailAuthController.EmailRegisterRequest request = registerRequest(" Alice@Test.COM ", "secret123");
+        EmailRegisterRequest request = registerRequest(" Alice@Test.COM ", "secret123");
 
         when(authService.registerEmail(" Alice@Test.COM ", "secret123", null, null, null, null))
                 .thenThrow(new ResponseStatusException(HttpStatus.CONFLICT, "Email is already registered"));
@@ -85,7 +90,7 @@ class EmailAuthControllerTest {
 
     @Test
     void loginDelegatesToAuthServiceAndReturnsTypedResponse() {
-        EmailAuthController.EmailLoginRequest request = loginRequest(" Alice@Test.COM ", "secret123");
+        EmailLoginRequest request = loginRequest(" Alice@Test.COM ", "secret123");
 
         when(authService.loginEmail(" Alice@Test.COM ", "secret123"))
                 .thenReturn(new AuthResponse(
@@ -117,7 +122,7 @@ class EmailAuthControllerTest {
 
     @Test
     void loginPropagatesUnauthorizedFromService() {
-        EmailAuthController.EmailLoginRequest request = loginRequest("Missing@Test.COM", "secret123");
+        EmailLoginRequest request = loginRequest("Missing@Test.COM", "secret123");
 
         when(authService.loginEmail("Missing@Test.COM", "secret123"))
                 .thenThrow(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid email or password"));
@@ -127,17 +132,11 @@ class EmailAuthControllerTest {
                 .satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED));
     }
 
-    private static EmailAuthController.EmailRegisterRequest registerRequest(String email, String password) {
-        EmailAuthController.EmailRegisterRequest request = new EmailAuthController.EmailRegisterRequest();
-        request.setEmail(email);
-        request.setPassword(password);
-        return request;
+    private static EmailRegisterRequest registerRequest(String email, String password) {
+        return new EmailRegisterRequest(email, password, null, null, null, null);
     }
 
-    private static EmailAuthController.EmailLoginRequest loginRequest(String email, String password) {
-        EmailAuthController.EmailLoginRequest request = new EmailAuthController.EmailLoginRequest();
-        request.setEmail(email);
-        request.setPassword(password);
-        return request;
+    private static EmailLoginRequest loginRequest(String email, String password) {
+        return new EmailLoginRequest(email, password);
     }
 }

@@ -29,6 +29,7 @@ import ru.messenger.chaosmessenger.message.domain.MessageEvent;
 import ru.messenger.chaosmessenger.message.domain.MessageReaction;
 import ru.messenger.chaosmessenger.message.domain.MessageReceipt;
 import ru.messenger.chaosmessenger.message.dto.DeviceMessageEventResponse;
+import ru.messenger.chaosmessenger.message.dto.ReactionEvent;
 import ru.messenger.chaosmessenger.message.repository.MessageEnvelopeRepository;
 import ru.messenger.chaosmessenger.message.repository.MessageEventRepository;
 import ru.messenger.chaosmessenger.message.repository.MessageReactionRepository;
@@ -126,7 +127,7 @@ class MessageServiceAdvancedTest {
                 )
         );
 
-        when(messageRepository.findByClientMessageId("client-500")).thenReturn(Optional.empty());
+        when(messageRepository.findBySenderIdAndSenderDeviceIdAndClientMessageId(alice.getId(), "alice-phone", "client-500")).thenReturn(Optional.empty());
 
         when(messageRepository.save(any(Message.class))).thenAnswer(invocation -> {
             Message message = invocation.getArgument(0);
@@ -172,10 +173,10 @@ class MessageServiceAdvancedTest {
         verify(unreadService).increment(bob.getId(), 100L);
         verify(unreadService, never()).increment(alice.getId(), 100L);
 
-        assertThat(response.getType()).isEqualTo("MESSAGE_CREATED");
-        assertThat(response.getMessageId()).isEqualTo(500L);
-        assertThat(response.getEnvelope()).isNotNull();
-        assertThat(response.getEnvelope().getTargetDeviceId()).isEqualTo("alice-phone");
+        assertThat(response.type()).isEqualTo("MESSAGE_CREATED");
+        assertThat(response.messageId()).isEqualTo(500L);
+        assertThat(response.envelope()).isNotNull();
+        assertThat(response.envelope().targetDeviceId()).isEqualTo("alice-phone");
 
         verify(messagingTemplate).convertAndSend(
                 eq("/topic/devices/alice-phone/chats/100"),
@@ -204,7 +205,7 @@ class MessageServiceAdvancedTest {
                 )
         );
 
-        when(messageRepository.findByClientMessageId("client-dup")).thenReturn(Optional.empty());
+        when(messageRepository.findBySenderIdAndSenderDeviceIdAndClientMessageId(alice.getId(), "alice-phone", "client-dup")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> messageService.sendEncryptedMessageV2("alice", request))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -227,7 +228,7 @@ class MessageServiceAdvancedTest {
                 List.of(envelope(99L, "ghost-phone", "WHISPER", 1))
         );
 
-        when(messageRepository.findByClientMessageId("client-outside-user")).thenReturn(Optional.empty());
+        when(messageRepository.findBySenderIdAndSenderDeviceIdAndClientMessageId(alice.getId(), "alice-phone", "client-outside-user")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> messageService.sendEncryptedMessageV2("alice", request))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -306,15 +307,15 @@ class MessageServiceAdvancedTest {
         var first = (ru.messenger.chaosmessenger.message.dto.MessageTimelineItemResponse) timeline.get(0);
         var second = (ru.messenger.chaosmessenger.message.dto.MessageTimelineItemResponse) timeline.get(1);
 
-        assertThat(first.getId()).isEqualTo(1L);
-        assertThat(first.getEnvelope()).isNotNull();
-        assertThat(first.getEnvelope().getTargetDeviceId()).isEqualTo("bob-phone");
-        assertThat(first.getEnvelope().getCiphertext()).isEqualTo("cipher-old");
-        assertThat(first.getMyReactions()).containsExactly("🔥");
-        assertThat(first.getReactions()).containsEntry("🔥", 1L);
+        assertThat(first.id()).isEqualTo(1L);
+        assertThat(first.envelope()).isNotNull();
+        assertThat(first.envelope().targetDeviceId()).isEqualTo("bob-phone");
+        assertThat(first.envelope().ciphertext()).isEqualTo("cipher-old");
+        assertThat(first.myReactions()).containsExactly("🔥");
+        assertThat(first.reactions()).containsEntry("🔥", 1L);
 
-        assertThat(second.getId()).isEqualTo(2L);
-        assertThat(second.getEnvelope()).isNull();
+        assertThat(second.id()).isEqualTo(2L);
+        assertThat(second.envelope()).isNull();
 
         ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
         verify(messageRepository).findByChatIdBefore(eq(100L), eq(99L), pageableCaptor.capture());
@@ -367,7 +368,7 @@ class MessageServiceAdvancedTest {
 
         DeviceMessageEventResponse response = messageService.editEncryptedMessageV2("alice", 500L, request);
 
-        assertThat(response.getType()).isEqualTo("MESSAGE_EDITED");
+        assertThat(response.type()).isEqualTo("MESSAGE_EDITED");
         assertThat(message.getVersion()).isEqualTo(2);
         assertThat(message.getEditedAt()).isNotNull();
 
@@ -624,14 +625,14 @@ class MessageServiceAdvancedTest {
         when(userDeviceRepository.findByUserIdAndActiveTrue(alice.getId())).thenReturn(List.of(aliceDevice));
         when(userDeviceRepository.findByUserIdAndActiveTrue(bob.getId())).thenReturn(List.of(bobDevice));
 
-        MessageService.ReactionEvent event = messageService.toggleReaction("bob", 900L, " 🔥 ");
+        ReactionEvent event = messageService.toggleReaction("bob", 900L, " 🔥 ");
 
-        assertThat(event.getType()).isEqualTo("MESSAGE_REACTION");
-        assertThat(event.getMessageId()).isEqualTo(900L);
-        assertThat(event.getActorUserId()).isEqualTo(bob.getId());
-        assertThat(event.getActorDeviceId()).isEqualTo("bob-phone");
-        assertThat(event.getEmoji()).isEqualTo("🔥");
-        assertThat(event.isActive()).isFalse();
+        assertThat(event.type()).isEqualTo("MESSAGE_REACTION");
+        assertThat(event.messageId()).isEqualTo(900L);
+        assertThat(event.actorUserId()).isEqualTo(bob.getId());
+        assertThat(event.actorDeviceId()).isEqualTo("bob-phone");
+        assertThat(event.emoji()).isEqualTo("🔥");
+        assertThat(event.active()).isFalse();
 
         verify(messageReactionRepository).delete(existing);
 
@@ -643,11 +644,11 @@ class MessageServiceAdvancedTest {
 
         verify(messagingTemplate).convertAndSend(
                 eq("/topic/devices/alice-phone/chats/100"),
-                isA(MessageService.ReactionEvent.class)
+                isA(ReactionEvent.class)
         );
         verify(messagingTemplate).convertAndSend(
                 eq("/topic/devices/bob-phone/chats/100"),
-                isA(MessageService.ReactionEvent.class)
+                isA(ReactionEvent.class)
         );
     }
 
@@ -724,22 +725,14 @@ class MessageServiceAdvancedTest {
             String senderDeviceId,
             List<EncryptedMessageEnvelopeInput> envelopes
     ) {
-        EncryptedSendMessageRequestV2 request = new EncryptedSendMessageRequestV2();
-        request.setChatId(chatId);
-        request.setClientMessageId(clientMessageId);
-        request.setSenderDeviceId(senderDeviceId);
-        request.setEnvelopes(envelopes);
-        return request;
+        return new EncryptedSendMessageRequestV2(chatId, clientMessageId, senderDeviceId, envelopes);
     }
 
     private static EncryptedEditMessageRequestV2 editRequest(
             String senderDeviceId,
             List<EncryptedMessageEnvelopeInput> envelopes
     ) {
-        EncryptedEditMessageRequestV2 request = new EncryptedEditMessageRequestV2();
-        request.setSenderDeviceId(senderDeviceId);
-        request.setEnvelopes(envelopes);
-        return request;
+        return new EncryptedEditMessageRequestV2(senderDeviceId, envelopes);
     }
 
     private static EncryptedMessageEnvelopeInput envelope(
@@ -748,19 +741,19 @@ class MessageServiceAdvancedTest {
             String messageType,
             Integer messageIndex
     ) {
-        EncryptedMessageEnvelopeInput envelope = new EncryptedMessageEnvelopeInput();
-        envelope.setTargetUserId(targetUserId);
-        envelope.setTargetDeviceId(targetDeviceId);
-        envelope.setMessageType(messageType);
-        envelope.setSenderIdentityPublicKey("sender-identity-key");
-        envelope.setEphemeralPublicKey("ephemeral-key");
-        envelope.setCiphertext("ciphertext-for-" + targetDeviceId);
-        envelope.setNonce("nonce-for-" + targetDeviceId);
-        envelope.setSignedPreKeyId(7);
-        envelope.setOneTimePreKeyId(11);
-        envelope.setTimestamp(123456L);
-        envelope.setMessageIndex(messageIndex);
-        return envelope;
+        return new EncryptedMessageEnvelopeInput(
+                targetDeviceId,
+                targetUserId,
+                messageType,
+                "sender-identity-key",
+                "ephemeral-key",
+                "ciphertext-for-" + targetDeviceId,
+                "nonce-for-" + targetDeviceId,
+                7,
+                11,
+                123456L,
+                messageIndex
+        );
     }
 
     private static MessageEnvelope envelopeEntity(
@@ -829,3 +822,5 @@ class MessageServiceAdvancedTest {
         return receipt;
     }
 }
+
+

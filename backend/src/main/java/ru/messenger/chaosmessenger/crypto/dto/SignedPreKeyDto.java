@@ -2,18 +2,15 @@ package ru.messenger.chaosmessenger.crypto.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
-import lombok.Data;
+import jakarta.validation.constraints.Size;
 
-@Data
-public class SignedPreKeyDto {
-    @NotNull(message = "Signed pre-key ID is required")
-    @Positive(message = "Signed pre-key ID must be positive")
-    private Integer preKeyId;
-
-    @NotBlank(message = "Signed pre-key public key is required")
-    private String publicKey;
-
-    @NotBlank(message = "Signed pre-key signature is required")
-    private String signature;
-}
+public record SignedPreKeyDto(
+        @NotNull(message = "Signed pre-key ID is required")
+        Integer preKeyId,
+        @NotBlank(message = "Signed pre-key public key is required")
+        @Size(max = 4096, message = "Signed pre-key public key is too long")
+        String publicKey,
+        @NotBlank(message = "Signed pre-key signature is required")
+        @Size(max = 4096, message = "Signed pre-key signature is too long")
+        String signature
+) {}

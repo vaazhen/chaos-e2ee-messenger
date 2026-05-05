@@ -4,7 +4,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.messaging.handler.annotation.MessageMapping;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 import ru.messenger.chaosmessenger.infra.ws.WebSocketAuthChannelInterceptor;
 
@@ -14,12 +13,10 @@ import ru.messenger.chaosmessenger.infra.ws.WebSocketAuthChannelInterceptor;
 public class PresenceController {
 
     private final OnlineService onlineService;
-    private final SimpMessagingTemplate messagingTemplate;
     private final WebSocketAuthChannelInterceptor authInterceptor;
 
     @MessageMapping("/user.online")
     public void userOnline(@Header("simpSessionId") String sessionId) {
-        // Resolve username from the session map set during STOMP CONNECT
         String username = authInterceptor.getUsernameBySessionId(sessionId);
 
         if (username == null) {
@@ -27,23 +24,18 @@ public class PresenceController {
             return;
         }
 
-        log.info("📡 /user.online received from: {}", username);
-
-        onlineService.setOnline(username);
-        messagingTemplate.convertAndSend("/topic/user/status",
-                new UserStatusEvent(username, "ONLINE", System.currentTimeMillis()));
+        log.debug("Presence heartbeat received from user={} sessionId={}", username, sessionId);
+        onlineService.refreshSession(username, sessionId);
     }
 
     @MessageMapping("/user.offline")
     public void userOffline(@Header("simpSessionId") String sessionId) {
         String username = authInterceptor.getUsernameBySessionId(sessionId);
 
-        if (username == null) return;
+        if (username == null) {
+            return;
+        }
 
-        log.info("📡 /user.offline received from: {}", username);
-
-        onlineService.setOffline(username);
-        messagingTemplate.convertAndSend("/topic/user/status",
-                new UserStatusEvent(username, "OFFLINE", System.currentTimeMillis()));
+        log.debug("Client requested offline for user={} sessionId={}; disconnect event owns offline transition", username, sessionId);
     }
 }

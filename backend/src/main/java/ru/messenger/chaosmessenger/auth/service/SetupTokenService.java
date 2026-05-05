@@ -12,8 +12,8 @@ import java.util.UUID;
  * Issues and consumes short-lived setup tokens used in two-phase phone registration.
  *
  * Flow:
- *   1. verifyCode (new user) → issue(phone) → return setupToken to client
- *   2. client fills profile → completeSetup(setupToken, ...) → consumePhone(setupToken)
+ *   1. verifyCode (new user) -> issue(phone) -> return setupToken to client
+ *   2. client fills profile -> completeSetup(setupToken, ...) -> consumePhone(setupToken)
  *
  * Token TTL: 10 minutes. One-time use (consumed on first call to consumePhone).
  */
@@ -22,8 +22,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class SetupTokenService {
 
-    private static final String   PREFIX = "setup:token:";
-    private static final Duration TTL    = Duration.ofMinutes(10);
+    private static final String PREFIX = "setup:token:";
+    private static final Duration TTL = Duration.ofMinutes(10);
 
     private final RedisTemplate<String, String> redisTemplate;
 
@@ -35,17 +35,22 @@ public class SetupTokenService {
         return token;
     }
 
+    /** Resolve the phone bound to the setup token without consuming it. */
+    public String getPhone(String token) {
+        if (token == null || token.isBlank()) return null;
+        return redisTemplate.opsForValue().get(PREFIX + token);
+    }
+
     /**
-     * Consume a setup token — returns the phone it was bound to,
+     * Consume a setup token: returns the phone it was bound to,
      * or {@code null} if the token is invalid or already expired.
      * The token is deleted on first use (one-time).
      */
     public String consumePhone(String token) {
         if (token == null || token.isBlank()) return null;
-        String key   = PREFIX + token;
-        String phone = redisTemplate.opsForValue().get(key);
+        String key = PREFIX + token;
+        String phone = redisTemplate.opsForValue().getAndDelete(key);
         if (phone != null) {
-            redisTemplate.delete(key);
             log.debug("[SetupToken] consumed for phone={}", phone);
         } else {
             log.warn("[SetupToken] invalid or expired token");

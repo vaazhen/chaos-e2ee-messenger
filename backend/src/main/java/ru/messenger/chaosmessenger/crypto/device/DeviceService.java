@@ -15,7 +15,6 @@ import ru.messenger.chaosmessenger.crypto.prekey.OneTimePreKeyRepository;
 import ru.messenger.chaosmessenger.crypto.prekey.SignedPreKey;
 import ru.messenger.chaosmessenger.crypto.prekey.SignedPreKeyRepository;
 import ru.messenger.chaosmessenger.user.domain.User;
-import ru.messenger.chaosmessenger.user.repository.UserRepository;
 
 import java.math.BigInteger;
 import java.security.KeyFactory;
@@ -24,13 +23,14 @@ import java.security.spec.X509EncodedKeySpec;
 import java.util.Arrays;
 import java.util.Base64;
 import java.time.LocalDateTime;
+import java.util.HashSet;
 import java.util.Optional;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
 public class DeviceService {
 
-    private final UserRepository userRepository;
     private final UserIdentityService userIdentityService;
     private final UserDeviceRepository userDeviceRepository;
     private final SignedPreKeyRepository signedPreKeyRepository;
@@ -44,49 +44,46 @@ public class DeviceService {
 
         return userDeviceRepository
                 .findByUserUsernameAndDeviceIdAndActiveTrue(username, deviceId)
-                .map(device -> DeviceRegistrationResponse.builder()
-                        .deviceId(device.getDeviceId())
-                        .serverDeviceInternalId(device.getId())
-                        .build());
+                .map(device -> new DeviceRegistrationResponse(device.getDeviceId(), device.getId()));
     }
 
     @Transactional
     public DeviceRegistrationResponse registerDevice(String username, DeviceRegistrationRequest request) {
-        if (request.getDeviceId() == null || request.getDeviceId().isBlank()) {
+        if (request.deviceId() == null || request.deviceId().isBlank()) {
             throw new IllegalArgumentException("deviceId is required");
         }
-        if (request.getRegistrationId() == null) {
+        if (request.registrationId() == null) {
             throw new IllegalArgumentException("registrationId is required");
         }
-        if (request.getIdentityPublicKey() == null || request.getIdentityPublicKey().isBlank()) {
+        if (request.identityPublicKey() == null || request.identityPublicKey().isBlank()) {
             throw new IllegalArgumentException("identityPublicKey is required");
         }
-        if (request.getSignedPreKey() == null) {
+        if (request.signedPreKey() == null) {
             throw new IllegalArgumentException("signedPreKey is required");
         }
 
         User user = userIdentityService.require(username);
 
         Optional<UserDevice> existingDevice = userDeviceRepository
-                .findByUserUsernameAndDeviceId(username, request.getDeviceId());
+                .findByUserUsernameAndDeviceId(username, request.deviceId());
 
         boolean newDevice = existingDevice.isEmpty();
-        if (newDevice && (request.getOneTimePreKeys() == null || request.getOneTimePreKeys().isEmpty())) {
+        if (newDevice && (request.oneTimePreKeys() == null || request.oneTimePreKeys().isEmpty())) {
             throw new IllegalArgumentException("At least one one-time pre-key is required");
         }
 
         UserDevice device = existingDevice
                 .orElseGet(() -> UserDevice.builder()
                         .user(user)
-                        .deviceId(request.getDeviceId())
+                        .deviceId(request.deviceId())
                         .createdAt(LocalDateTime.now())
                         .active(true)
                         .build());
 
-        device.setDeviceName(request.getDeviceName());
-        device.setRegistrationId(request.getRegistrationId());
-        device.setIdentityPublicKey(request.getIdentityPublicKey());
-        device.setSigningPublicKey(request.getSigningPublicKey());
+        device.setDeviceName(request.deviceName());
+        device.setRegistrationId(request.registrationId());
+        device.setIdentityPublicKey(request.identityPublicKey());
+        device.setSigningPublicKey(request.signingPublicKey());
         device.setLastSeen(LocalDateTime.now());
         device.setActive(true);
 
@@ -95,10 +92,7 @@ public class DeviceService {
         upsertSignedPreKey(device, request);
         replaceOneTimePreKeys(device, request);
 
-        return DeviceRegistrationResponse.builder()
-                .deviceId(device.getDeviceId())
-                .serverDeviceInternalId(device.getId())
-                .build();
+        return new DeviceRegistrationResponse(device.getDeviceId(), device.getId());
     }
 
 
@@ -152,9 +146,9 @@ public class DeviceService {
         );
     }
     private void upsertSignedPreKey(UserDevice device, DeviceRegistrationRequest request) {
-        Integer preKeyId  = request.getSignedPreKey().getPreKeyId();
-        String publicKey  = request.getSignedPreKey().getPublicKey();
-        String signature  = request.getSignedPreKey().getSignature();
+        Integer preKeyId  = request.signedPreKey().preKeyId();
+        String publicKey  = request.signedPreKey().publicKey();
+        String signature  = request.signedPreKey().signature();
 
         if (publicKey == null || publicKey.isBlank())
             throw new IllegalArgumentException("signedPreKey.publicKey is required");
@@ -163,7 +157,6 @@ public class DeviceService {
         if ("TEMP_SIGNATURE".equals(signature))
             throw new IllegalArgumentException("signedPreKey.signature must be a real signature");
 
-        // FIX: real ECDSA P-256 verification replacing the former SHA-256 hash stub
         verifySignedPreKeySignature(device.getSigningPublicKey(), publicKey, signature);
 
         Optional<SignedPreKey> existingOpt = signedPreKeyRepository.findByDeviceIdAndPreKeyId(device.getId(), preKeyId);
@@ -269,22 +262,39 @@ public class DeviceService {
     }
 
     private void replaceOneTimePreKeys(UserDevice device, DeviceRegistrationRequest request) {
-        if (request.getOneTimePreKeys() == null || request.getOneTimePreKeys().isEmpty()) {
+        if (request.oneTimePreKeys() == null || request.oneTimePreKeys().isEmpty()) {
             return;
         }
+
+        validateOneTimePreKeys(request);
 
         oneTimePreKeyRepository.deleteByDeviceId(device.getId());
         oneTimePreKeyRepository.flush();
 
-        for (var dto : request.getOneTimePreKeys()) {
+        for (var dto : request.oneTimePreKeys()) {
             OneTimePreKey oneTimePreKey = OneTimePreKey.builder()
                     .device(device)
-                    .preKeyId(dto.getPreKeyId())
-                    .publicKey(dto.getPublicKey())
+                    .preKeyId(dto.preKeyId())
+                    .publicKey(dto.publicKey())
                     .createdAt(LocalDateTime.now())
                     .build();
 
             oneTimePreKeyRepository.save(oneTimePreKey);
+        }
+    }
+
+    private void validateOneTimePreKeys(DeviceRegistrationRequest request) {
+        Set<Integer> seenPreKeyIds = new HashSet<>();
+        for (var dto : request.oneTimePreKeys()) {
+            if (dto.preKeyId() == null) {
+                throw new IllegalArgumentException("oneTimePreKeys.preKeyId is required");
+            }
+            if (!seenPreKeyIds.add(dto.preKeyId())) {
+                throw new IllegalArgumentException("Duplicate one-time pre-key id: " + dto.preKeyId());
+            }
+            if (dto.publicKey() == null || dto.publicKey().isBlank()) {
+                throw new IllegalArgumentException("oneTimePreKeys.publicKey is required");
+            }
         }
     }
 }
