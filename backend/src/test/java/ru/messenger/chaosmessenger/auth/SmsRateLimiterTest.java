@@ -72,12 +72,13 @@ class SmsRateLimiterTest {
     }
 
     @Test
-    @DisplayName("when Redis is unavailable, allow without blocking")
-    void redisUnavailableAllowsRequest() {
+    @DisplayName("when Redis is unavailable, fail closed")
+    void redisUnavailableFailsClosed() {
         mockRedisCounts((Long) null);
 
-        assertThatCode(() -> rateLimiter.checkAndIncrement("+79001234567"))
-                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> rateLimiter.checkAndIncrement("+79001234567"))
+                .isInstanceOf(RateLimitException.class)
+                .hasMessageContaining("temporarily unavailable");
     }
 
     @Test
@@ -95,7 +96,8 @@ class SmsRateLimiterTest {
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     private void mockRedisCounts(Long... counts) {
+        java.util.concurrent.atomic.AtomicInteger index = new java.util.concurrent.atomic.AtomicInteger();
         when(redisTemplate.execute(any(DefaultRedisScript.class), anyList(), anyString()))
-                .thenReturn(counts[0], java.util.Arrays.copyOfRange(counts, 1, counts.length));
+                .thenAnswer(invocation -> counts[Math.min(index.getAndIncrement(), counts.length - 1)]);
     }
 }

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 
 const EMOJI_STORAGE_KEY = "cm_recent_emojis";
 const MAX_RECENT_EMOJIS = 16;
@@ -57,12 +57,16 @@ function saveRecentEmojis(list) {
 export default function MessageInput({ onSend, replyTo, onОтменаОтветить, disabled, onTyping }) {
   const [text, setText] = useState("");
   const [showEmoji, setShowEmoji] = useState(false);
+  const [emojiClosing, setEmojiClosing] = useState(false);
   const [emojiCat, setEmojiCat] = useState("recent");
   const [recentEmojis, setRecentEmojis] = useState(() => loadRecentEmojis());
   const [imgFile, setImgFile] = useState(null);
   const inpRef = useRef(null);
   const fileRef = useRef(null);
-  const typingTimerRef = useRef(null);
+  const inputBarRef = useRef(null);
+  
+  const emojiRootRef = useRef(null);
+const typingTimerRef = useRef(null);
 
   const emojiCategories = useMemo(() => {
     const recentCategory = {
@@ -74,6 +78,56 @@ export default function MessageInput({ onSend, replyTo, onОтменаОтвет
 
   const currentCategory = emojiCategories.find((category) => category.key === emojiCat) || emojiCategories[1] || emojiCategories[0];
   const currentEmojis = currentCategory?.emojis?.length ? currentCategory.emojis : (emojiCat === "recent" ? EMOJI_CATEGORIES[1].emojis : []);
+
+
+  const closeEmoji = () => {
+    if (!showEmoji || emojiClosing) return;
+
+    setEmojiClosing(true);
+
+    window.setTimeout(() => {
+      setShowEmoji(false);
+      setEmojiClosing(false);
+    }, 150);
+  };
+
+  const toggleEmoji = (e) => {
+    e.stopPropagation();
+
+    if (showEmoji) {
+      closeEmoji();
+      return;
+    }
+
+    setEmojiClosing(false);
+    setShowEmoji(true);
+  };
+
+  useEffect(() => {
+    if (!showEmoji) return;
+
+    const onDown = (e) => {
+      const root = inputBarRef.current;
+
+      if (root && !root.contains(e.target)) {
+        closeEmoji();
+      }
+    };
+
+    const onKey = (e) => {
+      if (e.key === "Escape") {
+        closeEmoji();
+      }
+    };
+
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [showEmoji, emojiClosing]);
 
   const handleTextChange = (e) => {
     setText(e.target.value);
@@ -90,6 +144,7 @@ export default function MessageInput({ onSend, replyTo, onОтменаОтвет
     setText("");
     setImgFile(null);
     setShowEmoji(false);
+    setEmojiClosing(false);
     inpRef.current?.focus();
   };
 
@@ -119,11 +174,33 @@ export default function MessageInput({ onSend, replyTo, onОтменаОтвет
     if (emojiCat !== "recent" && !recentEmojis.length) {
       setEmojiCat("recent");
     }
-    setShowEmoji(false);
+    closeEmoji();
     inpRef.current?.focus();
   };
 
-  return (
+  
+  // emoji-outside-close-pass
+  useEffect(() => {
+    if (!showEmoji) return;
+
+    const closeEmojiOutside = (event) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+
+      if (emojiRootRef.current && !emojiRootRef.current.contains(target)) {
+        setShowEmoji(false);
+      }
+    };
+
+    document.addEventListener("mousedown", closeEmojiOutside, true);
+    document.addEventListener("touchstart", closeEmojiOutside, true);
+
+    return () => {
+      document.removeEventListener("mousedown", closeEmojiOutside, true);
+      document.removeEventListener("touchstart", closeEmojiOutside, true);
+    };
+  }, [showEmoji]);
+return (
     <>
       {replyTo && (
         <div className="reply-prev" onClick={e => e.stopPropagation()}>
@@ -146,9 +223,9 @@ export default function MessageInput({ onSend, replyTo, onОтменаОтвет
         </div>
       )}
 
-      <div className="input-bar" onClick={e => e.stopPropagation()}>
+      <div ref={emojiRootRef} className="input-bar" onClick={e => e.stopPropagation()}>
         {showEmoji && (
-          <div className="emoji-picker" onClick={e => e.stopPropagation()}>
+          <div className={`emoji-picker${emojiClosing ? " closing" : ""}`} onClick={e => e.stopPropagation()}>
             <div className="emoji-cats">
               {emojiCategories.map((cat) => (
                 <button
@@ -190,7 +267,7 @@ export default function MessageInput({ onSend, replyTo, onОтменаОтвет
         )}
 
         <div className="inp-area">
-          <button className="emoji-trigger" onClick={e => { e.stopPropagation(); setShowEmoji(v => !v); }}>😊</button>
+          <button type="button" className="emoji-trigger" onClick={toggleEmoji}>😊</button>
           <textarea
             ref={inpRef}
             className="msg-inp"

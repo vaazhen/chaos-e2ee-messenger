@@ -1,4 +1,5 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import useLocalText from "../i18n/useLocalText";
 
 const COUNTRIES = [
   { code: "+7",   flag: "🇷🇺", name: "Russia",        mask: "999 000 00 00", len: 10 },
@@ -29,83 +30,191 @@ const COUNTRIES = [
 ];
 
 function CountrySelector({ selected, onChange }) {
+  const { t } = useLocalText();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const inputRef = useRef(null);
+  const rootRef = useRef(null);
+
+  const isDark =
+    typeof document !== "undefined" &&
+    !!document.querySelector("[data-theme='dark']");
+
+  const menu = isDark
+    ? {
+        bg: "#181d2c",
+        fg: "#ffffff",
+        muted: "rgba(255,255,255,.58)",
+        border: "rgba(255,255,255,.13)",
+        searchBg: "rgba(255,255,255,.07)",
+        rowHover: "rgba(255,255,255,.08)",
+        shadow: "0 26px 70px rgba(0,0,0,.38)",
+      }
+    : {
+        bg: "#ffffff",
+        fg: "var(--t1)",
+        muted: "rgba(0,0,0,.48)",
+        border: "rgba(0,0,0,.075)",
+        searchBg: "rgba(0,0,0,.035)",
+        rowHover: "rgba(0,0,0,.055)",
+        shadow: "0 26px 70px rgba(0,0,0,.16)",
+      };
+
+  useEffect(() => {
+    if (!open) return;
+
+    const onPointerDown = (event) => {
+      if (!rootRef.current?.contains(event.target)) {
+        setOpen(false);
+        setSearch("");
+      }
+    };
+
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("touchstart", onPointerDown);
+
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("touchstart", onPointerDown);
+    };
+  }, [open]);
 
   const filtered = COUNTRIES.filter(c =>
     c.name.toLowerCase().includes(search.toLowerCase()) || c.code.includes(search)
   );
-  const current = COUNTRIES.find(c => c.code === selected) || COUNTRIES[0];
 
-  const select = (c) => {
-    onChange(c);
+  const current =
+    COUNTRIES.find(c => c.code === selected && c.name === "Russia") ||
+    COUNTRIES.find(c => c.code === selected) ||
+    COUNTRIES[0];
+
+  const shortCode = (name) => {
+    if (name === "Russia") return "RU";
+    if (name === "Belarus") return "BY";
+    if (name === "Ukraine") return "UA";
+    if (name === "Kazakhstan") return "KZ";
+    if (name === "Armenia") return "AM";
+    if (name === "Azerbaijan") return "AZ";
+    if (name === "Georgia") return "GE";
+    if (name === "USA / Canada") return "US";
+    if (name === "United Kingdom") return "UK";
+    return String(name || "").slice(0, 2).toUpperCase();
+  };
+
+  const select = (country) => {
+    onChange(country);
     setOpen(false);
     setSearch("");
   };
 
   return (
-    <div style={{ position: "relative" }}>
+    <div ref={rootRef} style={{ position: "relative", width: 108, flexShrink: 0 }}>
       <button
         type="button"
-        onClick={() => { setOpen(v => !v); setTimeout(() => inputRef.current?.focus(), 50); }}
+        onClick={() => {
+          setOpen(v => !v);
+          setTimeout(() => inputRef.current?.focus(), 40);
+        }}
+        aria-expanded={open}
         style={{
-          display: "flex", alignItems: "center", gap: 6,
-          padding: "0 12px", height: 48, borderRadius: 12,
-          background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)",
-          color: "var(--fg, #e8e8e8)", cursor: "pointer", fontSize: 15,
-          whiteSpace: "nowrap", minWidth: 90,
+          width: "100%",
+          height: 56,
+          border: 0,
+          borderRadius: 24,
+          background: isDark ? "rgba(255,255,255,.08)" : "rgba(255,255,255,.72)",
+          color: "var(--t1)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 7,
+          cursor: "pointer",
+          fontWeight: 900,
+          fontSize: 15,
+          boxShadow: isDark
+            ? "inset 0 0 0 1px rgba(255,255,255,.08)"
+            : "inset 0 0 0 1px rgba(0,0,0,.045), 0 10px 24px rgba(0,0,0,.045)",
+          whiteSpace: "nowrap",
         }}
       >
-        <span style={{ fontSize: 20 }}>{current.flag}</span>
+        <span style={{ opacity: .72, fontSize: 13, letterSpacing: ".03em" }}>
+          {shortCode(current.name)}
+        </span>
         <span>{current.code}</span>
-        <span style={{ fontSize: 10, opacity: 0.6 }}>▼</span>
+        <span style={{ opacity: .42, fontSize: 11, transform: "translateY(1px)", marginLeft: -2 }}>
+          ▾
+        </span>
       </button>
 
       {open && (
-        <div style={{
-          position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 999,
-          background: "#1a1f2e", border: "1px solid rgba(255,255,255,0.15)",
-          borderRadius: 12, width: 260, maxHeight: 320, overflow: "hidden",
-          display: "flex", flexDirection: "column", boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
-        }}>
-          <div style={{ padding: "8px 10px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(100% + 10px)",
+            left: 0,
+            zIndex: 3000,
+            width: 292,
+            maxHeight: 360,
+            overflow: "hidden",
+            borderRadius: 22,
+            background: menu.bg,
+            border: "1px solid " + menu.border,
+            boxShadow: menu.shadow,
+            color: menu.fg,
+          }}
+        >
+          <div style={{ padding: 10, borderBottom: "1px solid " + menu.border }}>
             <input
               ref={inputRef}
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search country..."
+              placeholder={t("Поиск страны...", "Search country...")}
               style={{
-                width: "100%", background: "rgba(255,255,255,0.06)",
-                border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8,
-                color: "#e8e8e8", padding: "6px 10px", fontSize: 13,
-                outline: "none", boxSizing: "border-box",
+                width: "100%",
+                height: 38,
+                borderRadius: 12,
+                border: "1px solid " + menu.border,
+                background: menu.searchBg,
+                color: menu.fg,
+                outline: "none",
+                padding: "0 12px",
+                fontSize: 14,
+                boxSizing: "border-box",
               }}
             />
           </div>
-          <div style={{ overflowY: "auto", flex: 1 }}>
-            {filtered.map((c, i) => (
+
+          <div style={{ maxHeight: 300, overflowY: "auto", padding: 4 }}>
+            {filtered.map((country, idx) => (
               <button
-                key={`${c.code}-${c.name}-${i}`}
+                key={idx}
                 type="button"
-                onClick={() => select(c)}
+                onClick={() => select(country)}
                 style={{
-                  display: "flex", alignItems: "center", gap: 10,
-                  width: "100%", padding: "9px 14px", background: "transparent",
-                  border: "none", color: "#e8e8e8", cursor: "pointer",
-                  fontSize: 14, textAlign: "left", borderBottom: "1px solid rgba(255,255,255,0.04)",
+                  width: "100%",
+                  height: 48,
+                  border: 0,
+                  borderRadius: 14,
+                  background: "transparent",
+                  color: menu.fg,
+                  display: "grid",
+                  gridTemplateColumns: "42px 1fr auto",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "0 12px",
+                  cursor: "pointer",
+                  textAlign: "left",
+                  fontFamily: "inherit",
                 }}
-                onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.08)"}
-                onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                onMouseEnter={e => { e.currentTarget.style.background = menu.rowHover; }}
+                onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
               >
-                <span style={{ fontSize: 20, minWidth: 24 }}>{c.flag}</span>
-                <span style={{ flex: 1 }}>{c.name}</span>
-                <span style={{ opacity: 0.5, fontSize: 13 }}>{c.code}</span>
+                <b style={{ fontSize: 15, opacity: .9 }}>{shortCode(country.name)}</b>
+                <span style={{ fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {country.name}
+                </span>
+                <em style={{ fontStyle: "normal", opacity: .62 }}>{country.code}</em>
               </button>
             ))}
-            {filtered.length === 0 && (
-              <div style={{ padding: "16px", textAlign: "center", opacity: 0.4, fontSize: 13 }}>No results</div>
-            )}
           </div>
         </div>
       )}
@@ -122,6 +231,7 @@ export default function AuthScreen({
   onSubmitPhone, onVerifyOtp, onSubmitEmail,
   loading, error, onBack,
 }) {
+  const { t, lang } = useLocalText();
   const [method, setMethod] = useState("email");
   const [emailMode, setEmailMode] = useState("login");
   const currentCountry = COUNTRIES.find(c => c.code === dialCode) || COUNTRIES[0];
@@ -173,7 +283,7 @@ export default function AuthScreen({
         {error && <div className="err-bar">{error}</div>}
         <div className="auth-logo">🔐</div>
         <h1 className="auth-title">Chaos Messenger</h1>
-        <p className="auth-sub">E2E encryption — the server cannot read messages</p>
+        <p className="auth-sub">{t("E2E-шифрование — сервер не может читать сообщения", "E2E encryption — the server cannot read messages")}</p>
 
         <div style={{ display: "flex", gap: 4, marginBottom: 18, background: "var(--bg3)", borderRadius: 10, padding: 4 }}>
           <button type="button" onClick={() => setMethod("email")}
@@ -190,7 +300,7 @@ export default function AuthScreen({
 
         {method === "email" ? (
           <>
-            <div className="auth-label">Email</div>
+            <div className="auth-label">{t("Email", "Email")}</div>
             <input
               className="inp"
               type="email"
@@ -200,11 +310,11 @@ export default function AuthScreen({
               disabled={loading}
               autoFocus
             />
-            <div className="auth-label" style={{ marginTop: 12 }}>Password</div>
+            <div className="auth-label" style={{ marginTop: 12 }}>{t("Пароль", "Password")}</div>
             <input
               className="inp"
               type="password"
-              placeholder="Minimum 6 characters"
+              placeholder={t("Минимум 6 символов", "Minimum 6 characters")}
               value={password}
               onChange={e => setPassword(e.target.value)}
               onKeyDown={e => e.key === "Enter" && validEmail && validPassword && onSubmitEmail(emailMode)}
@@ -228,7 +338,7 @@ export default function AuthScreen({
           </>
         ) : (
           <>
-            <div className="auth-label">Phone number</div>
+            <div className="auth-label">{t("Номер телефона", "Phone number")}</div>
             <div className="phone-row" style={{ gap: 8, alignItems: "stretch" }}>
               <CountrySelector
                 selected={dialCode}

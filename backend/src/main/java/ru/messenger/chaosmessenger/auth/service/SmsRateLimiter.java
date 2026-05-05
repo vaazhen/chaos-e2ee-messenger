@@ -18,6 +18,7 @@ public class SmsRateLimiter {
     private static final int SHORT_LIMIT = 3;
     private static final int SHORT_WINDOW_MINUTES = 10;
     private static final int DAY_LIMIT = 10;
+    private static final long INFRA_RETRY_AFTER_SECONDS = 60;
 
     private static final DefaultRedisScript<Long> INCREMENT_WITH_TTL_SCRIPT = new DefaultRedisScript<>("""
             local current = redis.call('INCR', KEYS[1])
@@ -52,11 +53,13 @@ public class SmsRateLimiter {
             count = redisTemplate.execute(INCREMENT_WITH_TTL_SCRIPT, List.of(key), String.valueOf(ttl.toSeconds()));
         } catch (Exception e) {
             log.warn("Redis unavailable during rate-limit check for key {}: {}", key, e.getMessage());
-            return;
+            throw new RateLimitException("SMS rate limiter is temporarily unavailable. Please try again later.",
+                    INFRA_RETRY_AFTER_SECONDS);
         }
         if (count == null) {
             log.warn("Redis returned null during rate-limit check for key {}", key);
-            return;
+            throw new RateLimitException("SMS rate limiter is temporarily unavailable. Please try again later.",
+                    INFRA_RETRY_AFTER_SECONDS);
         }
         if (count > limit) {
             log.warn("Rate limit exceeded: key={}, count={}, limit={}", key, count, limit);
