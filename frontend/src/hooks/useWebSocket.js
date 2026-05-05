@@ -11,6 +11,7 @@ export default function useWebSocket({
   chatIds = [],
   onMessage,
   onChatListUpdate,
+  onRequestsUpdate,
   onStatusUpdate,
   onTyping,
   onConnectionState,
@@ -21,11 +22,11 @@ export default function useWebSocket({
   const chatIdsRef  = useRef([]);
   const heartbeatRef = useRef(null);
   const hadConnectedRef = useRef(false);
-  const handlersRef = useRef({ onMessage, onChatListUpdate, onStatusUpdate, onTyping, onConnectionState });
+  const handlersRef = useRef({ onMessage, onChatListUpdate, onRequestsUpdate, onStatusUpdate, onTyping, onConnectionState });
 
   useEffect(() => {
-    handlersRef.current = { onMessage, onChatListUpdate, onStatusUpdate, onTyping, onConnectionState };
-  }, [onMessage, onChatListUpdate, onStatusUpdate, onTyping, onConnectionState]);
+    handlersRef.current = { onMessage, onChatListUpdate, onRequestsUpdate, onStatusUpdate, onTyping, onConnectionState };
+  }, [onMessage, onChatListUpdate, onRequestsUpdate, onStatusUpdate, onTyping, onConnectionState]);
 
   useEffect(() => { chatIdsRef.current = chatIds; }, [chatIds]);
 
@@ -62,6 +63,7 @@ export default function useWebSocket({
     unsub("userStatus");
     unsub("myStatus");
     unsub("chats");
+    unsub("requests");
 
     const did = getOrCreateDeviceId();
     console.log("[WS] presence subs deviceId=", did, "username=", username);
@@ -80,7 +82,26 @@ export default function useWebSocket({
 
     subsRef.current["chats"] = client.subscribe(
       `/topic/users/${username}/chats`,
-      () => handlersRef.current.onChatListUpdate?.()
+      (msg) => {
+        try {
+          const data = JSON.parse(msg?.body || "{}");
+          handlersRef.current.onChatListUpdate?.(data);
+        } catch (_) {
+          handlersRef.current.onChatListUpdate?.();
+        }
+      }
+    );
+
+    subsRef.current["requests"] = client.subscribe(
+      `/topic/users/${username}/requests`,
+      (msg) => {
+        try {
+          const data = JSON.parse(msg?.body || "{}");
+          handlersRef.current.onRequestsUpdate?.(data);
+        } catch (_) {
+          handlersRef.current.onRequestsUpdate?.();
+        }
+      }
     );
 
     client.publish({ destination: "/app/user.online", body: "{}" });

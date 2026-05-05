@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getTime, mapChat } from "../helpers";
+import { findWordStartMatches, getTime, mapChat, messageMatchesQuery } from "../helpers";
 
 describe("getTime", () => {
   it("returns a string for a valid ISO date", () => {
@@ -48,5 +48,20 @@ describe("mapChat", () => {
     expect(mapped.name).toBe("Dev Team");
     expect(mapped.type).toBe("group");
     expect(mapped.members).toBe(3);
+  });
+});
+
+describe("message search word-start matching", () => {
+  it("matches only from word start, not middle of word", () => {
+    const msg = { _text: "hello world привет мир" };
+    expect(messageMatchesQuery(msg, "wo")).toBe(true);
+    expect(messageMatchesQuery(msg, "м")).toBe(true);
+    expect(messageMatchesQuery(msg, "or")).toBe(false);
+    expect(messageMatchesQuery(msg, "ир")).toBe(false);
+  });
+
+  it("returns all word-start indices for highlighting", () => {
+    const hits = findWordStartMatches("ab cab dab", "ab");
+    expect(hits).toEqual([0]);
   });
 });

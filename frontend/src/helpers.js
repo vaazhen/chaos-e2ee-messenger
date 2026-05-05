@@ -78,6 +78,7 @@ export const mapChat = (c, myId) => {
   const otherFirstName = c.otherFirstName ?? c.firstName ?? "";
   const otherLastName  = c.otherLastName  ?? c.lastName  ?? "";
   const otherUsername  = c.otherUsername  ?? c.username  ?? "";
+  const otherBio = c.otherBio ?? c.bio ?? c.about ?? "";
 
   const fallbackName = [otherFirstName, otherLastName].filter(Boolean).join(" ") || otherUsername || "Контакт";
 
@@ -90,6 +91,8 @@ export const mapChat = (c, myId) => {
   const lastMessageId = c.lastMessageId ?? c.messageId ?? null;
   const lastMessageAt = c.lastMessageAt ?? c.createdAt ?? c.updatedAt ?? null;
   const lastSenderId  = c.lastMessageSenderId ?? c.senderId ?? null;
+  const directStatus = c.directStatus ?? c.direct_status ?? null;
+  const directRequestedBy = c.directRequestedBy ?? c.direct_requested_by ?? null;
 
   let cached = null;
 
@@ -106,13 +109,24 @@ export const mapChat = (c, myId) => {
       : null;
   } catch (_) {}
 
+  const serverPreview = String(c.lastContent || "").trim();
+  const normalizedServerPreview = serverPreview === "[encrypted]" ? "" : serverPreview;
+  const hasLastMessage = Boolean(lastMessageId);
+  const fallbackPreview = hasLastMessage ? "Новое сообщение" : "";
+  const resolvedPreview = String(cached?.preview || normalizedServerPreview || fallbackPreview).trim();
+
   return {
     id: chatId,
     type: isSaved ? "saved" : (isGroup ? "group" : "direct"),
 
     name,
     username: otherUsername,
+    bio: String(otherBio || "").trim(),
     otherUserId: c.otherUserId ?? null,
+    directStatus,
+    directRequestedBy,
+    isRequest: String(directStatus || "").toUpperCase() === "PENDING"
+      && String(directRequestedBy || "") !== String(myId || ""),
     colorIdx: Number(chatId || 0) % 7,
     avatarUrl: isSaved ? "preset:saved" : (c.otherAvatarUrl ?? c.avatarUrl ?? null),
 
@@ -120,22 +134,97 @@ export const mapChat = (c, myId) => {
     unread: Number(c.unreadCount ?? c.unread ?? 0),
 
     time: getTime(cached?.createdAt || lastMessageAt),
-    preview: cached?.preview || "",
+    preview: resolvedPreview,
 
     lastMessageId,
     lastOut: cached ? Boolean(cached.isOut) : Number(lastSenderId) === Number(myId),
     lastMessageAt,
 
     members: Array.isArray(c.participants) ? c.participants.length : Number(c.members ?? 0),
+    groupParticipants: Array.isArray(c.groupParticipants)
+      ? c.groupParticipants.map((p) => ({
+          ...p,
+          role: p?.role || "MEMBER",
+          banned: Boolean(p?.banned),
+          mutedUntil: p?.mutedUntil || null,
+        }))
+      : [],
+    myRole: c.myRole || null,
+    whoCanWrite: c.whoCanWrite || null,
+    whoCanEditInfo: c.whoCanEditInfo || null,
+    whoCanInvite: c.whoCanInvite || null,
+    groupBio: c.groupBio || null,
     isSaved,
   };
 };
 
-export function messageMatchesQuery(msg, query) {
-  const q = String(query || "").trim().toLowerCase();
-  if (!q) return false;
+export const truncatePreview = (text, maxLength = 80) => {
+  const safeText = String(text ?? "");
 
-  return String(msg?._text || msg?.content || "")
-    .toLowerCase()
-    .includes(q);
+  if (!safeText) return "";
+
+  // If already short enough or already appears truncated, return as is
+  if (safeText.length <= maxLength) return safeText;
+  if (safeText.endsWith("…") || safeText.endsWith("...")) return safeText;
+
+  const codepoints = Array.from(safeText);
+
+  if (codepoints.length <= maxLength) {
+    return safeText;
+  }
+
+  const sliced = codepoints.slice(0, maxLength).join("").replace(/\s+$/u, "");
+
+  return `${sliced}…`;
+};
+
+export const truncateChatPreview = (text, maxLength = 34) => {
+  const safeText = String(text ?? "");
+
+  if (!safeText) return "";
+
+  const codepoints = Array.from(safeText);
+
+  if (codepoints.length <= maxLength) {
+    return safeText;
+  }
+
+  const sliced = codepoints.slice(0, maxLength).join("").replace(/\s+$/u, "");
+
+  return `${sliced}…`;
+};
+
+const WORD_CHAR_RE = /[\p{L}\p{N}_]/u;
+
+function isWordChar(ch) {
+  return WORD_CHAR_RE.test(ch);
+}
+
+export function findWordStartMatches(text, query) {
+  const source = String(text ?? "");
+  const needle = String(query ?? "").trim().toLowerCase();
+  if (!needle || !source) return [];
+
+  const lower = source.toLowerCase();
+  const hits = [];
+  let from = 0;
+
+  while (from < lower.length) {
+    const idx = lower.indexOf(needle, from);
+    if (idx === -1) break;
+
+    const prev = idx > 0 ? lower[idx - 1] : "";
+    if (idx === 0 || !isWordChar(prev)) {
+      hits.push(idx);
+    }
+
+    from = idx + 1;
+  }
+
+  return hits;
+}
+
+export function messageMatchesQuery(msg, query) {
+  const text = String(msg?._text || msg?.content || "");
+  return findWordStartMatches(text, query).length > 0;
 }

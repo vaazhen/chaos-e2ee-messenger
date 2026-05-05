@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState, useRef, useCallback } from "react";
 import { CSS } from "./styles";
 
 import { useAuth }     from "./hooks/useAuth";
@@ -15,12 +15,46 @@ import MessageInput from "./components/MessageInput";
 import ProfileModal from "./components/ProfileModal";
 import NewChatModal from "./components/NewChatModal";
 import Ava          from "./components/Ava";
+import UserProfileModal from "./components/UserProfileModal";
+import GroupAdminModal from "./components/GroupAdminModal";
+import { api } from "./api";
 
 import { getTime, messageMatchesQuery } from "./helpers";
 import { clearPreviewCacheForUser } from "./previewCache";
 import { useUiTranslator } from "./i18n/useUiTranslator";
+import { displayNameForChat } from "./contactAliases";
+import { getChatUiPrefs, toggleArchived, toggleMuted } from "./chatUiPrefs";
+import { canOpenGroupAdmin } from "./utils/groupRbac";
 
 const THEME_STORAGE_KEY = "cm_theme";
+const SIDEBAR_WIDTH_KEY = "cm_sidebar_width";
+const SIDEBAR_LEGACY_COLLAPSED_KEY = "cm_sidebar_collapsed";
+const SIDEBAR_MIN = 68;
+const SIDEBAR_MAX = 520;
+const SIDEBAR_DEFAULT = 400;
+/** Гистерезис: меньше дёрганья у границы «широкий / только аватарки». */
+const SIDEBAR_COMPACT_ENTER = 112;
+const SIDEBAR_COMPACT_EXIT = 128;
+
+function clampSidebarWidth(n) {
+  return Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, Math.round(Number(n))));
+}
+
+function readInitialSidebarWidth() {
+  try {
+    const raw = localStorage.getItem(SIDEBAR_WIDTH_KEY);
+    if (raw != null) {
+      const n = Number(raw);
+      if (Number.isFinite(n)) return clampSidebarWidth(n);
+    }
+    if (localStorage.getItem(SIDEBAR_LEGACY_COLLAPSED_KEY) === "1") {
+      return 76;
+    }
+  } catch {
+    /* ignore */
+  }
+  return SIDEBAR_DEFAULT;
+}
 
 export default function ChaosMessenger() {
   useEffect(() => {
@@ -41,11 +75,18 @@ export default function ChaosMessenger() {
   
   const [ctxClosing,     setCtxClosing]     = useState(false);const [showSettings,   setShowSettings]   = useState(false);
   const [showNewChat,    setShowNewChat]    = useState(false);
+  const [newChatInitialTab, setNewChatInitialTab] = useState("direct");
   const [typingUsers,    setTypingUsers]    = useState({});
   const [chatSearch,     setChatSearch]     = useState("");
   const [chatSearchOpen, setChatSearchOpen] = useState(false);
   const [messageSearch,  setMessageSearch]  = useState("");
+  const [matchIndex, setMatchIndex] = useState(0);
+  const [scrollToMessageId, setScrollToMessageId] = useState(null);
   const [chatInfoOpen,   setChatInfoOpen]   = useState(false);
+  const [groupAdminOpen, setGroupAdminOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [aliasTick, setAliasTick] = useState(0);
+  const [chatPrefsTick, setChatPrefsTick] = useState(0);
   const [chatBg,         setChatBg]         = useState(() => localStorage.getItem("cm_chat_background") || "clean");
   const [chatFilter,     setChatFilter]     = useState("all");
   
@@ -54,19 +95,216 @@ export default function ChaosMessenger() {
   const chatSearchBtnRef = useRef(null);
   const chatInfoRef = useRef(null);
   const chatInfoBtnRef = useRef(null);
+  const groupAdminBtnRef = useRef(null);
 const [deleteTarget,   setDeleteTarget]   = useState(null);
   const [editTarget,     setEditTarget]     = useState(null);
   const [editText,       setEditText]       = useState("");
   const [editLoading,    setEditLoading]    = useState(false);
+  const resetMessageSearch = useCallback(() => {
+    setMessageSearch("");
+    setMatchIndex(0);
+    setScrollToMessageId(null);
+    setChatSearchOpen(false);
+  }, []);
 
   const [theme, setTheme] = useState(() => {
     if (typeof window === "undefined") return "light";
     return localStorage.getItem(THEME_STORAGE_KEY) || "light";
   });
 
+  const [sidebarWidth, setSidebarWidth] = useState(() =>
+    typeof window !== "undefined" ? readInitialSidebarWidth() : SIDEBAR_DEFAULT
+  );
+  const [sidebarCompact, setSidebarCompact] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const desktop = window.matchMedia("(min-width: 861px)").matches;
+    return desktop && readInitialSidebarWidth() <= SIDEBAR_COMPACT_ENTER;
+  });
+  const [sidebarDragging, setSidebarDragging] = useState(false);
+  const sidebarWidthRef = useRef(sidebarWidth);
+  const sidebarDesktopRef = useRef(true);
+  const dragSidebarRef = useRef({
+    active: false,
+    startX: 0,
+    startW: SIDEBAR_DEFAULT,
+    pointerId: null,
+  });
+  const pendingSidebarWidthRef = useRef(null);
+  const rafSidebarRef = useRef(null);
+
+  const [sidebarDesktop, setSidebarDesktop] = useState(() =>
+    typeof window !== "undefined" ? window.matchMedia("(min-width: 861px)").matches : true
+  );
+
+  useEffect(() => {
+    sidebarWidthRef.current = sidebarWidth;
+  }, [sidebarWidth]);
+
+  useEffect(() => {
+    sidebarDesktopRef.current = sidebarDesktop;
+  }, [sidebarDesktop]);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 861px)");
+    const onMq = () => setSidebarDesktop(mq.matches);
+    mq.addEventListener("change", onMq);
+    onMq();
+    return () => mq.removeEventListener("change", onMq);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!sidebarDesktop) {
+      setSidebarCompact(prev => (prev ? false : prev));
+      return;
+    }
+    setSidebarCompact(prev => {
+      if (prev) {
+        return sidebarWidth > SIDEBAR_COMPACT_EXIT ? false : true;
+      }
+      return sidebarWidth <= SIDEBAR_COMPACT_ENTER ? true : false;
+    });
+  }, [sidebarWidth, sidebarDesktop]);
+
+  const applyPendingSidebarWidth = useCallback(() => {
+    const v = pendingSidebarWidthRef.current;
+    if (v == null) return;
+    pendingSidebarWidthRef.current = null;
+    setSidebarWidth(v);
+    sidebarWidthRef.current = v;
+  }, []);
+
+  const onSidebarResizePointerDown = useCallback((e) => {
+    if (!sidebarDesktopRef.current) return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    e.preventDefault();
+    dragSidebarRef.current = {
+      active: true,
+      startX: e.clientX,
+      startW: sidebarWidthRef.current,
+      pointerId: e.pointerId,
+    };
+    setSidebarDragging(true);
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const onSidebarResizePointerMove = useCallback((e) => {
+    if (!dragSidebarRef.current.active) return;
+    e.preventDefault();
+    const { startX, startW } = dragSidebarRef.current;
+    const next = clampSidebarWidth(startW + (e.clientX - startX));
+    pendingSidebarWidthRef.current = next;
+    if (rafSidebarRef.current != null) return;
+    rafSidebarRef.current = requestAnimationFrame(() => {
+      rafSidebarRef.current = null;
+      applyPendingSidebarWidth();
+    });
+  }, [applyPendingSidebarWidth]);
+
+  const flushSidebarResizePending = useCallback(() => {
+    if (rafSidebarRef.current != null) {
+      cancelAnimationFrame(rafSidebarRef.current);
+      rafSidebarRef.current = null;
+    }
+    if (pendingSidebarWidthRef.current != null) {
+      const v = pendingSidebarWidthRef.current;
+      pendingSidebarWidthRef.current = null;
+      setSidebarWidth(v);
+      sidebarWidthRef.current = v;
+    }
+  }, []);
+
+  const endSidebarResizeDrag = useCallback((releaseTarget, pointerId) => {
+    if (!dragSidebarRef.current.active) return;
+    dragSidebarRef.current.active = false;
+    dragSidebarRef.current.pointerId = null;
+    setSidebarDragging(false);
+    flushSidebarResizePending();
+    try {
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidthRef.current));
+      localStorage.removeItem(SIDEBAR_LEGACY_COLLAPSED_KEY);
+    } catch {
+      /* ignore */
+    }
+    if (releaseTarget?.releasePointerCapture && pointerId != null) {
+      try {
+        releaseTarget.releasePointerCapture(pointerId);
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [flushSidebarResizePending]);
+
+  const onSidebarResizePointerUp = useCallback((e) => {
+    const pid = dragSidebarRef.current.pointerId;
+    endSidebarResizeDrag(e.currentTarget, pid);
+  }, [endSidebarResizeDrag]);
+
+  const onSidebarResizeLostCapture = useCallback((e) => {
+    if (!dragSidebarRef.current.active) return;
+    if (e.pointerId !== dragSidebarRef.current.pointerId) return;
+    endSidebarResizeDrag(null, null);
+  }, [endSidebarResizeDrag]);
+
   const activeChat = chatStore.chats.find(c => c.id === chatStore.activeId);
   const activeMsgs = msgStore.msgs[chatStore.activeId] || [];
   const refreshTimeoutRef = useRef(null);
+  const requestsRefreshTimeoutRef = useRef(null);
+  const requestsRefreshAttemptsRef = useRef(0);
+
+  const aliasedChats = useMemo(() => {
+    // aliasTick forces re-evaluation after saving alias
+    void aliasTick;
+    const prefs = getChatUiPrefs(auth.me?.id);
+    void chatPrefsTick;
+    return chatStore.chats.map(c => ({
+      ...c,
+      name: displayNameForChat(c, auth.me?.id),
+      muted: prefs.muted.has(String(c.id)),
+      archived: prefs.archived.has(String(c.id)),
+    }));
+  }, [chatStore.chats, auth.me?.id, aliasTick, chatPrefsTick]);
+
+  const activeChatName = useMemo(() => {
+    if (!activeChat) return "";
+    // keep in sync with aliased list
+    void aliasTick;
+    return displayNameForChat(activeChat, auth.me?.id);
+  }, [activeChat, auth.me?.id, aliasTick]);
+
+  const l = useMemo(() => {
+    const effectiveLang = String(lang || "ru").toLowerCase().startsWith("en") ? "en" : "ru";
+    return (ru, en) => (effectiveLang === "ru" ? ru : en);
+  }, [lang]);
+
+  const showGroupAdminBtn = useMemo(() => {
+    if (!activeChat || activeChat.type !== "group") return false;
+    return canOpenGroupAdmin(activeChat.myRole);
+  }, [activeChat]);
+
+  const isPendingRequestChat = useMemo(() => {
+    if (!activeChat || activeChat.type !== "direct") return false;
+    return String(activeChat.directStatus || "").toUpperCase() === "PENDING";
+  }, [activeChat]);
+  const isRequesterInPendingChat = useMemo(() => {
+    if (!isPendingRequestChat) return false;
+    return String(activeChat?.directRequestedBy || "") === String(auth.me?.id || "");
+  }, [isPendingRequestChat, activeChat?.directRequestedBy, auth.me?.id]);
+  const requesterFirstMsgSent = useMemo(() => {
+    if (!isRequesterInPendingChat) return false;
+    return activeMsgs.some(m => m?._out && !m?._temp);
+  }, [isRequesterInPendingChat, activeMsgs]);
+  const requestChatIds = useMemo(
+    () => new Set((chatStore.requests || []).map(c => String(c.id))),
+    [chatStore.requests]
+  );
+  const wsChatIds = useMemo(
+    () => Array.from(new Set([...(chatStore.chats || []), ...(chatStore.requests || [])].map(c => c.id))),
+    [chatStore.chats, chatStore.requests]
+  );
 
   const scheduleChatsRefresh = () => {
     if (refreshTimeoutRef.current) return;
@@ -75,10 +313,30 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
       chatStore.loadChats(auth.me?.id);
     }, 220);
   };
+  const scheduleRequestsRefresh = () => {
+    if (requestsRefreshTimeoutRef.current) return;
+    requestsRefreshTimeoutRef.current = window.setTimeout(() => {
+      requestsRefreshTimeoutRef.current = null;
+      const myId = auth.me?.id;
+      if (!myId) {
+        if (requestsRefreshAttemptsRef.current < 8) {
+          requestsRefreshAttemptsRef.current += 1;
+          scheduleRequestsRefresh();
+        }
+        return;
+      }
+      requestsRefreshAttemptsRef.current = 0;
+      chatStore.loadRequests(myId);
+    }, 220);
+  };
   useEffect(() => () => {
     if (refreshTimeoutRef.current) {
       clearTimeout(refreshTimeoutRef.current);
       refreshTimeoutRef.current = null;
+    }
+    if (requestsRefreshTimeoutRef.current) {
+      clearTimeout(requestsRefreshTimeoutRef.current);
+      requestsRefreshTimeoutRef.current = null;
     }
   }, []);
 
@@ -86,6 +344,51 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
     if (!messageSearch.trim()) return 0;
     return activeMsgs.filter(m => messageMatchesQuery(m, messageSearch)).length;
   }, [activeMsgs, messageSearch]);
+
+  const matchIds = useMemo(() => {
+    const q = String(messageSearch || "").trim();
+    if (!q) return [];
+    return activeMsgs
+      .filter(m => messageMatchesQuery(m, q))
+      .map(m => (m.id ?? m.messageId))
+      .filter(Boolean);
+  }, [activeMsgs, messageSearch]);
+
+  useEffect(() => {
+    // Reset selection when query changes
+    setMatchIndex(0);
+    setScrollToMessageId(null);
+  }, [messageSearch]);
+
+  useEffect(() => {
+    resetMessageSearch();
+  }, [chatStore.activeId, resetMessageSearch]);
+
+  useEffect(() => {
+    setGroupAdminOpen(false);
+  }, [chatStore.activeId]);
+
+  useEffect(() => {
+    if (!showGroupAdminBtn && groupAdminOpen) setGroupAdminOpen(false);
+  }, [showGroupAdminBtn, groupAdminOpen]);
+
+  useEffect(() => {
+    if (!groupAdminOpen) return;
+    const onKey = (e) => {
+      if (e.key === "Escape") setGroupAdminOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [groupAdminOpen]);
+
+  const activeMatchId = matchIds.length ? matchIds[Math.max(0, Math.min(matchIndex, matchIds.length - 1))] : null;
+
+  const goToMatch = (delta) => {
+    if (!matchIds.length) return;
+    const next = (matchIndex + delta + matchIds.length) % matchIds.length;
+    setMatchIndex(next);
+    setScrollToMessageId(matchIds[next]);
+  };
   useEffect(() => {
     const isInside = (ref, target) => Boolean(ref.current && ref.current.contains(target));
 
@@ -102,12 +405,13 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
         isInside(chatSearchBtnRef, target);
 
       if (chatSearchOpen && !insideSearch) {
-        setChatSearchOpen(false);
+        resetMessageSearch();
       }
 
       const insideInfo =
         isInside(chatInfoRef, target) ||
-        isInside(chatInfoBtnRef, target);
+        isInside(chatInfoBtnRef, target) ||
+        isInside(groupAdminBtnRef, target);
 
       if (chatInfoOpen && !insideInfo) {
         setChatInfoOpen(false);
@@ -121,7 +425,7 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
       document.removeEventListener("mousedown", closeExternalPopovers, true);
       document.removeEventListener("touchstart", closeExternalPopovers, true);
     };
-  }, [ctx, chatSearchOpen, chatInfoOpen]);
+  }, [ctx, chatSearchOpen, chatInfoOpen, resetMessageSearch]);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -133,6 +437,7 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
     loadTranslations(lang);
     auth.restoreSession(async (meData) => {
       await chatStore.loadChats(meData.id);
+      await chatStore.loadRequests(meData.id);
       auth.setScreen("app");
     });
   }, []); // eslint-disable-line
@@ -146,12 +451,13 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
   const ws = useWebSocket({
     me:       auth.me,
     activeId: chatStore.activeId,
-    chatIds:  chatStore.chats.map(c => c.id),
+    chatIds:  wsChatIds,
     enabled:  auth.screen === "app",
 
     onMessage: async (event, chatId) => {
       const result = await msgStore.handleIncomingEvent(event, chatId);
       if (result) {
+        chatStore.revealChat(chatId);
         const isActive = Number(chatId) === Number(chatStore.activeId);
         if (result.type !== "MESSAGE_EDITED" && result.type !== "MESSAGE_REACTION") {
           chatStore.updateChatPreview(chatId, result.text, result.isOut, event.createdAt, !result.isOut && !isActive);
@@ -163,9 +469,46 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
           });
         }
       }
+      if (requestChatIds.has(String(chatId))) {
+        scheduleRequestsRefresh();
+      }
     },
 
-    onChatListUpdate: () => scheduleChatsRefresh(),
+    onChatListUpdate: (evt) => {
+      const reason = evt?.reason;
+      // Backend publishes ChatListUpdateEvent for many reasons (message_created, chat_read, etc).
+      // For message-related reasons we already update the preview/unread locally via onMessage/onStatusUpdate.
+      // Full reload is reserved for structural chat list changes (new chat) and profile updates.
+      const needsHardRefresh =
+        reason === "profile_updated" ||
+        reason === "chat_created" ||
+        reason === "chat_exists" ||
+        reason === "saved_chat_created" ||
+        reason === "saved_chat_exists";
+
+      if (needsHardRefresh) scheduleChatsRefresh();
+
+      // Incoming message requests: refresh only the requests list (badge + modal tab), not the whole chat list.
+      if (reason === "request_message") {
+        scheduleRequestsRefresh();
+        return;
+      }
+
+      if (reason === "request_accepted") {
+        scheduleChatsRefresh();
+        scheduleRequestsRefresh();
+        return;
+      }
+
+      if (reason === "request_declined") {
+        scheduleRequestsRefresh();
+        scheduleChatsRefresh();
+      }
+    },
+
+    onRequestsUpdate: () => {
+      scheduleRequestsRefresh();
+    },
 
     onStatusUpdate: (data) => {
       if (data.type === "delivery" && data.messageId) {
@@ -194,6 +537,7 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
     onConnectionState: ({ connected, isReconnect }) => {
       if (!connected || !isReconnect) return;
       scheduleChatsRefresh();
+      scheduleRequestsRefresh();
       if (chatStore.activeId) {
         msgStore.loadMessages(chatStore.activeId);
       }
@@ -234,7 +578,12 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
       : String(text).trim();
     chatStore.updateChatPreview(chatStore.activeId, preview, true, getTime());
     setReplyTo(null);
-    await msgStore.sendMessage(chatStore.activeId, { text, imgFile, voiceFile });
+    const result = await msgStore.sendMessage(chatStore.activeId, { text, imgFile, voiceFile });
+    if (!result) {
+      // Re-sync chat preview/status in case optimistic update was rejected
+      // (e.g. request is pending and second message is blocked).
+      chatStore.loadChats(auth.me?.id);
+    }
   };
 
   const closeCtx = () => {
@@ -323,6 +672,7 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
   const onChatCreated = async (chatId) => {
     setShowNewChat(false);
     msgStore.setMsgs(p => ({ ...p, [chatId]: undefined }));
+    chatStore.revealChat(chatId);
     await chatStore.loadChats(auth.me?.id);
     chatStore.setActiveId(chatId);
   };
@@ -331,9 +681,10 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
     chatStore.setActiveId(null);
     setReplyTo(null);
     setCtx(null);
-    setMessageSearch("");
+    resetMessageSearch();
     setChatSearchOpen(false);
     setChatInfoOpen(false);
+    setGroupAdminOpen(false);
   };
 
   if (auth.screen === "loading") {
@@ -378,10 +729,18 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
 
   return (
     <div className={`app mobile-product-shell${activeChat ? " has-active-chat" : ""}`} onClick={closeCtx}>
-      <div className="app-frame">
+      <div
+        className={`app-frame${sidebarDragging ? " app-frame--sidebar-dragging" : ""}`}
+        style={
+          sidebarDesktop
+            ? { gridTemplateColumns: `${sidebarWidth}px minmax(0, 1fr)` }
+            : undefined
+        }
+      >
         <ChatList
           me={auth.me}
-          chats={chatStore.chats}
+          chats={aliasedChats}
+          requests={chatStore.requests.map(c => ({ ...c, name: displayNameForChat(c, auth.me?.id) }))}
           activeId={chatStore.activeId}
           loadingChats={chatStore.loadingChats}
           search={chatSearch}
@@ -389,7 +748,11 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
           filter={chatFilter}
           onFilterChange={setChatFilter}
           onSelectChat={chatStore.selectChat}
-          onNewChat={() => setShowNewChat(true)}
+          onNewChat={() => {
+            if (auth.me?.id) chatStore.loadRequests(auth.me.id);
+            setNewChatInitialTab("direct");
+            setShowNewChat(true);
+          }}
           onOpenНастройки={() => setShowSettings(true)}
           onMarkAllRead={() => {
             chatStore.chats.forEach(c => {
@@ -397,6 +760,35 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
             });
             chatStore.setChats(prev => prev.map(c => ({ ...c, unread: 0 })));
           }}
+          onDeleteChat={async (chatId) => {
+            const ok = window.confirm("Удалить переписку только у себя?");
+            if (!ok) return;
+            chatStore.deleteChatForMe(chatId);
+            if (String(chatStore.activeId) === String(chatId)) {
+              chatStore.setActiveId(null);
+            }
+          }}
+          onDeleteChatEveryone={async () => {
+            window.alert("Удаление чата у всех пока не реализовано на сервере.");
+          }}
+          onToggleMuteChat={(chatId) => {
+            toggleMuted(auth.me?.id, chatId);
+            setChatPrefsTick(v => v + 1);
+          }}
+          onToggleArchiveChat={(chatId) => {
+            const archived = toggleArchived(auth.me?.id, chatId);
+            setChatPrefsTick(v => v + 1);
+            if (archived && String(chatStore.activeId) === String(chatId)) {
+              chatStore.setActiveId(null);
+            }
+          }}
+          sidebarCompact={sidebarCompact}
+          sidebarResizeEnabled={sidebarDesktop}
+          onSidebarResizePointerDown={onSidebarResizePointerDown}
+          onSidebarResizePointerMove={onSidebarResizePointerMove}
+          onSidebarResizePointerUp={onSidebarResizePointerUp}
+          onSidebarResizePointerCancel={onSidebarResizePointerUp}
+          onSidebarResizeLostCapture={onSidebarResizeLostCapture}
           t={t}
         />
 
@@ -411,28 +803,67 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
             <>
               <div className="product-chat-head">
                 <button className="round-action desktop-hidden" onClick={goBackToList} title="Back">‹</button>
-                <Ava name={activeChat.name} colorIdx={activeChat.colorIdx} size="md" online={activeChat.online} avatarUrl={activeChat.avatarUrl} />
-                <div className="product-chat-title">
-                  <div className="head-name">{activeChat.name}</div>
+                <button
+                  type="button"
+                  className="chat-head-user"
+                  onClick={() => {
+                    if (activeChat.type === "direct") setProfileOpen(true);
+                    else setChatInfoOpen(true);
+                    setChatSearchOpen(false);
+                  }}
+                  title="Profile"
+                >
+                  <Ava name={activeChatName || activeChat.name} colorIdx={activeChat.colorIdx} size="md" online={activeChat.online} avatarUrl={activeChat.avatarUrl} />
+                </button>
+                <button
+                  type="button"
+                  className="product-chat-title chat-head-user"
+                  onClick={() => {
+                    if (activeChat.type === "direct") setProfileOpen(true);
+                    else setChatInfoOpen(true);
+                    setChatSearchOpen(false);
+                  }}
+                  title="Profile"
+                >
+                  <div className="head-name">{activeChatName || activeChat.name}</div>
                   <div className={`head-status${activeChat.online ? "" : " off"}`}>
                     {activeChat.type === "group"
                       ? `${activeChat.members} ${t.participants || "members"}`
                       : activeChat.online ? (t.online || "online") : (t.offline || "last seen recently")}
                   </div>
-                </div>
+                </button>
                 <div className="chat-head-actions">
-                  <button
-                    ref={chatSearchBtnRef}
-                    className={`chat-head-btn${chatSearchOpen ? " active" : ""}`}
-                    title="Search"
-                    onClick={() => { setChatSearchOpen(v => !v); setChatInfoOpen(false); }}
-                  >⌕</button>
+                  {showGroupAdminBtn && (
+                    <button
+                      ref={groupAdminBtnRef}
+                      type="button"
+                      className={`chat-head-btn chat-head-btn--admin${groupAdminOpen ? " active" : ""}`}
+                      title={l("Администрирование группы", "Group administration")}
+                      aria-label={l("Администрирование группы", "Group administration")}
+                      onClick={() => {
+                        setGroupAdminOpen(true);
+                        setChatInfoOpen(false);
+                        setChatSearchOpen(false);
+                      }}
+                    >
+                      <svg className="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M12 3 19 6v6c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3z" />
+                      </svg>
+                    </button>
+                  )}
                   <button
                     ref={chatInfoBtnRef}
-                    className={`chat-head-btn${chatInfoOpen ? " active" : ""}`}
+                    className={`chat-head-btn chat-head-btn--info${chatInfoOpen ? " active" : ""}`}
                     title="Chat info"
                     onClick={() => { setChatInfoOpen(v => !v); setChatSearchOpen(false); }}
-                  >i</button>
+                    aria-label="Chat info"
+                  >
+                    <svg className="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
+                      <circle cx="12" cy="12" r="9" />
+                      <circle cx="12" cy="8" r="1.2" fill="currentColor" stroke="none" />
+                      <path d="M12 11v5" />
+                    </svg>
+                  </button>
                 </div>
               </div>
 
@@ -442,22 +873,72 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
                   <input
                     value={messageSearch}
                     onChange={e => setMessageSearch(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (!matchIds.length) return;
+                      if (e.key === "ArrowUp") {
+                        e.preventDefault();
+                        goToMatch(-1);
+                      } else if (e.key === "ArrowDown") {
+                        e.preventDefault();
+                        goToMatch(1);
+                      } else if (e.key === "Enter") {
+                        e.preventDefault();
+                        goToMatch(e.shiftKey ? -1 : 1);
+                      }
+                    }}
                     placeholder="Search messages"
                     autoFocus
                   />
-                  <b>{messageSearch.trim() ? searchCount : ""}</b>
-                  <button onClick={() => { setMessageSearch(""); setChatSearchOpen(false); }}>×</button>
+                  <b>{messageSearch.trim() ? (matchIds.length ? `${matchIndex + 1}/${matchIds.length}` : "0") : ""}</b>
+                  <button
+                    type="button"
+                    className="chat-search-nav"
+                    title="Prev"
+                    disabled={!matchIds.length}
+                    onClick={() => goToMatch(-1)}
+                  >↑</button>
+                  <button
+                    type="button"
+                    className="chat-search-nav"
+                    title="Next"
+                    disabled={!matchIds.length}
+                    onClick={() => goToMatch(1)}
+                  >↓</button>
+                  <button onClick={resetMessageSearch}>×</button>
                 </div>
               )}
 
               {chatInfoOpen && (
                 <ChatInfoPanel
                   panelRef={chatInfoRef}
+                  lang={lang}
                   chat={activeChat}
                   chatBg={chatBg}
                   onChangeBg={setChatBg}
                   onClose={() => setChatInfoOpen(false)}
                   onOpenSearch={() => { setChatInfoOpen(false); setChatSearchOpen(true); }}
+                />
+              )}
+
+              {groupAdminOpen && showGroupAdminBtn && activeChat?.type === "group" && (
+                <GroupAdminModal
+                  me={auth.me}
+                  chat={activeChat}
+                  l={l}
+                  onRefreshGroup={async (chatId) => {
+                    await chatStore.loadChats(auth.me?.id);
+                    chatStore.setActiveId(chatId);
+                  }}
+                  onClose={() => setGroupAdminOpen(false)}
+                />
+              )}
+
+              {profileOpen && activeChat?.type === "direct" && (
+                <UserProfileModal
+                  me={auth.me}
+                  chat={{ ...activeChat, name: activeChatName || activeChat.name }}
+                  onClose={() => setProfileOpen(false)}
+                  onAliasChanged={() => setAliasTick(v => v + 1)}
                 />
               )}
 
@@ -470,7 +951,15 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
                 onReact={reactToMsg}
                 searchQuery={messageSearch}
                 typingUsername={typingUsers[chatStore.activeId] || null}
+                activeMatchId={activeMatchId}
+                scrollToMessageId={scrollToMessageId}
               />
+
+              {isRequesterInPendingChat && requesterFirstMsgSent && (
+                <div className="request-wait-banner">
+                  Подождите, пока пользователь примет ваш запрос.
+                </div>
+              )}
 
               <div className="enc-notice">
                 <span>🔒</span>
@@ -482,6 +971,8 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
                 replyTo={replyTo}
                 onОтменаОтветить={() => setReplyTo(null)}
                 onTyping={() => ws.sendTyping(chatStore.activeId)}
+                disabled={(isPendingRequestChat && !isRequesterInPendingChat) || (isRequesterInPendingChat && requesterFirstMsgSent)}
+                pendingFirstMessageOnly={isRequesterInPendingChat && !requesterFirstMsgSent}
               />
             </>
           )}
@@ -579,6 +1070,32 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
           me={auth.me}
           onClose={() => setShowNewChat(false)}
           onCreated={onChatCreated}
+          initialTab={newChatInitialTab}
+          suggestedContacts={chatStore.chats.filter(c => c.type === "direct" && c.otherUserId).map(c => ({
+            id: c.otherUserId,
+            username: c.username,
+            firstName: c.name,
+            lastName: "",
+            avatarUrl: c.avatarUrl,
+          }))}
+          requests={chatStore.requests.map(c => ({ ...c, name: displayNameForChat(c, auth.me?.id) }))}
+          loadingRequests={chatStore.loadingRequests}
+          onAcceptRequest={async (chatId) => {
+            try {
+              await import("./api").then(({ api }) => api.acceptRequest(chatId));
+            } catch (_) {}
+            await chatStore.loadRequests(auth.me?.id);
+            await chatStore.loadChats(auth.me?.id);
+            setShowNewChat(false);
+            chatStore.selectChat(chatId);
+          }}
+          onDeclineRequest={async (chatId) => {
+            try {
+              await import("./api").then(({ api }) => api.declineRequest(chatId));
+            } catch (_) {}
+            chatStore.loadRequests(auth.me?.id);
+            chatStore.loadChats(auth.me?.id);
+          }}
         />
       )}
     </div>
@@ -664,6 +1181,7 @@ function ChatInfoPanel({ chat, chatBg, onChangeBg, onClose, onOpenSearch, lang, 
         <b>{l("Медиа и файлы", "Media & files")}</b>
         <em>{l("позже", "coming soon")}</em>
       </button>
+
     </div>
   );
 }
