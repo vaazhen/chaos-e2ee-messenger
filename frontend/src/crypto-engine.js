@@ -161,6 +161,22 @@
 
     async function deriveSelfEnvelopeKey(localBundle) {
         assertWebCryptoAvailable();
+        if (!localBundle?.identity?.privateKeyPkcs8) {
+            throw new Error('Local private identity key is missing');
+        }
+        const raw = b64ToBytes(localBundle.identity.privateKeyPkcs8);
+        const saltInput = new TextEncoder().encode(localBundle.deviceId || 'unknown-device');
+        const salt = new Uint8Array(await crypto.subtle.digest('SHA-256', saltInput));
+        const hkdfKey = await crypto.subtle.importKey('raw', raw, { name: 'HKDF' }, false, ['deriveBits']);
+        const bits = await crypto.subtle.deriveBits(
+            { name: 'HKDF', hash: 'SHA-256', salt, info: new TextEncoder().encode('ChaosMessengerSelf:v2') },
+            hkdfKey, 256
+        );
+        return crypto.subtle.importKey('raw', bits, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+    }
+
+    async function deriveLegacySelfEnvelopeKey(localBundle) {
+        assertWebCryptoAvailable();
         const raw = b64ToBytes(localBundle.identity.publicKey);
         const hkdfKey = await crypto.subtle.importKey('raw', raw, { name: 'HKDF' }, false, ['deriveBits']);
         const bits = await crypto.subtle.deriveBits(
@@ -177,7 +193,12 @@
 
     async function decryptSelfEnvelope(localBundle, envelope) {
         const key = await deriveSelfEnvelopeKey(localBundle);
-        return aesDecryptWithKey(envelope.ciphertext, envelope.nonce, key);
+        try {
+            return await aesDecryptWithKey(envelope.ciphertext, envelope.nonce, key);
+        } catch (_) {
+            const legacyKey = await deriveLegacySelfEnvelopeKey(localBundle);
+            return aesDecryptWithKey(envelope.ciphertext, envelope.nonce, legacyKey);
+        }
     }
 
     // ─── Storage — NOT username-scoped ────────────────────────────────────────
