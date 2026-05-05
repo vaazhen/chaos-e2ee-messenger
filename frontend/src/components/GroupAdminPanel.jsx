@@ -11,8 +11,8 @@ import {
 } from "../utils/groupRbac";
 
 const PARTICIPANT_FILTER_DEBOUNCE_MS = 150;
-/** Initial and step size for “Show more” (avoids mounting huge DOM when filter matches many rows). */
-const PARTICIPANT_PAGE_SIZE = 150;
+/** Client-side page size for the participant list (independent scroll region). */
+const PARTICIPANT_PAGE_SIZE = 30;
 
 function policyWriteHint(l) {
   return l(
@@ -166,7 +166,7 @@ function ParticipantActionsMenu({ menuState, descriptors, onClose, busy }) {
       className="ctx-menu group-admin-ctx-menu"
       role="menu"
       aria-label={menuState.ariaLabel}
-      style={{ left: menuState.x, top: menuState.y, visibility: "visible" }}
+      style={{ left: menuState.x, top: menuState.y }}
       onKeyDown={(e) => {
         if (e.key === "Escape") {
           e.stopPropagation();
@@ -210,7 +210,10 @@ export default function GroupAdminPanel({ me, chat, l, onRefreshGroup, onClose, 
 
   const [participantFilterInput, setParticipantFilterInput] = useState("");
   const [participantFilterDebounced, setParticipantFilterDebounced] = useState("");
-  const [participantVisibleCap, setParticipantVisibleCap] = useState(PARTICIPANT_PAGE_SIZE);
+  const [participantRoleFilter, setParticipantRoleFilter] = useState("");
+  const [participantMutedOnly, setParticipantMutedOnly] = useState(false);
+  const [participantBannedOnly, setParticipantBannedOnly] = useState(false);
+  const [participantPage, setParticipantPage] = useState(0);
   const [menuState, setMenuState] = useState(null);
 
   const actorRole = normalizedRole(chat?.myRole);
@@ -223,6 +226,12 @@ export default function GroupAdminPanel({ me, chat, l, onRefreshGroup, onClose, 
   const participants = Array.isArray(chat?.groupParticipants) ? chat.groupParticipants : [];
   const assignableRoles = useMemo(() => assignableRoleValues(actorRole), [actorRole]);
 
+  const hasMutedData = useMemo(
+    () => participants.some((p) => !p.banned && Boolean(p.mutedUntil)),
+    [participants]
+  );
+  const hasBannedData = useMemo(() => participants.some((p) => Boolean(p.banned)), [participants]);
+
   useEffect(() => {
     const t = window.setTimeout(
       () => setParticipantFilterDebounced(participantFilterInput.trim().toLowerCase()),
@@ -231,27 +240,53 @@ export default function GroupAdminPanel({ me, chat, l, onRefreshGroup, onClose, 
     return () => window.clearTimeout(t);
   }, [participantFilterInput]);
 
-  useEffect(() => {
-    setParticipantVisibleCap(PARTICIPANT_PAGE_SIZE);
-  }, [participantFilterDebounced, chat?.id]);
-
   const filteredParticipants = useMemo(() => {
-    if (!participantFilterDebounced) return participants;
-    const q = participantFilterDebounced;
-    return participants.filter((p) => {
-      const name = participantDisplayName(p).toLowerCase();
-      const uname = String(p.username || "").toLowerCase();
-      const id = String(p.userId || "");
-      return name.includes(q) || uname.includes(q) || id.includes(q);
-    });
-  }, [participants, participantFilterDebounced]);
+    let list = participants;
+    const roleWanted = participantRoleFilter.trim();
+    if (roleWanted) {
+      const want = normalizedRole(roleWanted);
+      list = list.filter((p) => normalizedRole(p.role) === want);
+    }
+    if (participantMutedOnly) {
+      list = list.filter((p) => !p.banned && Boolean(p.mutedUntil));
+    }
+    if (participantBannedOnly) {
+      list = list.filter((p) => Boolean(p.banned));
+    }
+    if (participantFilterDebounced) {
+      const q = participantFilterDebounced;
+      list = list.filter((p) => {
+        const name = participantDisplayName(p).toLowerCase();
+        const uname = String(p.username || "").toLowerCase();
+        const id = String(p.userId || "");
+        return name.includes(q) || uname.includes(q) || id.includes(q);
+      });
+    }
+    return list;
+  }, [
+    participants,
+    participantFilterDebounced,
+    participantRoleFilter,
+    participantMutedOnly,
+    participantBannedOnly,
+  ]);
 
+  const filteredCount = filteredParticipants.length;
+  const totalPages = filteredCount === 0 ? 1 : Math.ceil(filteredCount / PARTICIPANT_PAGE_SIZE);
+  const safePage = Math.min(participantPage, Math.max(0, totalPages - 1));
+  const pageSliceStart = safePage * PARTICIPANT_PAGE_SIZE;
   const visibleParticipants = useMemo(
-    () => filteredParticipants.slice(0, participantVisibleCap),
-    [filteredParticipants, participantVisibleCap]
+    () => filteredParticipants.slice(pageSliceStart, pageSliceStart + PARTICIPANT_PAGE_SIZE),
+    [filteredParticipants, pageSliceStart]
   );
 
-  const hasMoreParticipants = filteredParticipants.length > visibleParticipants.length;
+  useEffect(() => {
+    setParticipantPage(0);
+  }, [participantFilterDebounced, participantRoleFilter, participantMutedOnly, participantBannedOnly, chat?.id]);
+
+  useEffect(() => {
+    setParticipantPage((p) => Math.min(p, Math.max(0, totalPages - 1)));
+  }, [totalPages]);
 
   useEffect(() => {
     if (!fullAdmin || inviteQuery.trim().length < 2) {
@@ -447,27 +482,76 @@ export default function GroupAdminPanel({ me, chat, l, onRefreshGroup, onClose, 
       )}
       {groupActionError && <div className="profile-error">{groupActionError}</div>}
 
-      <div className="tool-note group-admin-section-label">{l("Участники", "Participants")}</div>
-      <label className="field-label" htmlFor="ga-participant-filter">
-        {l("Поиск и фильтр", "Search & filter")}
-      </label>
-      <input
-        id="ga-participant-filter"
-        className="field-inp"
-        value={participantFilterInput}
-        onChange={(e) => setParticipantFilterInput(e.target.value)}
-        placeholder={l("Имя, @username, id…", "Name, @username, id…")}
-        autoComplete="off"
-        aria-describedby="ga-participant-filter-hint"
-      />
-      <p id="ga-participant-filter-hint" className="tool-note group-admin-hint">
-        {l(
-          "Фильтрация выполняется на устройстве. Для очень больших групп (порядка десятков тысяч участников) без серверной пагинации или виртуализации списка интерфейс может тормозить — показывается только ограниченное число строк; уточните фильтр или нажмите «Показать ещё».",
-          "Filtering runs on the client. For very large groups (~50k members) without server-side pagination or list virtualization the UI may lag — only a capped number of matching rows is rendered; narrow the filter or use “Show more”."
-        )}
-      </p>
+      <section className="group-admin-participants-block" aria-label={l("Участники", "Participants")}>
+        <h3 className="group-admin-participants-block__title">{l("Участники", "Participants")}</h3>
 
-      <div className="group-participant-picker" role="list" aria-busy={groupActionBusy}>
+        <div className="group-admin-filters">
+          <div className="group-admin-filters__row">
+            <label className="field-label" htmlFor="ga-participant-filter">
+              {l("Поиск", "Search")}
+            </label>
+            <input
+              id="ga-participant-filter"
+              className="field-inp"
+              value={participantFilterInput}
+              onChange={(e) => setParticipantFilterInput(e.target.value)}
+              placeholder={l("Имя, @username, id…", "Name, @username, id…")}
+              autoComplete="off"
+              aria-describedby="ga-participant-filter-hint"
+            />
+          </div>
+          <div className="group-admin-filters__row group-admin-filters__row--split">
+            <div className="group-admin-filters__field">
+              <label className="field-label" htmlFor="ga-participant-role-filter">
+                {l("Роль", "Role")}
+              </label>
+              <select
+                id="ga-participant-role-filter"
+                className="field-inp"
+                value={participantRoleFilter}
+                onChange={(e) => setParticipantRoleFilter(e.target.value)}
+              >
+                <option value="">{l("Все роли", "All roles")}</option>
+                <option value="MEMBER">{l("Участник", "Member")}</option>
+                <option value="MODERATOR">{l("Модератор", "Moderator")}</option>
+                <option value="ADMIN">{l("Администратор", "Admin")}</option>
+                <option value="OWNER">{l("Владелец", "Owner")}</option>
+              </select>
+            </div>
+            {(hasMutedData || hasBannedData) && (
+              <div className="group-admin-filters__toggles" role="group" aria-label={l("Статус", "Status")}>
+                {hasMutedData && (
+                  <label className="group-admin-filter-chip">
+                    <input
+                      type="checkbox"
+                      checked={participantMutedOnly}
+                      onChange={(e) => setParticipantMutedOnly(e.target.checked)}
+                    />
+                    <span>{l("Только с мутом", "Muted only")}</span>
+                  </label>
+                )}
+                {hasBannedData && (
+                  <label className="group-admin-filter-chip">
+                    <input
+                      type="checkbox"
+                      checked={participantBannedOnly}
+                      onChange={(e) => setParticipantBannedOnly(e.target.checked)}
+                    />
+                    <span>{l("Только бан", "Banned only")}</span>
+                  </label>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+        <p id="ga-participant-filter-hint" className="tool-note group-admin-hint group-admin-participants-block__hint">
+          {l(
+            "Поиск и фильтры выполняются на устройстве. Список ниже прокручивается отдельно; страницы по 30 совпадений.",
+            "Search and filters run on this device. The list below scrolls on its own; pages show 30 matches each."
+          )}
+        </p>
+
+        <div className="group-participant-picker" role="list" aria-busy={groupActionBusy}>
         {visibleParticipants.map((p) => {
           const id = String(p.userId);
           const menuPreview = buildParticipantMenuDescriptors({
@@ -535,20 +619,46 @@ export default function GroupAdminPanel({ me, chat, l, onRefreshGroup, onClose, 
         })}
       </div>
 
-      {hasMoreParticipants && (
-        <div className="profile-bottom-actions single">
+        <nav className="group-admin-pagination" aria-label={l("Страницы списка участников", "Participant list pages")}>
           <button
             type="button"
-            className="btn-sec"
-            onClick={() => setParticipantVisibleCap((c) => c + PARTICIPANT_PAGE_SIZE)}
+            className="btn-sec group-admin-pagination__nav"
+            disabled={safePage <= 0}
+            onClick={() => setParticipantPage(safePage - 1)}
           >
-            {l(
-              `Показать ещё (${filteredParticipants.length - visibleParticipants.length})`,
-              `Show more (${filteredParticipants.length - visibleParticipants.length})`
-            )}
+            {l("Назад", "Previous")}
           </button>
-        </div>
-      )}
+          <span className="group-admin-pagination__status">
+            {l(
+              `Стр. ${safePage + 1} из ${totalPages} · ${filteredCount}`,
+              `Page ${safePage + 1} of ${totalPages} · ${filteredCount}`
+            )}
+          </span>
+          <button
+            type="button"
+            className="btn-sec group-admin-pagination__nav"
+            disabled={safePage >= totalPages - 1}
+            onClick={() => setParticipantPage(safePage + 1)}
+          >
+            {l("Далее", "Next")}
+          </button>
+          {totalPages > 1 && totalPages <= 8 && (
+            <div className="group-admin-pagination__pages">
+              {Array.from({ length: totalPages }, (_, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  className={`group-admin-page-btn${i === safePage ? " group-admin-page-btn--active" : ""}`}
+                  aria-current={i === safePage ? "page" : undefined}
+                  onClick={() => setParticipantPage(i)}
+                >
+                  {i + 1}
+                </button>
+              ))}
+            </div>
+          )}
+        </nav>
+      </section>
 
       {!canManage && (
         <div className="tool-note group-admin-hint">

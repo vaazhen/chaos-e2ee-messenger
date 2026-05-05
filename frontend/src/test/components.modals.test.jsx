@@ -234,9 +234,10 @@ describe("NewChatModal critical UI flow", () => {
     expect(onCreated).toHaveBeenCalledWith(20);
 
     fireEvent.click(screen.getByText("×"));
-    await waitFor(() => {
-      expect(onClose).toHaveBeenCalled();
+    await act(async () => {
+      vi.advanceTimersByTime(200);
     });
+    expect(onClose).toHaveBeenCalled();
   });
 
   it("creates group chat with selected users", async () => {
@@ -445,6 +446,7 @@ describe("ProfileModal critical UI flow", () => {
     fireEvent.click(screen.getByText("Язык"));
     expect(onSwitchLang).toHaveBeenCalled();
 
+    fireEvent.click(screen.getByText("Профиль"));
     fireEvent.click(screen.getByText("Выйти из аккаунта"));
     expect(onLogout).toHaveBeenCalled();
 
