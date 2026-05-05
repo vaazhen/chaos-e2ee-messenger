@@ -2111,8 +2111,31 @@ button{color:inherit}
   stroke-width:1.85;
 }
 
+/* Like UserProfileModal: header is a flex row inside the card. Avoid position:sticky — it can attach to the wrong scroll ancestor and look like a label outside the sheet. */
+.user-profile-screen.group-admin-modal-screen > .sheet-head{
+  flex-shrink:0;
+  background:var(--bg0);
+  box-shadow:0 1px 0 color-mix(in srgb, var(--bdr) 55%, transparent);
+  border-radius:28px 28px 0 0;
+}
 .user-profile-screen .group-admin-modal-body.chat-tools-panel{
-  padding-top:8px;
+  position:static;
+  right:auto;
+  top:auto;
+  width:auto;
+  max-width:none;
+  z-index:auto;
+  padding:8px 0 0;
+  margin:0;
+  background:transparent;
+  border:none;
+  border-radius:0;
+  box-shadow:none;
+  backdrop-filter:none;
+  animation:none;
+  flex:1;
+  min-height:0;
+  align-self:stretch;
 }
 
 .chat-head-btn.active{
@@ -2643,6 +2666,123 @@ button{color:inherit}
   margin-bottom:6px;
   font-weight:800;
   color:var(--t1);
+}
+.user-profile-screen .group-admin-participants-block{
+  margin-top:4px;
+  padding:16px 16px 14px;
+  border-radius:26px;
+  background:
+    linear-gradient(180deg,color-mix(in srgb, var(--bg1) 88%, transparent),color-mix(in srgb, var(--bg1) 62%, transparent)),
+    var(--bg1);
+  border:1px solid color-mix(in srgb, var(--bdr) 70%, transparent);
+  box-shadow:
+    0 10px 22px rgba(16,22,44,.07),
+    inset 0 1px 0 color-mix(in srgb, var(--bg0) 40%, transparent);
+}
+[data-theme='dark'] .user-profile-screen .group-admin-participants-block{
+  background:
+    linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.03)),
+    var(--bg1);
+  border-color:var(--bdr2);
+  box-shadow:
+    0 12px 26px rgba(0,0,0,.28),
+    inset 0 1px 0 rgba(255,255,255,.06);
+}
+.user-profile-screen .group-admin-participants-block__title{
+  margin:0 0 12px;
+  font-size:17px;
+  font-weight:800;
+  letter-spacing:-.02em;
+  color:var(--t1);
+}
+.user-profile-screen .group-admin-filters{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+.user-profile-screen .group-admin-filters__row--split{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:flex-end;
+  gap:12px 16px;
+}
+.user-profile-screen .group-admin-filters__field{
+  flex:1;
+  min-width:min(200px,100%);
+}
+.user-profile-screen .group-admin-filters__toggles{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px 14px;
+  padding-bottom:2px;
+}
+.user-profile-screen .group-admin-filter-chip{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  font-size:14px;
+  color:var(--t1);
+  cursor:pointer;
+  user-select:none;
+}
+.user-profile-screen .group-admin-filter-chip input{
+  width:16px;
+  height:16px;
+  accent-color:var(--acc);
+}
+.user-profile-screen .group-admin-participants-block__hint{
+  margin:10px 0 12px;
+}
+.user-profile-screen .group-admin-participants-block .group-participant-picker{
+  max-height:min(38vh,320px);
+  margin-bottom:4px;
+}
+.user-profile-screen .group-admin-pagination{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:10px 12px;
+  margin-top:10px;
+  padding-top:10px;
+  border-top:1px solid color-mix(in srgb, var(--bdr) 55%, transparent);
+}
+.user-profile-screen .group-admin-pagination__status{
+  font-size:13px;
+  color:var(--t2);
+  font-weight:650;
+  flex:1;
+  min-width:140px;
+}
+.user-profile-screen .group-admin-pagination__nav{
+  min-width:88px;
+}
+.user-profile-screen .group-admin-pagination__pages{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  width:100%;
+  justify-content:flex-start;
+}
+.user-profile-screen .group-admin-page-btn{
+  min-width:36px;
+  height:36px;
+  padding:0 8px;
+  border-radius:12px;
+  border:none;
+  background:var(--bg2);
+  color:var(--t1);
+  font-weight:800;
+  font-size:13px;
+  cursor:pointer;
+  box-shadow:var(--soft-shadow);
+}
+.user-profile-screen .group-admin-page-btn--active{
+  box-shadow:inset 0 0 0 2px var(--acc);
+  background:var(--acc2);
+}
+.user-profile-screen .group-admin-page-btn:disabled{
+  opacity:.45;
+  cursor:default;
 }
 .chat-tools-panel .group-admin-role-line{
   margin-bottom:10px;
