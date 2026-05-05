@@ -7,6 +7,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.SetOperations;
 import org.springframework.data.redis.core.ValueOperations;
 import ru.messenger.chaosmessenger.infra.presence.OnlineService;
 
@@ -22,6 +23,7 @@ class OnlineServiceTest {
 
     @Mock RedisTemplate<String, String> redisTemplate;
     @Mock ValueOperations<String, String> valueOps;
+    @Mock SetOperations<String, String> setOps;
 
     OnlineService onlineService;
 
@@ -30,6 +32,7 @@ class OnlineServiceTest {
         // lenient() because isOnline tests only use hasKey(),
         // without calling opsForValue(); without lenient Mockito throws UnnecessaryStubbingException
         lenient().when(redisTemplate.opsForValue()).thenReturn(valueOps);
+        lenient().when(redisTemplate.opsForSet()).thenReturn(setOps);
         onlineService = new OnlineService(redisTemplate);
     }
 
@@ -48,7 +51,44 @@ class OnlineServiceTest {
         onlineService.setOffline("alice");
 
         verify(redisTemplate).delete("presence:alice");
+        verify(redisTemplate).delete("presence:sessions:alice");
         verify(valueOps).set(eq("lastseen:alice"), anyString());
+    }
+
+    @Test
+    @DisplayName("markSessionOnline tracks a session and returns true only for an offline to online transition")
+    void markSessionOnlineReturnsTransition() {
+        when(redisTemplate.hasKey("presence:alice")).thenReturn(false);
+
+        assertThat(onlineService.markSessionOnline("alice", "s1")).isTrue();
+
+        verify(setOps).add("presence:sessions:alice", "s1");
+        verify(redisTemplate).expire(eq("presence:sessions:alice"), any(java.time.Duration.class));
+        verify(valueOps).set(eq("presence:alice"), eq("1"), any(java.time.Duration.class));
+    }
+
+    @Test
+    @DisplayName("markSessionOffline keeps user online while another session exists")
+    void markSessionOfflineKeepsOnlineWhenOtherSessionsExist() {
+        when(setOps.size("presence:sessions:alice")).thenReturn(1L);
+
+        assertThat(onlineService.markSessionOffline("alice", "s1")).isFalse();
+
+        verify(setOps).remove("presence:sessions:alice", "s1");
+        verify(redisTemplate, never()).delete("presence:alice");
+        verify(valueOps).set(eq("presence:alice"), eq("1"), any(java.time.Duration.class));
+    }
+
+    @Test
+    @DisplayName("markSessionOffline deletes presence when the last session disconnects")
+    void markSessionOfflineDeletesPresenceForLastSession() {
+        when(setOps.size("presence:sessions:alice")).thenReturn(0L);
+
+        assertThat(onlineService.markSessionOffline("alice", "s1")).isTrue();
+
+        verify(setOps).remove("presence:sessions:alice", "s1");
+        verify(redisTemplate).delete("presence:alice");
+        verify(redisTemplate).delete("presence:sessions:alice");
     }
 
     @Test

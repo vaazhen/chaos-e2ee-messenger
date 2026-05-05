@@ -57,10 +57,12 @@ class DeviceServiceTest {
     @InjectMocks DeviceService deviceService;
 
     private User alice;
+    private User bob;
 
     @BeforeEach
     void setUp() {
         alice = TestFixtures.user(1L, "alice");
+        bob = TestFixtures.user(2L, "bob");
     }
 
     @Nested
@@ -83,8 +85,8 @@ class DeviceServiceTest {
 
             DeviceRegistrationResponse response = deviceService.registerDevice("alice", request);
 
-            assertThat(response.getDeviceId()).isEqualTo("dev-1");
-            assertThat(response.getServerDeviceInternalId()).isEqualTo(10L);
+            assertThat(response.deviceId()).isEqualTo("dev-1");
+            assertThat(response.serverDeviceInternalId()).isEqualTo(10L);
 
             ArgumentCaptor<UserDevice> deviceCaptor = ArgumentCaptor.forClass(UserDevice.class);
             verify(userDeviceRepository).save(deviceCaptor.capture());
@@ -94,8 +96,8 @@ class DeviceServiceTest {
             assertThat(savedDevice.getDeviceId()).isEqualTo("dev-1");
             assertThat(savedDevice.getDeviceName()).isEqualTo("Chrome");
             assertThat(savedDevice.getRegistrationId()).isEqualTo(12345);
-            assertThat(savedDevice.getIdentityPublicKey()).isEqualTo(request.getIdentityPublicKey());
-            assertThat(savedDevice.getSigningPublicKey()).isEqualTo(request.getSigningPublicKey());
+            assertThat(savedDevice.getIdentityPublicKey()).isEqualTo(request.identityPublicKey());
+            assertThat(savedDevice.getSigningPublicKey()).isEqualTo(request.signingPublicKey());
             assertThat(savedDevice.isActive()).isTrue();
             assertThat(savedDevice.getLastSeen()).isNotNull();
 
@@ -105,8 +107,8 @@ class DeviceServiceTest {
             SignedPreKey signed = signedCaptor.getValue();
             assertThat(signed.getDevice()).isSameAs(savedDevice);
             assertThat(signed.getPreKeyId()).isEqualTo(7);
-            assertThat(signed.getPublicKey()).isEqualTo(request.getSignedPreKey().getPublicKey());
-            assertThat(signed.getSignature()).isEqualTo(request.getSignedPreKey().getSignature());
+            assertThat(signed.getPublicKey()).isEqualTo(request.signedPreKey().publicKey());
+            assertThat(signed.getSignature()).isEqualTo(request.signedPreKey().signature());
 
             verify(oneTimePreKeyRepository).deleteByDeviceId(10L);
             verify(oneTimePreKeyRepository).flush();
@@ -117,14 +119,14 @@ class DeviceServiceTest {
             OneTimePreKey otp = otpCaptor.getValue();
             assertThat(otp.getDevice()).isSameAs(savedDevice);
             assertThat(otp.getPreKeyId()).isEqualTo(101);
-            assertThat(otp.getPublicKey()).isEqualTo(request.getOneTimePreKeys().get(0).getPublicKey());
+            assertThat(otp.getPublicKey()).isEqualTo(request.oneTimePreKeys().get(0).publicKey());
             assertThat(otp.getUsedAt()).isNull();
         }
 
         @Test
         void rejectsNewDeviceWithoutOneTimePreKeys() throws Exception {
-            DeviceRegistrationRequest request = validRegistrationRequest("dev-1");
-            request.setOneTimePreKeys(List.of());
+            DeviceRegistrationRequest baseRequest = validRegistrationRequest("dev-1");
+            DeviceRegistrationRequest request = withOneTimePreKeys(baseRequest, List.of());
 
             when(userIdentityService.require("alice")).thenReturn(alice);
             when(userDeviceRepository.findByUserUsernameAndDeviceId("alice", "dev-1"))
@@ -141,8 +143,8 @@ class DeviceServiceTest {
 
         @Test
         void rejectsTemporarySignedPreKeySignature() throws Exception {
-            DeviceRegistrationRequest request = validRegistrationRequest("dev-1");
-            request.getSignedPreKey().setSignature("TEMP_SIGNATURE");
+            DeviceRegistrationRequest baseRequest = validRegistrationRequest("dev-1");
+            DeviceRegistrationRequest request = withSignature(baseRequest, "TEMP_SIGNATURE");
 
             when(userIdentityService.require("alice")).thenReturn(alice);
             when(userDeviceRepository.findByUserUsernameAndDeviceId("alice", "dev-1"))
@@ -163,8 +165,8 @@ class DeviceServiceTest {
 
         @Test
         void rejectsInvalidSignedPreKeySignature() throws Exception {
-            DeviceRegistrationRequest request = validRegistrationRequest("dev-1");
-            request.getSignedPreKey().setSignature(Base64.getEncoder().encodeToString(new byte[64]));
+            DeviceRegistrationRequest baseRequest = validRegistrationRequest("dev-1");
+            DeviceRegistrationRequest request = withSignature(baseRequest, Base64.getEncoder().encodeToString(new byte[64]));
 
             when(userIdentityService.require("alice")).thenReturn(alice);
             when(userDeviceRepository.findByUserUsernameAndDeviceId("alice", "dev-1"))
@@ -184,10 +186,64 @@ class DeviceServiceTest {
         }
 
         @Test
+        void rejectsDeviceIdOwnedByAnotherUserBeforeInsert() throws Exception {
+            DeviceRegistrationRequest request = validRegistrationRequest("dev-1");
+
+            UserDevice bobDevice = TestFixtures.device(20L, bob.getId(), "dev-1");
+            bobDevice.setUser(bob);
+
+            when(userIdentityService.require("alice")).thenReturn(alice);
+            when(userDeviceRepository.findByUserUsernameAndDeviceId("alice", "dev-1"))
+                    .thenReturn(Optional.empty());
+            when(userDeviceRepository.findByDeviceId("dev-1"))
+                    .thenReturn(Optional.of(bobDevice));
+
+            assertThatThrownBy(() -> deviceService.registerDevice("alice", request))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("Device id is already registered to another account");
+
+            verify(userDeviceRepository, never()).save(any());
+            verify(signedPreKeyRepository, never()).save(any());
+            verify(oneTimePreKeyRepository, never()).save(any());
+        }
+
+        @Test
+        void rejectsDuplicateOneTimePreKeyIdsBeforeReplacingStoredKeys() throws Exception {
+            DeviceRegistrationRequest baseRequest = validRegistrationRequest("dev-1");
+            OneTimePreKeyDto key = baseRequest.oneTimePreKeys().get(0);
+            DeviceRegistrationRequest request = withOneTimePreKeys(baseRequest, List.of(key, key));
+
+            when(userIdentityService.require("alice")).thenReturn(alice);
+            when(userDeviceRepository.findByUserUsernameAndDeviceId("alice", "dev-1"))
+                    .thenReturn(Optional.empty());
+            when(userDeviceRepository.save(any(UserDevice.class))).thenAnswer(invocation -> {
+                UserDevice device = invocation.getArgument(0);
+                device.setId(10L);
+                return device;
+            });
+            when(signedPreKeyRepository.findByDeviceIdAndPreKeyId(10L, 7))
+                    .thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> deviceService.registerDevice("alice", request))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("Duplicate one-time pre-key id: 101");
+
+            verify(oneTimePreKeyRepository, never()).deleteByDeviceId(anyLong());
+            verify(oneTimePreKeyRepository, never()).save(any());
+        }
+
+        @Test
         void updatesExistingDeviceWithoutRequiringOneTimePreKeysWhenSignedPreKeyMaterialIsSame() throws Exception {
             DeviceRegistrationRequest request = validRegistrationRequest("dev-1");
-            request.setDeviceName("Updated laptop");
-            request.setOneTimePreKeys(null);
+            request = new DeviceRegistrationRequest(
+                    request.deviceId(),
+                    "Updated laptop",
+                    request.registrationId(),
+                    request.identityPublicKey(),
+                    request.signingPublicKey(),
+                    request.signedPreKey(),
+                    null
+            );
 
             UserDevice existingDevice = TestFixtures.device(10L, alice.getId(), "dev-1");
             existingDevice.setUser(alice);
@@ -197,8 +253,8 @@ class DeviceServiceTest {
                     .id(100L)
                     .device(existingDevice)
                     .preKeyId(7)
-                    .publicKey(request.getSignedPreKey().getPublicKey())
-                    .signature(request.getSignedPreKey().getSignature())
+                    .publicKey(request.signedPreKey().publicKey())
+                    .signature(request.signedPreKey().signature())
                     .createdAt(LocalDateTime.now().minusDays(1))
                     .build();
 
@@ -211,10 +267,10 @@ class DeviceServiceTest {
 
             DeviceRegistrationResponse response = deviceService.registerDevice("alice", request);
 
-            assertThat(response.getServerDeviceInternalId()).isEqualTo(10L);
+            assertThat(response.serverDeviceInternalId()).isEqualTo(10L);
             assertThat(existingDevice.isActive()).isTrue();
             assertThat(existingDevice.getDeviceName()).isEqualTo("Updated laptop");
-            assertThat(existingDevice.getIdentityPublicKey()).isEqualTo(request.getIdentityPublicKey());
+            assertThat(existingDevice.getIdentityPublicKey()).isEqualTo(request.identityPublicKey());
 
             verify(signedPreKeyRepository, never()).delete(any());
             verify(signedPreKeyRepository, never()).save(any(SignedPreKey.class));
@@ -224,24 +280,25 @@ class DeviceServiceTest {
 
         @Test
         void requiresMandatoryRegistrationFields() {
-            DeviceRegistrationRequest request = new DeviceRegistrationRequest();
+            DeviceRegistrationRequest missingDeviceId = new DeviceRegistrationRequest(
+                    null, null, null, null, null, null, null);
 
-            assertThatThrownBy(() -> deviceService.registerDevice("alice", request))
+            assertThatThrownBy(() -> deviceService.registerDevice("alice", missingDeviceId))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("deviceId is required");
 
-            request.setDeviceId("dev-1");
-            assertThatThrownBy(() -> deviceService.registerDevice("alice", request))
+            DeviceRegistrationRequest missingRegistrationId = new DeviceRegistrationRequest("dev-1", null, null, null, null, null, null);
+            assertThatThrownBy(() -> deviceService.registerDevice("alice", missingRegistrationId))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("registrationId is required");
 
-            request.setRegistrationId(123);
-            assertThatThrownBy(() -> deviceService.registerDevice("alice", request))
+            DeviceRegistrationRequest missingIdentityPublicKey = new DeviceRegistrationRequest("dev-1", null, 123, null, null, null, null);
+            assertThatThrownBy(() -> deviceService.registerDevice("alice", missingIdentityPublicKey))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("identityPublicKey is required");
 
-            request.setIdentityPublicKey("identity");
-            assertThatThrownBy(() -> deviceService.registerDevice("alice", request))
+            DeviceRegistrationRequest missingSignedPreKey = new DeviceRegistrationRequest("dev-1", null, 123, "identity", null, null, null);
+            assertThatThrownBy(() -> deviceService.registerDevice("alice", missingSignedPreKey))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("signedPreKey is required");
         }
@@ -265,8 +322,8 @@ class DeviceServiceTest {
 
             assertThat(deviceService.findCurrentDevice("alice", "dev-1"))
                     .hasValueSatisfying(response -> {
-                        assertThat(response.getDeviceId()).isEqualTo("dev-1");
-                        assertThat(response.getServerDeviceInternalId()).isEqualTo(10L);
+                        assertThat(response.deviceId()).isEqualTo("dev-1");
+                        assertThat(response.serverDeviceInternalId()).isEqualTo(10L);
                     });
         }
 
@@ -380,24 +437,45 @@ class DeviceServiceTest {
         signer.initSign(signingKeyPair.getPrivate());
         signer.update(signedPreKeyPublicBytes);
 
-        SignedPreKeyDto signedPreKey = new SignedPreKeyDto();
-        signedPreKey.setPreKeyId(7);
-        signedPreKey.setPublicKey(b64(signedPreKeyPublicBytes));
-        signedPreKey.setSignature(b64(signer.sign()));
+        SignedPreKeyDto signedPreKey = new SignedPreKeyDto(7, b64(signedPreKeyPublicBytes), b64(signer.sign()));
+        OneTimePreKeyDto oneTimePreKey = new OneTimePreKeyDto(101, b64(oneTimePreKeyPublicBytes));
 
-        OneTimePreKeyDto oneTimePreKey = new OneTimePreKeyDto();
-        oneTimePreKey.setPreKeyId(101);
-        oneTimePreKey.setPublicKey(b64(oneTimePreKeyPublicBytes));
+        return new DeviceRegistrationRequest(
+                deviceId,
+                "Chrome",
+                12345,
+                b64(randomBytes(32)),
+                b64(signingKeyPair.getPublic().getEncoded()),
+                signedPreKey,
+                List.of(oneTimePreKey)
+        );
+    }
 
-        DeviceRegistrationRequest request = new DeviceRegistrationRequest();
-        request.setDeviceId(deviceId);
-        request.setDeviceName("Chrome");
-        request.setRegistrationId(12345);
-        request.setIdentityPublicKey(b64(randomBytes(32)));
-        request.setSigningPublicKey(b64(signingKeyPair.getPublic().getEncoded()));
-        request.setSignedPreKey(signedPreKey);
-        request.setOneTimePreKeys(List.of(oneTimePreKey));
-        return request;
+    private static DeviceRegistrationRequest withSignature(DeviceRegistrationRequest request, String signature) {
+        return new DeviceRegistrationRequest(
+                request.deviceId(),
+                request.deviceName(),
+                request.registrationId(),
+                request.identityPublicKey(),
+                request.signingPublicKey(),
+                new SignedPreKeyDto(request.signedPreKey().preKeyId(), request.signedPreKey().publicKey(), signature),
+                request.oneTimePreKeys()
+        );
+    }
+
+    private static DeviceRegistrationRequest withOneTimePreKeys(
+            DeviceRegistrationRequest request,
+            List<OneTimePreKeyDto> oneTimePreKeys
+    ) {
+        return new DeviceRegistrationRequest(
+                request.deviceId(),
+                request.deviceName(),
+                request.registrationId(),
+                request.identityPublicKey(),
+                request.signingPublicKey(),
+                request.signedPreKey(),
+                oneTimePreKeys
+        );
     }
 
     private static KeyPair signingKeyPair() throws Exception {

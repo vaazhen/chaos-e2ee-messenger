@@ -4,8 +4,6 @@ package ru.messenger.chaosmessenger.message.service;
 import ru.messenger.chaosmessenger.user.service.UserIdentityService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.MeterRegistry;
-import lombok.AllArgsConstructor;
-import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
@@ -32,6 +30,7 @@ import ru.messenger.chaosmessenger.message.domain.MessageReaction;
 import ru.messenger.chaosmessenger.message.domain.MessageReceipt;
 import ru.messenger.chaosmessenger.message.dto.DeviceMessageEventResponse;
 import ru.messenger.chaosmessenger.message.dto.MessageTimelineItemResponse;
+import ru.messenger.chaosmessenger.message.dto.ReactionEvent;
 import ru.messenger.chaosmessenger.message.dto.TimelineEnvelopeDto;
 import ru.messenger.chaosmessenger.message.repository.MessageEnvelopeRepository;
 import ru.messenger.chaosmessenger.message.repository.MessageEventRepository;
@@ -70,10 +69,14 @@ public class MessageService {
         UserDevice currentDevice = currentDeviceService.requireCurrentDevice();
         validateBasicSendRequest(sender, currentDevice, request);
 
-        Optional<Message> existing = messageRepository.findByClientMessageId(request.getClientMessageId());
+        Optional<Message> existing = messageRepository.findBySenderIdAndSenderDeviceIdAndClientMessageId(
+                sender.getId(),
+                currentDevice.getDeviceId(),
+                request.clientMessageId()
+        );
         if (existing.isPresent()) {
             Message existingMessage = existing.get();
-            boolean sameMessage = Objects.equals(existingMessage.getChatId(), request.getChatId())
+            boolean sameMessage = Objects.equals(existingMessage.getChatId(), request.chatId())
                     && Objects.equals(existingMessage.getSenderId(), sender.getId())
                     && Objects.equals(existingMessage.getSenderDeviceId(), currentDevice.getDeviceId());
             if (!sameMessage) {
@@ -86,13 +89,13 @@ public class MessageService {
             return toDeviceEvent("MESSAGE_CREATED", existingMessage, currentEnvelope, sender.getId());
         }
 
-        Map<String, UserDevice> targetDevices = validateEnvelopeTargets(request.getChatId(), request.getEnvelopes());
+        Map<String, UserDevice> targetDevices = validateEnvelopeTargets(request.chatId(), request.envelopes());
 
         Message message = new Message();
-        message.setChatId(request.getChatId());
+        message.setChatId(request.chatId());
         message.setSenderId(sender.getId());
         message.setSenderDeviceId(currentDevice.getDeviceId());
-        message.setClientMessageId(request.getClientMessageId());
+        message.setClientMessageId(request.clientMessageId());
         message.setContent("[encrypted]");
         message.setCreatedAt(LocalDateTime.now());
         message.setStatus(Message.MessageStatus.SENT);
@@ -100,12 +103,12 @@ public class MessageService {
 
         incrementCounter("messages_sent_total");
 
-        Map<String, MessageEnvelope> byDevice = persistEnvelopes(message, sender, request.getEnvelopes(), targetDevices);
-        incrementUnreadForOthers(request.getChatId(), sender.getId());
+        Map<String, MessageEnvelope> byDevice = persistEnvelopes(message, sender, request.envelopes(), targetDevices);
 
         final Message msgFinal = message;
         final Map<String, MessageEnvelope> byDeviceFinal = byDevice;
         TransactionUtils.afterCommit(() -> {
+            incrementUnreadForOthers(msgFinal.getChatId(), sender.getId());
             fanoutCreatedEvent(msgFinal, byDeviceFinal);
             notifyChatListUpdated(msgFinal.getChatId(), "message_created");
         });
@@ -128,11 +131,11 @@ public class MessageService {
         if (message.getDeletedAt() != null) {
             throw new MessageException("Deleted messages cannot be edited");
         }
-        if (request.getSenderDeviceId() == null || !request.getSenderDeviceId().equals(currentDevice.getDeviceId())) {
+        if (request.senderDeviceId() == null || !request.senderDeviceId().equals(currentDevice.getDeviceId())) {
             throw new MessageException("senderDeviceId must match current X-Device-Id");
         }
 
-        Map<String, UserDevice> targetDevices = validateEnvelopeTargets(message.getChatId(), request.getEnvelopes());
+        Map<String, UserDevice> targetDevices = validateEnvelopeTargets(message.getChatId(), request.envelopes());
 
         message.setVersion(message.getVersion() + 1);
         message.setEditedAt(LocalDateTime.now());
@@ -142,7 +145,7 @@ public class MessageService {
         messageEnvelopeRepository.deleteByMessageId(messageId);
         messageEnvelopeRepository.flush();
 
-        Map<String, MessageEnvelope> byDevice = persistEnvelopes(message, sender, request.getEnvelopes(), targetDevices);
+        Map<String, MessageEnvelope> byDevice = persistEnvelopes(message, sender, request.envelopes(), targetDevices);
         saveMessageEvent(message, sender.getId(), "EDIT", Map.of("version", message.getVersion()));
 
         final Message msgEditFinal = message;
@@ -162,7 +165,10 @@ public class MessageService {
         requireParticipant(chatId, user.getId());
 
         PageRequest pageable = PageRequest.of(0, Math.max(1, Math.min(limit, 200)));
-        List<Message> messages = messageRepository.findByChatIdBefore(chatId, beforeMessageId, pageable);
+        List<Message> messages = messageRepository.findByChatIdBefore(chatId, beforeMessageId, pageable)
+                .stream()
+                .filter(message -> message.getDeletedAt() == null)
+                .collect(Collectors.toCollection(ArrayList::new));
         Collections.reverse(messages);
 
         List<Long> messageIds = messages.stream().map(Message::getId).toList();
@@ -223,7 +229,6 @@ public class MessageService {
         String deviceId = deviceIdOrFallback(currentDevice);
 
         requireParticipant(chatId, user.getId());
-        unreadService.reset(user.getId(), chatId);
 
         List<Long> chatParticipantIds = participantIds(chatId);
         boolean directOrSavedChat = chatParticipantIds.size() <= 2;
@@ -246,6 +251,7 @@ public class MessageService {
         incrementCounter("messages_read_total", Math.max(receiptRows, 0));
 
         TransactionUtils.afterCommit(() -> {
+            unreadService.reset(user.getId(), chatId);
             if (directOrSavedChat) {
                 sendBulkStatusToSenderDevices(affectedSenderIds, chatId, Message.MessageStatus.READ.name(), user.getId());
             }
@@ -307,7 +313,8 @@ public class MessageService {
         }
 
         updateAggregateStatus(message);
-        sendStatusToSenderDevices(message, message.getStatus().name());
+        String aggregateStatus = message.getStatus().name();
+        TransactionUtils.afterCommit(() -> sendStatusToSenderDevices(message, aggregateStatus));
     }
 
     @Transactional
@@ -396,21 +403,6 @@ public class MessageService {
         return true;
     }
 
-    private MessageReceipt getOrCreateReceipt(Message message, Long userId, String deviceId) {
-        return messageReceiptRepository.findByMessageIdAndUserIdAndDeviceId(message.getId(), userId, deviceId)
-                .orElseGet(() -> {
-                    LocalDateTime now = LocalDateTime.now();
-                    MessageReceipt receipt = new MessageReceipt();
-                    receipt.setMessageId(message.getId());
-                    receipt.setChatId(message.getChatId());
-                    receipt.setUserId(userId);
-                    receipt.setDeviceId(deviceId);
-                    receipt.setCreatedAt(now);
-                    receipt.setUpdatedAt(now);
-                    return receipt;
-                });
-    }
-
     private Message.MessageStatus aggregateStatus(Message message) {
         List<Long> recipients = participantIds(message.getChatId())
                 .stream()
@@ -444,17 +436,17 @@ public class MessageService {
     }
 
     private void validateBasicSendRequest(User sender, UserDevice currentDevice, EncryptedSendMessageRequestV2 request) {
-        if (request == null || request.getChatId() == null) {
+        if (request == null || request.chatId() == null) {
             throw new IllegalArgumentException("chatId is required");
         }
-        if (request.getClientMessageId() == null || request.getClientMessageId().isBlank()) {
+        if (request.clientMessageId() == null || request.clientMessageId().isBlank()) {
             throw new IllegalArgumentException("clientMessageId is required");
         }
-        if (request.getSenderDeviceId() == null || !request.getSenderDeviceId().equals(currentDevice.getDeviceId())) {
+        if (request.senderDeviceId() == null || !request.senderDeviceId().equals(currentDevice.getDeviceId())) {
             throw new MessageException("senderDeviceId must match current X-Device-Id");
         }
 
-        requireParticipant(request.getChatId(), sender.getId());
+        requireParticipant(request.chatId(), sender.getId());
     }
 
     private Map<String, UserDevice> validateEnvelopeTargets(Long chatId, List<EncryptedMessageEnvelopeInput> envelopes) {
@@ -467,26 +459,26 @@ public class MessageService {
         Set<Long> targetUserIds = new HashSet<>();
 
         for (EncryptedMessageEnvelopeInput envelope : envelopes) {
-            if (envelope.getTargetDeviceId() == null || envelope.getTargetDeviceId().isBlank()) {
+            if (envelope.targetDeviceId() == null || envelope.targetDeviceId().isBlank()) {
                 throw new IllegalArgumentException("targetDeviceId is required");
             }
-            if (!targetIds.add(envelope.getTargetDeviceId())) {
-                throw new IllegalArgumentException("Duplicate targetDeviceId: " + envelope.getTargetDeviceId());
+            if (!targetIds.add(envelope.targetDeviceId())) {
+                throw new IllegalArgumentException("Duplicate targetDeviceId: " + envelope.targetDeviceId());
             }
-            if (envelope.getTargetUserId() == null || !participantIds.contains(envelope.getTargetUserId())) {
+            if (envelope.targetUserId() == null || !participantIds.contains(envelope.targetUserId())) {
                 throw new IllegalArgumentException("Envelope targetUserId is not a chat participant");
             }
-            if (envelope.getCiphertext() == null || envelope.getCiphertext().isBlank()
-                    || envelope.getNonce() == null || envelope.getNonce().isBlank()) {
+            if (envelope.ciphertext() == null || envelope.ciphertext().isBlank()
+                    || envelope.nonce() == null || envelope.nonce().isBlank()) {
                 throw new IllegalArgumentException("ciphertext and nonce are required");
             }
-            if (envelope.getMessageType() == null || envelope.getMessageType().isBlank()) {
+            if (envelope.messageType() == null || envelope.messageType().isBlank()) {
                 throw new IllegalArgumentException("messageType is required");
             }
-            if (envelope.getSenderIdentityPublicKey() == null || envelope.getSenderIdentityPublicKey().isBlank()) {
+            if (envelope.senderIdentityPublicKey() == null || envelope.senderIdentityPublicKey().isBlank()) {
                 throw new IllegalArgumentException("senderIdentityPublicKey is required");
             }
-            targetUserIds.add(envelope.getTargetUserId());
+            targetUserIds.add(envelope.targetUserId());
         }
 
         Map<String, UserDevice> activeDevicesByTarget = targetUserIds.isEmpty()
@@ -500,8 +492,8 @@ public class MessageService {
                         ));
 
         for (EncryptedMessageEnvelopeInput envelope : envelopes) {
-            if (!activeDevicesByTarget.containsKey(deviceKey(envelope.getTargetUserId(), envelope.getTargetDeviceId()))) {
-                throw new IllegalArgumentException("Target device not found: " + envelope.getTargetDeviceId());
+            if (!activeDevicesByTarget.containsKey(deviceKey(envelope.targetUserId(), envelope.targetDeviceId()))) {
+                throw new IllegalArgumentException("Target device not found: " + envelope.targetDeviceId());
             }
         }
 
@@ -517,27 +509,27 @@ public class MessageService {
         Map<String, MessageEnvelope> byDevice = new HashMap<>();
 
         for (EncryptedMessageEnvelopeInput input : inputs) {
-            UserDevice targetDevice = activeDevicesByTarget.get(deviceKey(input.getTargetUserId(), input.getTargetDeviceId()));
+            UserDevice targetDevice = activeDevicesByTarget.get(deviceKey(input.targetUserId(), input.targetDeviceId()));
             if (targetDevice == null) {
-                throw new IllegalArgumentException("Target device not found: " + input.getTargetDeviceId());
+                throw new IllegalArgumentException("Target device not found: " + input.targetDeviceId());
             }
 
             MessageEnvelope entity = new MessageEnvelope();
             entity.setMessageId(message.getId());
             entity.setChatId(message.getChatId());
-            entity.setTargetUserId(input.getTargetUserId());
+            entity.setTargetUserId(input.targetUserId());
             entity.setTargetDeviceDbId(targetDevice.getId());
             entity.setTargetDeviceId(targetDevice.getDeviceId());
             entity.setSenderUserId(sender.getId());
             entity.setSenderDeviceId(message.getSenderDeviceId());
-            entity.setMessageType(input.getMessageType());
-            entity.setSenderIdentityPublicKey(input.getSenderIdentityPublicKey());
-            entity.setEphemeralPublicKey(input.getEphemeralPublicKey());
-            entity.setCiphertext(input.getCiphertext());
-            entity.setNonce(input.getNonce());
-            entity.setSignedPreKeyId(input.getSignedPreKeyId());
-            entity.setOneTimePreKeyId(input.getOneTimePreKeyId());
-            entity.setMessageIndex(input.getMessageIndex());
+            entity.setMessageType(input.messageType());
+            entity.setSenderIdentityPublicKey(input.senderIdentityPublicKey());
+            entity.setEphemeralPublicKey(input.ephemeralPublicKey());
+            entity.setCiphertext(input.ciphertext());
+            entity.setNonce(input.nonce());
+            entity.setSignedPreKeyId(input.signedPreKeyId());
+            entity.setOneTimePreKeyId(input.oneTimePreKeyId());
+            entity.setMessageIndex(input.messageIndex());
             entity.setCreatedAt(LocalDateTime.now());
 
             entity = messageEnvelopeRepository.save(entity);
@@ -806,35 +798,9 @@ public class MessageService {
         );
     }
 
-    @AllArgsConstructor
-    @Data
-    private static class StatusBulkUpdateEvent {
-        private String type;
-        private Long chatId;
-        private String status;
-        private Long actorUserId;
-    }
+    private record StatusBulkUpdateEvent(String type, Long chatId, String status, Long actorUserId) {}
 
-    @AllArgsConstructor
-    @Data
-    private static class StatusUpdateEvent {
-        private Long messageId;
-        private String status;
-    }
-
-    @AllArgsConstructor
-    @Data
-    public static class ReactionEvent {
-        private String type;
-        private Long messageId;
-        private Long chatId;
-        private Long actorUserId;
-        private String actorDeviceId;
-        private String emoji;
-        private boolean active;
-        private Map<String, Long> reactions;
-        private long timestamp;
-    }
+    private record StatusUpdateEvent(Long messageId, String status) {}
 
     private void incrementCounter(String name) {
         try { meterRegistry.counter(name).increment(); } catch (Exception ignored) {}

@@ -8,6 +8,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.core.Authentication;
+import ru.messenger.chaosmessenger.TestFixtures;
+import ru.messenger.chaosmessenger.chat.repository.ChatParticipantRepository;
 import ru.messenger.chaosmessenger.crypto.device.CurrentDeviceService;
 import ru.messenger.chaosmessenger.crypto.device.UserDevice;
 import ru.messenger.chaosmessenger.crypto.dto.EncryptedEditMessageRequestV2;
@@ -16,15 +18,18 @@ import ru.messenger.chaosmessenger.crypto.dto.EncryptedSendMessageRequestV2;
 import ru.messenger.chaosmessenger.infra.ws.WebSocketAuthChannelInterceptor;
 import ru.messenger.chaosmessenger.message.dto.DeviceMessageEventResponse;
 import ru.messenger.chaosmessenger.message.dto.MessageTimelineItemResponse;
+import ru.messenger.chaosmessenger.message.dto.ReactionEvent;
+import ru.messenger.chaosmessenger.message.dto.ReactionRequest;
 import ru.messenger.chaosmessenger.message.dto.TypingEvent;
 import ru.messenger.chaosmessenger.message.dto.TypingRequest;
 import ru.messenger.chaosmessenger.message.dto.UpdateMessageStatusRequest;
 import ru.messenger.chaosmessenger.message.service.MessageService;
-import ru.messenger.chaosmessenger.message.service.MessageService.ReactionEvent;
+import ru.messenger.chaosmessenger.user.service.UserIdentityService;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -41,15 +46,15 @@ class MessageControllerTest {
     @Mock Authentication authentication;
     @Mock SimpMessagingTemplate messagingTemplate;
     @Mock WebSocketAuthChannelInterceptor authInterceptor;
+    @Mock UserIdentityService userIdentityService;
+    @Mock ChatParticipantRepository participantRepository;
 
     @InjectMocks MessageController messageController;
-    @InjectMocks ChatMessageController chatMessageController;
     @InjectMocks TypingController typingController;
 
     @Test
     void sendEncryptedMessageRequiresCurrentDeviceAndDelegatesToService() {
         EncryptedSendMessageRequestV2 request = sendRequest();
-
         DeviceMessageEventResponse expected = eventResponse("MESSAGE_CREATED");
 
         when(authentication.getName()).thenReturn("alice");
@@ -66,19 +71,8 @@ class MessageControllerTest {
     @Test
     void getChatTimelineRequiresCurrentDeviceAndDelegatesToService() {
         MessageTimelineItemResponse item = new MessageTimelineItemResponse(
-                1L,
-                100L,
-                1L,
-                "dev-a",
-                "client-1",
-                1,
-                false,
-                LocalDateTime.now(),
-                null,
-                "SENT",
-                null,
-                Map.of(),
-                Set.of()
+                1L, 100L, 1L, "dev-a", "client-1", 1,
+                false, LocalDateTime.now(), null, "SENT", null, Map.of(), Set.of()
         );
 
         when(authentication.getName()).thenReturn("alice");
@@ -117,9 +111,7 @@ class MessageControllerTest {
 
     @Test
     void updateStatusRequiresCurrentDeviceAndDelegatesToService() {
-        UpdateMessageStatusRequest request = new UpdateMessageStatusRequest();
-        request.setMessageId(500L);
-        request.setStatus("READ");
+        UpdateMessageStatusRequest request = new UpdateMessageStatusRequest(500L, "READ");
 
         when(authentication.getName()).thenReturn("alice");
         when(currentDeviceService.requireCurrentDevice()).thenReturn(new UserDevice());
@@ -148,19 +140,10 @@ class MessageControllerTest {
 
     @Test
     void toggleReactionRequiresCurrentDeviceAndDelegatesToService() {
-        MessageController.ReactionRequest request = new MessageController.ReactionRequest();
-        request.setEmoji("👍");
-
+        ReactionRequest request = new ReactionRequest("👍");
         ReactionEvent expected = new ReactionEvent(
-                "REACTION_UPDATED",
-                500L,
-                100L,
-                1L,
-                "dev-a",
-                "👍",
-                true,
-                Map.of("👍", 1L),
-                123L
+                "REACTION_UPDATED", 500L, 100L, 1L, "dev-a", "👍",
+                true, Map.of("👍", 1L), 123L
         );
 
         when(authentication.getName()).thenReturn("alice");
@@ -187,65 +170,26 @@ class MessageControllerTest {
     }
 
     @Test
-    void websocketChatMessageSendsEventWhenSessionIsAuthenticated() {
-        ChatMessageController.ChatMessageRequest request = new ChatMessageController.ChatMessageRequest();
-        request.setChatId(100L);
-        request.setContent("hello");
+    void typingSendsEventWhenSessionIsAuthenticatedAndUserIsParticipant() {
+        TypingRequest request = new TypingRequest(100L, true);
+        var alice = TestFixtures.user(1L, "alice");
 
         when(authInterceptor.getUsernameBySessionId("session-1")).thenReturn("alice");
-
-        chatMessageController.sendMessage(request, "session-1");
-
-        ArgumentCaptor<ChatMessageController.ChatMessageEvent> captor =
-                ArgumentCaptor.forClass(ChatMessageController.ChatMessageEvent.class);
-
-        verify(messagingTemplate).convertAndSend(eq("/topic/chat/100"), captor.capture());
-
-        assertThat(captor.getValue().getChatId()).isEqualTo(100L);
-        assertThat(captor.getValue().getSenderUsername()).isEqualTo("alice");
-        assertThat(captor.getValue().getContent()).isEqualTo("hello");
-        assertThat(captor.getValue().getTimestamp()).isPositive();
-    }
-
-    @Test
-    void websocketChatMessageDoesNotSendWhenSessionHasNoUsername() {
-        ChatMessageController.ChatMessageRequest request = new ChatMessageController.ChatMessageRequest();
-        request.setChatId(100L);
-        request.setContent("hello");
-
-        when(authInterceptor.getUsernameBySessionId("session-1")).thenReturn(null);
-
-        chatMessageController.sendMessage(request, "session-1");
-
-        verify(messagingTemplate, never()).convertAndSend(
-                eq("/topic/chat/100"),
-                org.mockito.ArgumentMatchers.any(ChatMessageController.ChatMessageEvent.class)
-        );
-    }
-
-    @Test
-    void typingSendsEventWhenSessionIsAuthenticated() {
-        TypingRequest request = new TypingRequest();
-        request.setChatId(100L);
-        request.setTyping(true);
-
-        when(authInterceptor.getUsernameBySessionId("session-1")).thenReturn("alice");
+        when(userIdentityService.resolve("alice")).thenReturn(Optional.of(alice));
+        when(participantRepository.existsByChatIdAndUserId(100L, 1L)).thenReturn(true);
 
         typingController.typing(request, "session-1");
 
         ArgumentCaptor<TypingEvent> captor = ArgumentCaptor.forClass(TypingEvent.class);
-
         verify(messagingTemplate).convertAndSend(eq("/topic/chats/100/typing"), captor.capture());
 
-        assertThat(captor.getValue().getUsername()).isEqualTo("alice");
-        assertThat(captor.getValue().isTyping()).isTrue();
+        assertThat(captor.getValue().username()).isEqualTo("alice");
+        assertThat(captor.getValue().typing()).isTrue();
     }
 
     @Test
     void typingDoesNotSendWhenSessionHasNoUsername() {
-        TypingRequest request = new TypingRequest();
-        request.setChatId(100L);
-        request.setTyping(true);
+        TypingRequest request = new TypingRequest(100L, true);
 
         when(authInterceptor.getUsernameBySessionId("session-1")).thenReturn(null);
 
@@ -257,51 +201,42 @@ class MessageControllerTest {
         );
     }
 
+    @Test
+    void typingDoesNotSendWhenUserIsNotChatParticipant() {
+        TypingRequest request = new TypingRequest(100L, true);
+        var alice = TestFixtures.user(1L, "alice");
+
+        when(authInterceptor.getUsernameBySessionId("session-1")).thenReturn("alice");
+        when(userIdentityService.resolve("alice")).thenReturn(Optional.of(alice));
+        when(participantRepository.existsByChatIdAndUserId(100L, 1L)).thenReturn(false);
+
+        typingController.typing(request, "session-1");
+
+        verify(messagingTemplate, never()).convertAndSend(
+                eq("/topic/chats/100/typing"),
+                org.mockito.ArgumentMatchers.any(TypingEvent.class)
+        );
+    }
+
     private static EncryptedSendMessageRequestV2 sendRequest() {
-        EncryptedSendMessageRequestV2 request = new EncryptedSendMessageRequestV2();
-        request.setChatId(100L);
-        request.setClientMessageId("client-1");
-        request.setSenderDeviceId("dev-a");
-        request.setEnvelopes(List.of(envelope()));
-        return request;
+        return new EncryptedSendMessageRequestV2(100L, "client-1", "dev-a", List.of(envelope()));
     }
 
     private static EncryptedEditMessageRequestV2 editRequest() {
-        EncryptedEditMessageRequestV2 request = new EncryptedEditMessageRequestV2();
-        request.setSenderDeviceId("dev-a");
-        request.setEnvelopes(List.of(envelope()));
-        return request;
+        return new EncryptedEditMessageRequestV2("dev-a", List.of(envelope()));
     }
 
     private static EncryptedMessageEnvelopeInput envelope() {
-        EncryptedMessageEnvelopeInput envelope = new EncryptedMessageEnvelopeInput();
-        envelope.setTargetDeviceId("dev-b");
-        envelope.setTargetUserId(2L);
-        envelope.setMessageType("WHISPER");
-        envelope.setSenderIdentityPublicKey("identity");
-        envelope.setCiphertext("ciphertext");
-        envelope.setNonce("nonce");
-        envelope.setTimestamp(123L);
-        envelope.setMessageIndex(1);
-        return envelope;
+        return new EncryptedMessageEnvelopeInput(
+                "dev-b", 2L, "WHISPER", "identity", null, "ciphertext",
+                "nonce", null, null, 123L, 1
+        );
     }
 
     private static DeviceMessageEventResponse eventResponse(String type) {
         return new DeviceMessageEventResponse(
-                type,
-                500L,
-                100L,
-                1L,
-                "dev-a",
-                "client-1",
-                1,
-                LocalDateTime.now(),
-                null,
-                null,
-                "SENT",
-                null,
-                Map.of(),
-                Set.of()
+                type, 500L, 100L, 1L, "dev-a", "client-1", 1,
+                LocalDateTime.now(), null, null, "SENT", null, Map.of(), Set.of()
         );
     }
 }

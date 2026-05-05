@@ -87,7 +87,7 @@ public class UserService {
         }
 
         if (request.avatarUrl() != null) {
-            user.setAvatarUrl(request.avatarUrl().trim());
+            user.setAvatarUrl(trimToNull(request.avatarUrl()));
         }
 
         if (request.username() != null && !request.username().isBlank()) {
@@ -134,6 +134,14 @@ public class UserService {
                 user.getLastName(),
                 user.getAvatarUrl()
         );
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private void notifySharedChatsAboutProfileUpdate(Long updatedUserId) {

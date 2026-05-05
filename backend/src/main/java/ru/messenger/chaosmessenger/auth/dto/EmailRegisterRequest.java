@@ -14,5 +14,6 @@ public record EmailRegisterRequest(
         String username,
         String firstName,
         String lastName,
+        @Size(max = 262144, message = "Avatar URL is too long")
         String avatarUrl
 ) {}

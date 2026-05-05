@@ -42,7 +42,7 @@ class CryptoApiControllerTest {
 
     @Test
     void registerRejectsMissingDeviceRegistrationToken() {
-        DeviceRegistrationRequest request = new DeviceRegistrationRequest();
+        DeviceRegistrationRequest request = minimalRequest();
 
         assertThatThrownBy(() -> deviceController.register(" ", request))
                 .isInstanceOf(ResponseStatusException.class)
@@ -51,7 +51,7 @@ class CryptoApiControllerTest {
 
     @Test
     void registerRejectsInvalidDeviceRegistrationToken() {
-        DeviceRegistrationRequest request = new DeviceRegistrationRequest();
+        DeviceRegistrationRequest request = minimalRequest();
 
         when(deviceRegTokenService.consumeAndGetUsername("bad-token")).thenReturn(null);
 
@@ -62,11 +62,8 @@ class CryptoApiControllerTest {
 
     @Test
     void registerConsumesTokenAndDelegatesToDeviceService() {
-        DeviceRegistrationRequest request = new DeviceRegistrationRequest();
-        DeviceRegistrationResponse expected = DeviceRegistrationResponse.builder()
-                .deviceId("dev-a")
-                .serverDeviceInternalId(10L)
-                .build();
+        DeviceRegistrationRequest request = minimalRequest();
+        DeviceRegistrationResponse expected = new DeviceRegistrationResponse("dev-a", 10L);
 
         when(deviceRegTokenService.consumeAndGetUsername("device-token")).thenReturn("alice");
         when(deviceService.registerDevice("alice", request)).thenReturn(expected);
@@ -106,10 +103,7 @@ class CryptoApiControllerTest {
 
     @Test
     void currentReturnsRegisteredDevice() {
-        DeviceRegistrationResponse expected = DeviceRegistrationResponse.builder()
-                .deviceId("dev-a")
-                .serverDeviceInternalId(10L)
-                .build();
+        DeviceRegistrationResponse expected = new DeviceRegistrationResponse("dev-a", 10L);
 
         when(authentication.getName()).thenReturn("alice");
         when(deviceService.findCurrentDevice("alice", "dev-a")).thenReturn(Optional.of(expected));
@@ -164,10 +158,7 @@ class CryptoApiControllerTest {
 
     @Test
     void getBundleRequiresCurrentDeviceAndDelegatesToPreKeyService() {
-        PreKeyBundleResponse expected = PreKeyBundleResponse.builder()
-                .username("bob")
-                .devices(List.of())
-                .build();
+        PreKeyBundleResponse expected = new PreKeyBundleResponse("bob", List.of());
 
         when(currentDeviceService.requireCurrentDevice()).thenReturn(new UserDevice());
         when(preKeyService.getBundleByUsername("bob")).thenReturn(expected);
@@ -181,12 +172,7 @@ class CryptoApiControllerTest {
 
     @Test
     void resolveChatDevicesRequiresCurrentDeviceAndDelegatesToPreKeyService() {
-        ResolvedChatDevicesResponse expected = ResolvedChatDevicesResponse.builder()
-                .chatId(100L)
-                .username("alice")
-                .currentDeviceId("dev-a")
-                .targetDevices(List.of())
-                .build();
+        ResolvedChatDevicesResponse expected = new ResolvedChatDevicesResponse(100L, "alice", "dev-a", List.of());
 
         when(authentication.getName()).thenReturn("alice");
         when(currentDeviceService.requireCurrentDevice()).thenReturn(new UserDevice());
@@ -197,5 +183,17 @@ class CryptoApiControllerTest {
         assertThat(response).isSameAs(expected);
         verify(currentDeviceService).requireCurrentDevice();
         verify(preKeyService).resolveChatDevices("alice", 100L);
+    }
+
+    private static DeviceRegistrationRequest minimalRequest() {
+        return new DeviceRegistrationRequest(
+                "dev-a",
+                "Chrome",
+                123,
+                "identity",
+                "signing",
+                new ru.messenger.chaosmessenger.crypto.dto.SignedPreKeyDto(1, "public", "signature"),
+                List.of(new ru.messenger.chaosmessenger.crypto.dto.OneTimePreKeyDto(2, "public"))
+        );
     }
 }

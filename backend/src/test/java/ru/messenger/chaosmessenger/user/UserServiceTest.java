@@ -120,6 +120,20 @@ class UserServiceTest {
     }
 
     @Test
+    void updateProfileClearsAvatarWhenBlankValueIsSubmitted() {
+        UpdateProfileRequest request = new UpdateProfileRequest(null, null, "   ", null);
+
+        when(userIdentityService.require("alice")).thenReturn(alice);
+        when(userRepository.save(alice)).thenReturn(alice);
+        when(jwtService.generateToken("alice")).thenReturn("jwt-alice");
+
+        var response = userService.updateProfile("alice", request);
+
+        assertThat(alice.getAvatarUrl()).isNull();
+        assertThat(response.avatarUrl()).isNull();
+    }
+
+    @Test
     void updateProfileDoesNotCheckAvailabilityWhenUsernameIsSameIgnoringCase() {
         UpdateProfileRequest request = new UpdateProfileRequest(null, null, null, "ALICE");
 
