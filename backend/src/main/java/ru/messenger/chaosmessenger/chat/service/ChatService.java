@@ -30,6 +30,7 @@ import ru.messenger.chaosmessenger.user.repository.UserRepository;
 
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
@@ -281,6 +282,34 @@ public class ChatService {
 
         final String savedName = savedChatName();
 
+        Map<Long, Long> rawUnreadByChatId = unreadService.getMany(currentUser.getId(), orderedVisibleIds);
+        final Map<Long, Long> unreadByChatId = (rawUnreadByChatId == null || rawUnreadByChatId.isEmpty())
+                ? orderedVisibleIds.stream()
+                    .collect(Collectors.toMap(
+                            Function.identity(),
+                            chatId -> unreadService.get(currentUser.getId(), chatId)
+                    ))
+                : rawUnreadByChatId;
+
+        Set<String> usernames = usersById.values().stream()
+                .map(User::getUsername)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<String, Boolean> rawOnlineByUsername = onlineService.isOnlineMany(usernames);
+        Map<String, LocalDateTime> rawLastSeenByUsername = onlineService.getLastSeenMany(usernames);
+        final Map<String, Boolean> onlineByUsername = (rawOnlineByUsername == null || rawOnlineByUsername.isEmpty())
+                ? usernames.stream().collect(Collectors.toMap(Function.identity(), onlineService::isOnline))
+                : rawOnlineByUsername;
+        final Map<String, LocalDateTime> lastSeenByUsername = (rawLastSeenByUsername == null || rawLastSeenByUsername.isEmpty())
+                ? usernames.stream().collect(Collectors.toMap(
+                        Function.identity(),
+                        uname -> {
+                            LocalDateTime lastSeen = onlineService.getLastSeen(uname);
+                            return lastSeen != null ? lastSeen : LocalDateTime.now().minusDays(1);
+                        }
+                ))
+                : rawLastSeenByUsername;
+
         Map<Long, ChatResponse> responsesByChatId = chats.stream().map(chat -> {
             List<ChatParticipant> participants = byChat.getOrDefault(chat.getId(), List.of());
             Optional<Message>     lastMsg      = Optional.ofNullable(lastMessagesByChatId.get(chat.getId()));
@@ -289,7 +318,7 @@ public class ChatService {
             Long          lastMessageId = lastMsg.map(Message::getId).orElse(null);
             LocalDateTime lastAt        = lastMsg.map(Message::getCreatedAt).orElse(null);
             Long          lastSenderId  = lastMsg.map(Message::getSenderId).orElse(null);
-            long          unread        = unreadService.get(currentUser.getId(), chat.getId());
+            long          unread        = unreadByChatId.getOrDefault(chat.getId(), 0L);
             boolean       isSaved       = "SAVED".equals(chat.getType());
             boolean       isGroup       = "GROUP".equals(chat.getType());
 
@@ -351,8 +380,8 @@ public class ChatService {
                     .filter(p -> !p.getUserId().equals(currentUser.getId()))
                     .findFirst().orElse(null);
             User otherUser = otherP != null ? usersById.get(otherP.getUserId()) : null;
-            boolean online = otherUser != null && onlineService.isOnline(otherUser.getUsername());
-            LocalDateTime lastSeen = otherUser != null ? onlineService.getLastSeen(otherUser.getUsername()) : null;
+            boolean online = otherUser != null && Boolean.TRUE.equals(onlineByUsername.get(otherUser.getUsername()));
+            LocalDateTime lastSeen = otherUser != null ? lastSeenByUsername.get(otherUser.getUsername()) : null;
 
             return ChatResponse.forDirect(new ChatResponse.DirectParams(
                     chat.getId(),
@@ -417,6 +446,34 @@ public class ChatService {
                 .collect(Collectors.toMap(Message::getChatId, m -> m,
                         (left, right) -> left.getCreatedAt().isAfter(right.getCreatedAt()) ? left : right));
 
+        Map<Long, Long> rawUnreadByChatId = unreadService.getMany(currentUser.getId(), chatIds);
+        final Map<Long, Long> unreadByChatId = (rawUnreadByChatId == null || rawUnreadByChatId.isEmpty())
+                ? chatIds.stream()
+                    .collect(Collectors.toMap(
+                            Function.identity(),
+                            chatId -> unreadService.get(currentUser.getId(), chatId)
+                    ))
+                : rawUnreadByChatId;
+
+        Set<String> usernames = usersById.values().stream()
+                .map(User::getUsername)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<String, Boolean> rawOnlineByUsername = onlineService.isOnlineMany(usernames);
+        Map<String, LocalDateTime> rawLastSeenByUsername = onlineService.getLastSeenMany(usernames);
+        final Map<String, Boolean> onlineByUsername = (rawOnlineByUsername == null || rawOnlineByUsername.isEmpty())
+                ? usernames.stream().collect(Collectors.toMap(Function.identity(), onlineService::isOnline))
+                : rawOnlineByUsername;
+        final Map<String, LocalDateTime> lastSeenByUsername = (rawLastSeenByUsername == null || rawLastSeenByUsername.isEmpty())
+                ? usernames.stream().collect(Collectors.toMap(
+                        Function.identity(),
+                        uname -> {
+                            LocalDateTime lastSeen = onlineService.getLastSeen(uname);
+                            return lastSeen != null ? lastSeen : LocalDateTime.now().minusDays(1);
+                        }
+                ))
+                : rawLastSeenByUsername;
+
         Map<Long, ChatResponse> responsesByChatId = chats.stream().map(chat -> {
             List<ChatParticipant> participants = byChat.getOrDefault(chat.getId(), List.of());
             Optional<Message> lastMsg = Optional.ofNullable(lastMessagesByChatId.get(chat.getId()));
@@ -425,14 +482,14 @@ public class ChatService {
             Long lastMessageId = lastMsg.map(Message::getId).orElse(null);
             LocalDateTime lastAt = lastMsg.map(Message::getCreatedAt).orElse(null);
             Long lastSenderId = lastMsg.map(Message::getSenderId).orElse(null);
-            long unread = unreadService.get(currentUser.getId(), chat.getId());
+            long unread = unreadByChatId.getOrDefault(chat.getId(), 0L);
 
             ChatParticipant otherP = participants.stream()
                     .filter(p -> !p.getUserId().equals(currentUser.getId()))
                     .findFirst().orElse(null);
             User otherUser = otherP != null ? usersById.get(otherP.getUserId()) : null;
-            boolean online = otherUser != null && onlineService.isOnline(otherUser.getUsername());
-            LocalDateTime lastSeen = otherUser != null ? onlineService.getLastSeen(otherUser.getUsername()) : null;
+            boolean online = otherUser != null && Boolean.TRUE.equals(onlineByUsername.get(otherUser.getUsername()));
+            LocalDateTime lastSeen = otherUser != null ? lastSeenByUsername.get(otherUser.getUsername()) : null;
 
             return ChatResponse.forDirect(new ChatResponse.DirectParams(
                     chat.getId(),
@@ -685,10 +742,138 @@ public class ChatService {
 
     @Transactional(readOnly = true)
     public ChatResponse getChatForUser(String username, Long chatId) {
-        return getMyChats(username, 0, 1000).stream()
-                .filter(c -> Objects.equals(c.chatId(), chatId))
-                .findFirst()
+        try {
+            return getChatForUserById(username, chatId);
+        } catch (ChatException ex) {
+            return getMyChats(username, 0, 1000).stream()
+                    .filter(c -> Objects.equals(c.chatId(), chatId))
+                    .findFirst()
+                    .orElseThrow(() -> ex);
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public ChatResponse getChatForUserById(String username, Long chatId) {
+        User currentUser = userRepository.findByUsername(username)
+                .orElseThrow(() -> new ChatException("User not found"));
+
+        Chat chat = chatRepository.findById(chatId)
                 .orElseThrow(() -> new ChatException("Chat not found"));
+
+        if (chat.getDeletedAt() != null) {
+            throw new ChatException("Chat not found");
+        }
+
+        if (!participantRepository.existsByChatIdAndUserId(chatId, currentUser.getId())) {
+            throw new ChatException("Chat not found");
+        }
+
+        // Keep visibility rules consistent with getMyChats():
+        if ("DIRECT".equals(chat.getType())) {
+            String st = String.valueOf(chat.getDirectStatus());
+            if ("DECLINED".equalsIgnoreCase(st)) {
+                throw new ChatException("Chat not found");
+            }
+            if ("PENDING".equalsIgnoreCase(st) && !Objects.equals(chat.getDirectRequestedBy(), currentUser.getId())) {
+                throw new ChatException("Chat not found");
+            }
+        }
+
+        List<ChatParticipant> participants = participantRepository.findByChatId(chatId);
+        List<Long> participantIds = participants.stream().map(ChatParticipant::getUserId).distinct().toList();
+        Map<Long, User> usersById = userRepository.findAllById(participantIds).stream()
+                .collect(Collectors.toMap(User::getId, u -> u));
+
+        Message lastMsg = messageRepository.findLatestByChatIds(List.of(chatId)).stream().findFirst().orElse(null);
+        String lastContent = lastMsg != null ? lastMsg.getContent() : null;
+        Long lastMessageId = lastMsg != null ? lastMsg.getId() : null;
+        LocalDateTime lastAt = lastMsg != null ? lastMsg.getCreatedAt() : null;
+        Long lastSenderId = lastMsg != null ? lastMsg.getSenderId() : null;
+
+        long unread = unreadService.get(currentUser.getId(), chatId);
+
+        if ("SAVED".equals(chat.getType())) {
+            return ChatResponse.forSaved(new ChatResponse.SavedParams(
+                    chat.getId(),
+                    chat.getType(),
+                    savedChatName(),
+                    lastContent,
+                    lastMessageId,
+                    lastAt,
+                    lastSenderId,
+                    participantIds,
+                    unread
+            ));
+        }
+
+        if ("GROUP".equals(chat.getType())) {
+            ChatParticipant me = participants.stream()
+                    .filter(p -> p.getUserId().equals(currentUser.getId()))
+                    .findFirst().orElse(null);
+            List<GroupParticipantInfo> groupInfos = participants.stream()
+                    .map(p -> {
+                        User u = usersById.get(p.getUserId());
+                        if (u == null && p.getUserId().equals(currentUser.getId())) u = currentUser;
+                        return new GroupParticipantInfo(
+                                p.getUserId(),
+                                u != null ? u.getUsername() : null,
+                                u != null ? u.getFirstName() : null,
+                                u != null ? u.getLastName() : null,
+                                u != null ? u.getAvatarUrl() : null,
+                                p.groupRole().name(),
+                                p.getMutedUntil(),
+                                p.isBanned()
+                        );
+                    })
+                    .toList();
+            return ChatResponse.forGroup(new ChatResponse.GroupParams(
+                    chat.getId(),
+                    chat.getType(),
+                    chat.getName(),
+                    lastContent,
+                    lastMessageId,
+                    lastAt,
+                    lastSenderId,
+                    participantIds,
+                    unread,
+                    chat.getAvatarUrl(),
+                    chat.getBio(),
+                    chat.getWhoCanWrite(),
+                    chat.getWhoCanEditInfo(),
+                    chat.getWhoCanInvite(),
+                    me != null ? me.groupRole().name() : GroupRole.MEMBER.name(),
+                    groupInfos
+            ));
+        }
+
+        // DIRECT
+        ChatParticipant otherP = participants.stream()
+                .filter(p -> !p.getUserId().equals(currentUser.getId()))
+                .findFirst().orElse(null);
+        User otherUser = otherP != null ? usersById.get(otherP.getUserId()) : null;
+        boolean online = otherUser != null && onlineService.isOnline(otherUser.getUsername());
+        LocalDateTime lastSeen = otherUser != null ? onlineService.getLastSeen(otherUser.getUsername()) : null;
+
+        return ChatResponse.forDirect(new ChatResponse.DirectParams(
+                chat.getId(),
+                chat.getType(),
+                lastContent,
+                lastMessageId,
+                lastAt,
+                lastSenderId,
+                participantIds,
+                otherUser != null ? otherUser.getId() : null,
+                otherUser != null ? otherUser.getUsername() : null,
+                otherUser != null ? otherUser.getFirstName() : null,
+                otherUser != null ? otherUser.getLastName() : null,
+                otherUser != null ? otherUser.getBio() : null,
+                otherUser != null ? otherUser.getAvatarUrl() : null,
+                unread,
+                online,
+                lastSeen,
+                chat.getDirectStatus(),
+                chat.getDirectRequestedBy()
+        ));
     }
 
     // ── private ───────────────────────────────────────────────────────────────

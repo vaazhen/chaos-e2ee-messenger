@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import ru.messenger.chaosmessenger.crypto.device.CurrentDeviceService;
+import ru.messenger.chaosmessenger.crypto.dto.DeviceBundleDto;
 import ru.messenger.chaosmessenger.crypto.dto.PreKeyBundleResponse;
 import ru.messenger.chaosmessenger.crypto.dto.ResolvedChatDevicesResponse;
 import ru.messenger.chaosmessenger.crypto.prekey.PreKeyService;
@@ -26,5 +27,15 @@ public class BundleController {
     public ResolvedChatDevicesResponse resolveChatDevices(@PathVariable Long chatId, Authentication authentication) {
         currentDeviceService.requireCurrentDevice();
         return preKeyService.resolveChatDevices(authentication.getName(), chatId);
+    }
+
+    @PostMapping("/chats/{chatId}/devices/{targetDeviceId}/reserve-prekey")
+    public DeviceBundleDto reserveOneTimePreKey(
+            @PathVariable Long chatId,
+            @PathVariable String targetDeviceId,
+            Authentication authentication
+    ) {
+        currentDeviceService.requireCurrentDevice();
+        return preKeyService.reserveChatDeviceOneTimePreKey(authentication.getName(), chatId, targetDeviceId);
     }
 }

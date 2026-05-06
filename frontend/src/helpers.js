@@ -68,7 +68,15 @@ export const avatarPreset = (avatarUrl) => {
   return Number.isInteger(idx) && idx >= 0 && idx < AVATAR_PRESETS.length ? AVATAR_PRESETS[idx] : null;
 };
 
-export const mapChat = (c, myId) => {
+const DEFAULT_MAP_CHAT_LABELS = {
+  contact: "Контакт",
+  saved: "Избранное",
+  group: "Группа",
+  newMessage: "Новое сообщение",
+};
+
+export const mapChat = (c, myId, labels) => {
+  const L = { ...DEFAULT_MAP_CHAT_LABELS, ...(labels || {}) };
   const chatId = c.chatId ?? c.id;
   const rawType = String(c.type || "").toLowerCase();
 
@@ -80,12 +88,12 @@ export const mapChat = (c, myId) => {
   const otherUsername  = c.otherUsername  ?? c.username  ?? "";
   const otherBio = c.otherBio ?? c.bio ?? c.about ?? "";
 
-  const fallbackName = [otherFirstName, otherLastName].filter(Boolean).join(" ") || otherUsername || "Контакт";
+  const fallbackName = [otherFirstName, otherLastName].filter(Boolean).join(" ") || otherUsername || L.contact;
 
   const name = isSaved
-    ? "Избранное"
+    ? L.saved
     : isGroup
-      ? (c.name || "Группа")
+      ? (c.name || L.group)
       : fallbackName;
 
   const lastMessageId = c.lastMessageId ?? c.messageId ?? null;
@@ -112,7 +120,7 @@ export const mapChat = (c, myId) => {
   const serverPreview = String(c.lastContent || "").trim();
   const normalizedServerPreview = serverPreview === "[encrypted]" ? "" : serverPreview;
   const hasLastMessage = Boolean(lastMessageId);
-  const fallbackPreview = hasLastMessage ? "Новое сообщение" : "";
+  const fallbackPreview = hasLastMessage ? L.newMessage : "";
   const resolvedPreview = String(cached?.preview || normalizedServerPreview || fallbackPreview).trim();
 
   return {

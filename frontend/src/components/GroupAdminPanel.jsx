@@ -290,7 +290,11 @@ export default function GroupAdminPanel({ me, chat, l, onRefreshGroup, onClose, 
         );
         setInviteResults(filtered);
       } catch (e) {
-        if (!cancelled) setGroupActionError(e?.message || "Invite search failed");
+        if (!cancelled) {
+          setGroupActionError(
+            e?.message || l("Не удалось выполнить поиск для приглашения.", "Invite search failed.")
+          );
+        }
       } finally {
         if (!cancelled) setInviteLoading(false);
       }
@@ -299,7 +303,7 @@ export default function GroupAdminPanel({ me, chat, l, onRefreshGroup, onClose, 
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [fullAdmin, inviteQuery, chat?.groupParticipants, me?.id]);
+  }, [fullAdmin, inviteQuery, chat?.groupParticipants, me?.id, l]);
 
   useEffect(() => {
     setGroupName(chat?.name || "");
@@ -680,7 +684,9 @@ export default function GroupAdminPanel({ me, chat, l, onRefreshGroup, onClose, 
                   await api.patchGroupSettings(chat.id, { name: groupName, bio: groupBio });
                   await onRefreshGroup?.(chat.id);
                 } catch (e) {
-                  setGroupActionError(e?.message || "Update failed");
+                  setGroupActionError(
+                    e?.message || l("Не удалось сохранить профиль группы.", "Failed to update group profile.")
+                  );
                 } finally {
                   setGroupActionBusy(false);
                 }
@@ -757,7 +763,9 @@ export default function GroupAdminPanel({ me, chat, l, onRefreshGroup, onClose, 
                   await api.patchGroupPermissions(chat.id, { whoCanWrite, whoCanEditInfo, whoCanInvite });
                   await onRefreshGroup?.(chat.id);
                 } catch (e) {
-                  setGroupActionError(e?.message || "Permissions update failed");
+                  setGroupActionError(
+                    e?.message || l("Не удалось сохранить политики группы.", "Failed to update group policies.")
+                  );
                 } finally {
                   setGroupActionBusy(false);
                 }
@@ -820,7 +828,9 @@ export default function GroupAdminPanel({ me, chat, l, onRefreshGroup, onClose, 
                 setInviteQuery("");
                 await onRefreshGroup?.(chat.id);
               } catch (e) {
-                setGroupActionError(e?.message || "Invite failed");
+                setGroupActionError(
+                  e?.message || l("Не удалось пригласить участников.", "Failed to invite participants.")
+                );
               } finally {
                 setGroupActionBusy(false);
               }
@@ -852,7 +862,9 @@ export default function GroupAdminPanel({ me, chat, l, onRefreshGroup, onClose, 
                 onClose?.();
                 await onRefreshGroup?.(chat.id);
               } catch (e) {
-                setGroupActionError(e?.message || "Archive failed");
+                setGroupActionError(
+                  e?.message || l("Не удалось удалить группу.", "Failed to delete the group.")
+                );
               } finally {
                 setGroupActionBusy(false);
               }

@@ -33,6 +33,8 @@ export const FALLBACK_MESSAGES = {
     last_seen_recently: "был недавно",
     personal_notes: "Личные заметки",
     members: "участников",
+    participants: "участников",
+    offline: "был недавно",
 
     saved_title: "Избранное",
     saved_subtitle: "Личные зашифрованные заметки и файлы",
@@ -172,6 +174,8 @@ export const FALLBACK_MESSAGES = {
     last_seen_recently: "last seen recently",
     personal_notes: "Personal notes",
     members: "members",
+    participants: "members",
+    offline: "last seen recently",
 
     saved_title: "Saved Messages",
     saved_subtitle: "Personal encrypted notes and files",
@@ -407,7 +411,145 @@ export const UI_TEXT_PAIRS = [
 
   ["Настройте профиль", "Set up your profile"],
   ["Эти данные будут видны вашим собеседникам.", "These details will be visible to your contacts."],
-  ["Войти в мессенджер", "Enter messenger"]
+  ["Войти в мессенджер", "Enter messenger"],
+
+  ["Назад", "Back"],
+  ["О чате", "Chat info"],
+  ["К предыдущему", "Previous"],
+  ["К следующему", "Next"],
+  [
+    "Подождите, пока пользователь примет ваш запрос.",
+    "Please wait until the user accepts your request."
+  ],
+  [
+    "Будет изменена только подпись к голосовому сообщению.",
+    "Only the voice caption will be changed."
+  ],
+  [
+    "Вы в муте в этой группе. Осталось: …",
+    "You are muted in this group. Time left: …"
+  ],
+  ["Администрирование группы", "Group administration"],
+  ["Управление группой", "Group management"],
+  ["Участники", "Participants"],
+  ["Ваша роль", "Your role"],
+  ["Только с мутом", "Muted only"],
+  ["Только бан", "Banned only"],
+  ["Статус", "Status"],
+  ["Все роли", "All roles"],
+  ["Участник", "Member"],
+  ["Модератор", "Moderator"],
+  ["Администратор", "Admin"],
+  ["Владелец", "Owner"],
+  ["Бан", "Banned"],
+  ["Мут", "Muted"],
+  ["Действия с участником", "Participant actions"],
+  ["Снять мут", "Unmute"],
+  ["Замутить…", "Mute…"],
+  ["Разбанить", "Unban"],
+  ["Забанить…", "Ban…"],
+  ["Исключить из группы", "Remove from group"],
+  ["Профиль группы", "Group profile"],
+  ["Название", "Name"],
+  ["Описание", "Description"],
+  ["Политики группы (только владелец)", "Group policies (owner only)"],
+  ["Кто может писать", "Who can send messages"],
+  ["Кто может менять информацию о группе", "Who can edit group info"],
+  ["Кто может приглашать", "Who can invite"],
+  ["Все участники", "All participants"],
+  ["Модератор и выше", "Moderators and above"],
+  ["Админ и выше", "Admins and above"],
+  ["Только владелец", "Owner only"],
+  ["Любой участник", "Any participant"],
+  ["Сохранить политики", "Save policies"],
+  ["Приглашения", "Invites"],
+  ["Найти по имени пользователя", "Find by username"],
+  ["Минимум 2 символа", "At least 2 characters"],
+  ["Поиск…", "Searching…"],
+  ["Пригласить выбранных", "Invite selected"],
+  ["Удалить группу", "Delete group"],
+  [
+    "Удалить группу для всех? Только владелец может это сделать.",
+    "Delete the group for everyone? Only the owner can do this."
+  ],
+  [
+    "Поиск и фильтры выполняются на устройстве. Все совпадения в одном списке — прокрутите его ниже.",
+    "Search and filters run on this device. All matches appear in one list — scroll below."
+  ],
+  [
+    "Управление участниками недоступно для вашей роли.",
+    "Participant management is not available for your role."
+  ],
+  [
+    "ПКМ или кнопка «⋯» — действия только для участников с ролью MEMBER.",
+    "Right-click or “⋯” — actions apply only to members with the MEMBER role."
+  ],
+  [
+    "Кто может писать сообщения. Более строгие значения ограничивают отправку для обычных участников.",
+    "Who can send messages. Stricter values restrict posting for lower roles."
+  ],
+  [
+    "Кто может менять название и описание группы. Не путать с правами модерации участников.",
+    "Who can edit the group name and description. Separate from participant moderation."
+  ],
+  [
+    "Кто может приглашать новых людей в группу (если политика позволяет вашей роли).",
+    "Who may invite new people (your role must also satisfy this policy)."
+  ],
+  [
+    "Исключить этого участника из группы? Его сообщения останутся в истории у других.",
+    "Remove this participant from the group? Their past messages remain for others."
+  ],
+  [
+    "Забанить участника? Это действие можно отменить только разбаном.",
+    "Ban this participant? This can only be undone by unbanning them."
+  ],
+  [
+    "Передать владение группой этому участнику? Ваша роль станет администратором.",
+    "Transfer group ownership to this participant? You will become an admin."
+  ],
+  ["Длительность мута в минутах (1–43200):", "Mute duration in minutes (1–43200):"],
+  ["Причина бана (необязательно):", "Ban reason (optional):"],
+  ["Некорректная длительность мута.", "Invalid mute duration."],
+  ["Ошибка действия", "Action failed"],
+  ["Имя, @username, id…", "Name, @username, id…"],
+  [
+    "Не удалось выполнить поиск для приглашения.",
+    "Invite search failed."
+  ],
+  [
+    "Не удалось сохранить профиль группы.",
+    "Failed to update group profile."
+  ],
+  [
+    "Не удалось сохранить политики группы.",
+    "Failed to update group policies."
+  ],
+  [
+    "Не удалось пригласить участников.",
+    "Failed to invite participants."
+  ],
+  [
+    "Не удалось удалить группу.",
+    "Failed to delete the group."
+  ],
+  ["Новое сообщение", "New message"],
+  ["Контакт", "Contact"],
+  ["Закрыть", "Close"],
+  ["Информация", "Info"],
+  ["Групповой чат", "Group chat"],
+  ["Личный чат", "Direct chat"],
+  ["Имя для вас", "Name for you"],
+  ["Имя для вас:", "Name for you:"],
+  ["Например: Мой коллега", "e.g. My colleague"],
+  [
+    "Это имя видно только вам (локально на этом устройстве).",
+    "This name is visible only to you (locally on this device)."
+  ],
+  ["Архив", "Archive"],
+  ["Открыть архив", "Open archive"],
+  ["Убрать из архива", "Remove from archive"],
+  ["В архив", "Archive"]
 ];
 
 const ruToEn = new Map(UI_TEXT_PAIRS);
@@ -425,6 +567,10 @@ function translateDynamic(trimmed, lang) {
     if (/^поиск:\s+/.test(trimmed)) return trimmed.replace(/^поиск:\s+/, "search: ");
     if (/^\d+\s+участников$/.test(trimmed)) return trimmed.replace("участников", "members");
     if (/^Создать \(\d+\)$/.test(trimmed)) return trimmed.replace("Создать", "Create");
+    const um = trimmed.match(/^Участники:\s*(\d+)$/);
+    if (um) return `Participants: ${um[1]}`;
+    const mm = trimmed.match(/^Вы в муте в этой группе\. Осталось:\s*(.+)$/);
+    if (mm) return `You are muted in this group. Time left: ${mm[1]}`;
   }
 
   if (lang === "ru") {
@@ -432,6 +578,10 @@ function translateDynamic(trimmed, lang) {
     if (/^search:\s+/.test(trimmed)) return trimmed.replace(/^search:\s+/, "поиск: ");
     if (/^\d+\s+members$/.test(trimmed)) return trimmed.replace("members", "участников");
     if (/^Create \(\d+\)$/.test(trimmed)) return trimmed.replace("Create", "Создать");
+    const pm = trimmed.match(/^Participants:\s*(\d+)$/);
+    if (pm) return `Участники: ${pm[1]}`;
+    const em = trimmed.match(/^You are muted in this group\. Time left:\s*(.+)$/);
+    if (em) return `Вы в муте в этой группе. Осталось: ${em[1]}`;
   }
 
   return null;

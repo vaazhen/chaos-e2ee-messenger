@@ -1273,13 +1273,18 @@ button{color:inherit}
   padding:8px 8px 8px 12px;
   cursor:text;
 }
+.inp-area--group-muted{
+  justify-content:center;
+  padding:10px 16px;
+  cursor:default;
+}
 .inp-area.recording-inline{
   align-items:center;
   padding:8px 10px;
   cursor:default;
 }
 .inp-area.recording-inline>.emoji-trigger,
-.inp-area.recording-inline>.msg-inp,
+.inp-area.recording-inline .msg-inp-wrap,
 .inp-area.recording-inline>input{
   display:none;
 }
@@ -1340,8 +1345,48 @@ button{color:inherit}
   width:19px;
   height:19px;
 }
+.msg-inp-wrap{
+  flex:1;
+  min-width:0;
+  position:relative;
+  align-self:stretch;
+  display:flex;
+  align-items:flex-end;
+}
+.msg-inp-wrap--mute .msg-inp{
+  color:transparent;
+  caret-color:transparent;
+  -webkit-text-fill-color:transparent;
+}
+.msg-inp-wrap--mute .msg-inp::placeholder{
+  color:transparent;
+}
+.group-mute-in-inp{
+  position:absolute;
+  left:0;
+  right:0;
+  top:50%;
+  transform:translateY(-50%);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  flex-wrap:wrap;
+  padding:2px 4px;
+  pointer-events:none;
+  z-index:1;
+  text-align:center;
+  color:var(--t2);
+  font-size:13px;
+  font-weight:700;
+  line-height:1.35;
+}
+.group-mute-in-inp__text{
+  min-width:0;
+}
 .msg-inp{
   flex:1;
+  min-width:0;
   min-height:30px;
   max-height:120px;
   border:none;
