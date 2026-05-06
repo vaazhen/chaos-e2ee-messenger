@@ -1,6 +1,8 @@
 package ru.messenger.chaosmessenger.chat.repository;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import ru.messenger.chaosmessenger.chat.domain.ChatParticipant;
@@ -19,6 +21,10 @@ public interface ChatParticipantRepository extends JpaRepository<ChatParticipant
 
     @Query("select cp.userId from ChatParticipant cp where cp.chatId = :chatId")
     List<Long> findUserIdsByChatId(@Param("chatId") Long chatId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select cp from ChatParticipant cp where cp.chatId = :chatId")
+    List<ChatParticipant> findByChatIdForUpdate(@Param("chatId") Long chatId);
 
     boolean existsByChatIdAndUserId(Long chatId, Long userId);
 

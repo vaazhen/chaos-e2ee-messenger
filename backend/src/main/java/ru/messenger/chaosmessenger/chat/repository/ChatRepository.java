@@ -1,7 +1,6 @@
 package ru.messenger.chaosmessenger.chat.repository;
 
 import org.springframework.data.repository.query.Param;
-import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import ru.messenger.chaosmessenger.chat.domain.Chat;
@@ -42,6 +41,19 @@ public interface ChatRepository extends JpaRepository<Chat, Long> {
             "WHERE c.id IN :ids")
     List<Chat> findByIdInWithParticipants(@Param("ids") List<Long> ids);
 
-    @EntityGraph(attributePaths = {"participants", "participants.user"})
-    Optional<Chat> findById(Long id);
+    @Query("select c from Chat c left join fetch c.participants p left join fetch p.user where c.id = :id")
+    Optional<Chat> findByIdWithParticipants(@Param("id") Long id);
+
+    @Query("""
+            select c
+            from Chat c
+            where c.type = 'DIRECT'
+              and c.directUserLowId = :lowUserId
+              and c.directUserHighId = :highUserId
+              and c.deletedAt is null
+            """)
+    Optional<Chat> findActiveDirectByNormalizedPair(
+            @Param("lowUserId") Long lowUserId,
+            @Param("highUserId") Long highUserId
+    );
 }

@@ -7,6 +7,7 @@ public record DeviceBundleDto(
         Integer registrationId,
         String deviceName,
         String identityPublicKey,
+        String signingPublicKey,
         SignedPreKeyDto signedPreKey,
         OneTimePreKeyDto oneTimePreKey
 ) {}
