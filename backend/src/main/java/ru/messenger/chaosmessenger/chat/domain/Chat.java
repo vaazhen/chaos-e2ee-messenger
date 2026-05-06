@@ -52,6 +52,14 @@ public class Chat {
     @Column(name = "direct_requested_by")
     private Long directRequestedBy;
 
+    /** Normalized user pair for DIRECT chats (low user id). */
+    @Column(name = "direct_user_low_id")
+    private Long directUserLowId;
+
+    /** Normalized user pair for DIRECT chats (high user id). */
+    @Column(name = "direct_user_high_id")
+    private Long directUserHighId;
+
     /**
      * Display name — set only for {@code GROUP} chats.
      * Always {@code null} for {@code DIRECT} chats; the name comes from the other user's profile.

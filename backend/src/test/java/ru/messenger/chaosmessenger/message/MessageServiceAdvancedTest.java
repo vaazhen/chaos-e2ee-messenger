@@ -331,7 +331,7 @@ class MessageServiceAdvancedTest {
         stubParticipant(100L, bob.getId());
 
         Message message = TestFixtures.sentMessage(500L, 100L, alice.getId(), "alice-phone");
-        when(messageRepository.findById(500L)).thenReturn(Optional.of(message));
+        when(messageRepository.findByIdForUpdate(500L)).thenReturn(Optional.of(message));
 
         EncryptedEditMessageRequestV2 request = editRequest(
                 "bob-phone",
@@ -357,7 +357,7 @@ class MessageServiceAdvancedTest {
         Message message = TestFixtures.sentMessage(500L, 100L, alice.getId(), "alice-phone");
         message.setVersion(1);
 
-        when(messageRepository.findById(500L)).thenReturn(Optional.of(message));
+        when(messageRepository.findByIdForUpdate(500L)).thenReturn(Optional.of(message));
         when(messageRepository.save(message)).thenReturn(message);
         when(messageEnvelopeRepository.save(any(MessageEnvelope.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -406,7 +406,7 @@ class MessageServiceAdvancedTest {
         Message message = TestFixtures.sentMessage(500L, 100L, alice.getId(), "alice-phone");
         message.setDeletedAt(LocalDateTime.now());
 
-        when(messageRepository.findById(500L)).thenReturn(Optional.of(message));
+        when(messageRepository.findByIdForUpdate(500L)).thenReturn(Optional.of(message));
 
         EncryptedEditMessageRequestV2 request = editRequest(
                 "alice-phone",

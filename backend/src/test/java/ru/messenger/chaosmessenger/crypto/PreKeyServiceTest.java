@@ -56,17 +56,14 @@ class PreKeyServiceTest {
     }
 
     @Test
-    void getBundleByUsernameReturnsActiveDeviceBundlesReadOnly() {
+    void getBundleByUsernameReturnsSignedPreKeyWithoutOneTimePreKey() {
         UserDevice aliceDevice = device(10L, alice, "alice-phone");
         SignedPreKey signed = signedPreKey(aliceDevice, 7, "signed-public", "signature");
-        OneTimePreKey oneTime = oneTimePreKey(aliceDevice, 101, "otp-public");
 
         when(userDeviceRepository.findActiveByUsernameWithUser("alice"))
                 .thenReturn(List.of(aliceDevice));
         when(signedPreKeyRepository.findLatestByDeviceIds(List.of(10L)))
                 .thenReturn(List.of(signed));
-        when(oneTimePreKeyRepository.findFirstAvailableReadOnlyByDeviceIds(List.of(10L)))
-                .thenReturn(List.of(oneTime));
 
         PreKeyBundleResponse response = preKeyService.getBundleByUsername("alice");
 
@@ -79,16 +76,16 @@ class PreKeyServiceTest {
         assertThat(dto.deviceId()).isEqualTo("alice-phone");
         assertThat(dto.registrationId()).isEqualTo(123);
         assertThat(dto.identityPublicKey()).isEqualTo("identity-alice-phone");
+        assertThat(dto.signingPublicKey()).isEqualTo("signing-alice-phone");
 
         assertThat(dto.signedPreKey().preKeyId()).isEqualTo(7);
         assertThat(dto.signedPreKey().publicKey()).isEqualTo("signed-public");
         assertThat(dto.signedPreKey().signature()).isEqualTo("signature");
 
-        assertThat(dto.oneTimePreKey().preKeyId()).isEqualTo(101);
-        assertThat(dto.oneTimePreKey().publicKey()).isEqualTo("otp-public");
+        assertThat(dto.oneTimePreKey()).isNull();
 
         verify(oneTimePreKeyRepository, never()).findAvailableForUpdate(10L);
-        verify(oneTimePreKeyRepository, never()).save(oneTime);
+        verify(oneTimePreKeyRepository, never()).findFirstAvailableReadOnlyByDeviceIds(List.of(10L));
     }
 
     @Test
@@ -98,8 +95,6 @@ class PreKeyServiceTest {
         when(userDeviceRepository.findActiveByUsernameWithUser("alice"))
                 .thenReturn(List.of(aliceDevice));
         when(signedPreKeyRepository.findLatestByDeviceIds(List.of(10L)))
-                .thenReturn(List.of());
-        when(oneTimePreKeyRepository.findFirstAvailableReadOnlyByDeviceIds(List.of(10L)))
                 .thenReturn(List.of());
 
         PreKeyBundleResponse response = preKeyService.getBundleByUsername("alice");
