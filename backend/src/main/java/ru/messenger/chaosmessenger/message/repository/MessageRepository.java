@@ -1,7 +1,9 @@
 package ru.messenger.chaosmessenger.message.repository;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -20,6 +22,10 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
             String senderDeviceId,
             String clientMessageId
     );
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select m from Message m where m.id = :id")
+    Optional<Message> findByIdForUpdate(@Param("id") Long id);
 
     @Query(value = """
             select distinct on (m.chat_id) *

@@ -61,4 +61,17 @@ public interface ChatRepository extends JpaRepository<Chat, Long> {
 
     @Query("select c from Chat c left join fetch c.participants p left join fetch p.user where c.id = :id")
     Optional<Chat> findByIdWithParticipants(@Param("id") Long id);
+
+    @Query("""
+            select c
+            from Chat c
+            where c.type = 'DIRECT'
+              and c.directUserLowId = :lowUserId
+              and c.directUserHighId = :highUserId
+              and c.deletedAt is null
+            """)
+    Optional<Chat> findActiveDirectByNormalizedPair(
+            @Param("lowUserId") Long lowUserId,
+            @Param("highUserId") Long highUserId
+    );
 }

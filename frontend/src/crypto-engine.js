@@ -26,6 +26,8 @@
     const DEVICE_KEY_PREFIX    = 'cm_device_bundle_v2';
     const SESSION_KEY_PREFIX   = 'cm_e2ee_sessions_v4';
     const DEVICE_ID_KEY_PREFIX = 'cm_device_id';
+    const MAX_SKIP             = 2000;
+    const MAX_STORED_SKIPPED_KEYS = 4000;
 
     let registrationPromise = null;
     let registrationPromiseUsername = null;
@@ -48,6 +50,11 @@
             const padded = normalized + '='.repeat((4 - normalized.length % 4) % 4);
             return atob(padded);
         } catch (_) { return ''; }
+    }
+
+    function b64ToArrayBuffer(base64) {
+        const bytes = b64ToBytes(base64);
+        return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
     }
 
     // ─── JWT username (used only for registrationPromise scoping) ─────────────
@@ -367,6 +374,11 @@
     // ─── X3DH session establishment (initiator) ───────────────────────────────
 
     async function createInitiatorSessionWrapped(localBundle, targetDevice) {
+        await verifySignedPreKeySignature(
+            targetDevice.signingPublicKey,
+            targetDevice.signedPreKey?.publicKey,
+            targetDevice.signedPreKey?.signature
+        );
         const identityPrivate       = await importPkcs8PrivateKey(localBundle.identity.privateKeyPkcs8);
         const ephemeral             = await generateX25519KeyPair();
         const ephemeralPublicKey    = await exportRawPublicKey(ephemeral.publicKey);
@@ -397,9 +409,9 @@
             sendingChainStartKey: bytesToB64(keys.chainKey),
             sendingChainKey: bytesToB64(keys.chainKey),
             sendingIndex: 0,
-            receivingChainStartKey: bytesToB64(keys.rootKey),
             receivingChainKey: null,
             receivingIndex: 0,
+            skippedMessageKeys: {},
             senderIdentityPublicKey: localBundle.identity.publicKey,
             _ephemeralPublicKey: ephemeralPublicKey,
             establishedAt: Date.now(),
@@ -444,9 +456,9 @@
             sendingChainStartKey: bytesToB64(keys.rootKey),
             sendingChainKey: null,
             sendingIndex: 0,
-            receivingChainStartKey: bytesToB64(keys.chainKey),
             receivingChainKey: bytesToB64(keys.chainKey),
             receivingIndex: 0,
+            skippedMessageKeys: {},
             senderIdentityPublicKey: envelope.senderIdentityPublicKey,
             establishedAt: Date.now(),
             version: 3
@@ -477,38 +489,49 @@
 
     async function decryptWithRatchet(session, envelope) {
         const targetIndex = envelope.messageIndex ?? 0;
-        let chainKeyBytes;
+        session.skippedMessageKeys = session.skippedMessageKeys || {};
 
-        if (!session.receivingChainStartKey) {
-            session.receivingChainStartKey = session.receivingChainKey || session.rootKey;
+        // Handle already-derived out-of-order message keys.
+        const skipped = session.skippedMessageKeys[String(targetIndex)];
+        if (skipped) {
+            delete session.skippedMessageKeys[String(targetIndex)];
+            return aesDecryptWithKey(envelope.ciphertext, envelope.nonce, b64ToBytes(skipped));
         }
+
         if (!session.receivingChainKey) {
-            chainKeyBytes = b64ToBytes(session.receivingChainStartKey);
-            session.receivingChainKey = session.receivingChainStartKey;
+            session.receivingChainKey = session.rootKey;
             session.receivingIndex = 0;
-        } else {
-            chainKeyBytes = b64ToBytes(session.receivingChainKey);
         }
 
+        let chainKeyBytes = b64ToBytes(session.receivingChainKey);
         let currentIndex = session.receivingIndex || 0;
 
         if (targetIndex < currentIndex) {
-            chainKeyBytes = b64ToBytes(session.receivingChainStartKey);
-            currentIndex = 0;
+            throw new Error('Cannot decrypt old message index without skipped key: ' + targetIndex);
+        }
+        if ((targetIndex - currentIndex) > MAX_SKIP) {
+            throw new Error('Message index gap is too large: ' + (targetIndex - currentIndex));
         }
 
         while (currentIndex < targetIndex) {
             const step = await ratchetStep(chainKeyBytes);
+            session.skippedMessageKeys[String(currentIndex)] = bytesToB64(step.messageKey);
             chainKeyBytes = step.nextChainKey;
             currentIndex++;
         }
 
-        const { messageKey, nextChainKey } = await ratchetStep(chainKeyBytes);
-
-        if (targetIndex >= (session.receivingIndex || 0)) {
-            session.receivingChainKey = bytesToB64(nextChainKey);
-            session.receivingIndex = currentIndex + 1;
+        // Keep skipped keys bounded to avoid unbounded growth / DoS.
+        const keys = Object.keys(session.skippedMessageKeys);
+        if (keys.length > MAX_STORED_SKIPPED_KEYS) {
+            keys.sort((a, b) => Number(a) - Number(b));
+            for (let i = 0; i < (keys.length - MAX_STORED_SKIPPED_KEYS); i++) {
+                delete session.skippedMessageKeys[keys[i]];
+            }
         }
+
+        const { messageKey, nextChainKey } = await ratchetStep(chainKeyBytes);
+        session.receivingChainKey = bytesToB64(nextChainKey);
+        session.receivingIndex = currentIndex + 1;
 
         return aesDecryptWithKey(envelope.ciphertext, envelope.nonce, messageKey);
     }
@@ -549,6 +572,8 @@
             let session = getSession(localBundle.deviceId, targetDevice.deviceId);
             let ephemeralPublicKey = null;
             let isNewSession = false;
+            let resolvedSignedPreKey = targetDevice.signedPreKey || null;
+            let resolvedOneTimePreKey = null;
 
             if (!session) {
                 // Reserve one-time prekey only when we have no existing session with the target device.
@@ -556,11 +581,12 @@
                     '/api/crypto/chats/' + encodeURIComponent(chatId) + '/devices/' + encodeURIComponent(targetDevice.deviceId) + '/reserve-prekey',
                     { method: 'POST' }
                 );
+                resolvedSignedPreKey = reserved?.signedPreKey || targetDevice.signedPreKey || null;
+                resolvedOneTimePreKey = reserved?.oneTimePreKey || null;
                 const created = await createInitiatorSessionWrapped(localBundle, {
                     ...targetDevice,
-                    // Ensure we use the reserved one-time prekey (if any) for X3DH.
-                    signedPreKey: reserved?.signedPreKey || targetDevice.signedPreKey,
-                    oneTimePreKey: reserved?.oneTimePreKey || null,
+                    signedPreKey: resolvedSignedPreKey,
+                    oneTimePreKey: resolvedOneTimePreKey,
                 });
                 session = created.session;
                 ephemeralPublicKey = created.ephemeralPublicKey;
@@ -579,8 +605,8 @@
                 ciphertext: encrypted.ciphertext,
                 nonce: encrypted.nonce,
                 messageIndex,
-                signedPreKeyId: isNewSession && targetDevice.signedPreKey ? targetDevice.signedPreKey.preKeyId : null,
-                oneTimePreKeyId: isNewSession && targetDevice.oneTimePreKey ? targetDevice.oneTimePreKey.preKeyId : null,
+                signedPreKeyId: isNewSession && resolvedSignedPreKey ? resolvedSignedPreKey.preKeyId : null,
+                oneTimePreKeyId: isNewSession && resolvedOneTimePreKey ? resolvedOneTimePreKey.preKeyId : null,
                 timestamp: Date.now()
             });
         }
@@ -591,6 +617,29 @@
             senderDeviceId: localBundle.deviceId,
             envelopes
         };
+    }
+
+    async function verifySignedPreKeySignature(signingPublicKeyB64, signedPreKeyPublicB64, signatureB64) {
+        if (!signingPublicKeyB64 || !signedPreKeyPublicB64 || !signatureB64) {
+            throw new Error('Target device signed prekey bundle is incomplete');
+        }
+        assertWebCryptoAvailable();
+        const signingKey = await crypto.subtle.importKey(
+            'spki',
+            b64ToArrayBuffer(signingPublicKeyB64),
+            { name: 'ECDSA', namedCurve: 'P-256' },
+            false,
+            ['verify']
+        );
+        const verified = await crypto.subtle.verify(
+            { name: 'ECDSA', hash: { name: 'SHA-256' } },
+            signingKey,
+            b64ToBytes(signatureB64),
+            b64ToBytes(signedPreKeyPublicB64)
+        );
+        if (!verified) {
+            throw new Error('Invalid signed prekey signature');
+        }
     }
 
     // ─── Decrypt an incoming envelope ─────────────────────────────────────────

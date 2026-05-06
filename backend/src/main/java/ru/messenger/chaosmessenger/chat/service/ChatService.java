@@ -3,21 +3,12 @@ package ru.messenger.chaosmessenger.chat.service;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import ru.messenger.chaosmessenger.chat.domain.Chat;
-import ru.messenger.chaosmessenger.chat.domain.ChatParticipant;
-import ru.messenger.chaosmessenger.chat.domain.GroupPolicy;
-import ru.messenger.chaosmessenger.chat.domain.GroupRole;
-import ru.messenger.chaosmessenger.chat.domain.Message;
-import ru.messenger.chaosmessenger.chat.dto.ChatListUpdateEvent;
-import ru.messenger.chaosmessenger.chat.dto.ChatResponse;
-import ru.messenger.chaosmessenger.chat.dto.GroupParticipantInfo;
-import ru.messenger.chaosmessenger.chat.dto.UpdateGroupParticipantsRequest;
-import ru.messenger.chaosmessenger.chat.dto.UpdateGroupPermissionsRequest;
-import ru.messenger.chaosmessenger.chat.dto.UpdateGroupRoleRequest;
-import ru.messenger.chaosmessenger.chat.dto.UpdateGroupSettingsRequest;
+import ru.messenger.chaosmessenger.chat.domain.*;
+import ru.messenger.chaosmessenger.chat.dto.*;
 import ru.messenger.chaosmessenger.chat.repository.ChatParticipantRepository;
 import ru.messenger.chaosmessenger.chat.repository.ChatRepository;
 import ru.messenger.chaosmessenger.common.TransactionUtils;
@@ -27,7 +18,6 @@ import ru.messenger.chaosmessenger.infra.presence.UnreadService;
 import ru.messenger.chaosmessenger.message.repository.MessageRepository;
 import ru.messenger.chaosmessenger.user.domain.User;
 import ru.messenger.chaosmessenger.user.repository.UserRepository;
-
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.function.Function;
@@ -37,16 +27,18 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ChatService {
 
-    private final ChatRepository            chatRepository;
+    private final ChatRepository chatRepository;
     private final ChatParticipantRepository participantRepository;
-    private final UserRepository            userRepository;
-    private final MessageRepository         messageRepository;
-    private final UnreadService             unreadService;
-    private final OnlineService             onlineService;
-    private final SimpMessagingTemplate     messagingTemplate;
-    private final MessageSource             messageSource;
+    private final UserRepository userRepository;
+    private final MessageRepository messageRepository;
+    private final UnreadService unreadService;
+    private final OnlineService onlineService;
+    private final SimpMessagingTemplate messagingTemplate;
+    private final MessageSource messageSource;
 
-    /** Resolve the localised name for the Saved Messages chat. */
+    /**
+     * Resolve the localised name for the Saved Messages chat.
+     */
     private String savedChatName() {
         return messageSource.getMessage("chat.saved.name", null, "Saved Messages", LocaleContextHolder.getLocale());
     }
@@ -55,16 +47,21 @@ public class ChatService {
     public Long createDirectChat(String currentUsername, Long targetUserId) {
         User currentUser = userRepository.findByUsername(currentUsername)
                 .orElseThrow(() -> new ChatException("Current user not found"));
-        User targetUser  = userRepository.findById(targetUserId)
+        User targetUser = userRepository.findById(targetUserId)
                 .orElseThrow(() -> new ChatException("Target user not found"));
 
         if (currentUser.getId().equals(targetUser.getId())) {
             throw new ChatException("You cannot create a chat with yourself");
         }
 
-        Optional<Long> existing = participantRepository.findDirectChatId(currentUser.getId(), targetUser.getId());
-        if (existing.isPresent()) {
-            Long chatId = existing.get();
+        long lowUserId = Math.min(currentUser.getId(), targetUser.getId());
+        long highUserId = Math.max(currentUser.getId(), targetUser.getId());
+        Optional<Chat> existing = chatRepository.findActiveDirectByNormalizedPair(lowUserId, highUserId);
+        Long existingChatId = existing.map(Chat::getId).orElseGet(() ->
+                participantRepository.findDirectChatId(currentUser.getId(), targetUser.getId()).orElse(null)
+        );
+        if (existingChatId != null) {
+            Long chatId = existingChatId;
             Chat existingChat = chatRepository.findById(chatId).orElse(null);
             if (existingChat != null) {
                 String status = String.valueOf(existingChat.getDirectStatus());
@@ -110,14 +107,22 @@ public class ChatService {
         chat.setCreatedAt(LocalDateTime.now());
         chat.setDirectStatus("PENDING");
         chat.setDirectRequestedBy(currentUser.getId());
-        chat = chatRepository.save(chat);
+        chat.setDirectUserLowId(lowUserId);
+        chat.setDirectUserHighId(highUserId);
+        try {
+            chat = chatRepository.save(chat);
+            chatRepository.flush();
+        } catch (DataIntegrityViolationException ex) {
+            Chat existingChat = chatRepository.findActiveDirectByNormalizedPair(lowUserId, highUserId).orElseThrow(() -> ex);
+            return existingChat.getId();
+        }
 
         participantRepository.save(new ChatParticipant(chat.getId(), currentUser.getId()));
         participantRepository.save(new ChatParticipant(chat.getId(), targetUser.getId()));
 
-        final Long   chatId     = chat.getId();
+        final Long chatId = chat.getId();
         final String currentUsr = currentUser.getUsername();
-        final String targetUsr  = targetUser.getUsername();
+        final String targetUsr = targetUser.getUsername();
         TransactionUtils.afterCommit(() -> {
             notifyChatListUpdated(currentUsr, chatId, "chat_created");
             notifyRequestsUpdated(targetUsr, chatId, "request_created");
@@ -140,7 +145,7 @@ public class ChatService {
 
         Optional<Long> existing = participantRepository.findSavedChatId(user.getId());
         if (existing.isPresent()) {
-            Long   chatId   = existing.get();
+            Long chatId = existing.get();
             String username = user.getUsername();
             TransactionUtils.afterCommit(() -> notifyChatListUpdated(username, chatId, "saved_chat_exists"));
             return chatId;
@@ -154,7 +159,7 @@ public class ChatService {
 
         participantRepository.save(new ChatParticipant(chat.getId(), user.getId()));
 
-        Long   chatId   = chat.getId();
+        Long chatId = chat.getId();
         String username = user.getUsername();
         TransactionUtils.afterCommit(() -> notifyChatListUpdated(username, chatId, "saved_chat_created"));
 
@@ -163,8 +168,9 @@ public class ChatService {
 
     @Transactional
     public Long createGroupChat(String currentUsername, String name, List<Long> memberIds) {
-        if (name == null || name.isBlank())           throw new ChatException("Group name is required");
-        if (memberIds == null || memberIds.isEmpty()) throw new ChatException("Group must have at least one other member");
+        if (name == null || name.isBlank()) throw new ChatException("Group name is required");
+        if (memberIds == null || memberIds.isEmpty())
+            throw new ChatException("Group must have at least one other member");
 
         User creator = userRepository.findByUsername(currentUsername)
                 .orElseThrow(() -> new ChatException("Current user not found"));
@@ -264,7 +270,7 @@ public class ChatService {
                 .filter(c -> visibleChatIds.contains(c.getId()))
                 .toList();
 
-        List<ChatParticipant> allParticipants   = participantRepository.findByChatIdIn(chatIds);
+        List<ChatParticipant> allParticipants = participantRepository.findByChatIdIn(chatIds);
         Map<Long, List<ChatParticipant>> byChat = allParticipants.stream()
                 .collect(Collectors.groupingBy(ChatParticipant::getChatId));
 
@@ -285,10 +291,10 @@ public class ChatService {
         Map<Long, Long> rawUnreadByChatId = unreadService.getMany(currentUser.getId(), orderedVisibleIds);
         final Map<Long, Long> unreadByChatId = (rawUnreadByChatId == null || rawUnreadByChatId.isEmpty())
                 ? orderedVisibleIds.stream()
-                    .collect(Collectors.toMap(
-                            Function.identity(),
-                            chatId -> unreadService.get(currentUser.getId(), chatId)
-                    ))
+                .collect(Collectors.toMap(
+                        Function.identity(),
+                        chatId -> unreadService.get(currentUser.getId(), chatId)
+                ))
                 : rawUnreadByChatId;
 
         Set<String> usernames = usersById.values().stream()
@@ -302,109 +308,109 @@ public class ChatService {
                 : rawOnlineByUsername;
         final Map<String, LocalDateTime> lastSeenByUsername = (rawLastSeenByUsername == null || rawLastSeenByUsername.isEmpty())
                 ? usernames.stream().collect(Collectors.toMap(
-                        Function.identity(),
-                        uname -> {
-                            LocalDateTime lastSeen = onlineService.getLastSeen(uname);
-                            return lastSeen != null ? lastSeen : LocalDateTime.now().minusDays(1);
-                        }
-                ))
+                Function.identity(),
+                uname -> {
+                    LocalDateTime lastSeen = onlineService.getLastSeen(uname);
+                    return lastSeen != null ? lastSeen : LocalDateTime.now().minusDays(1);
+                }
+        ))
                 : rawLastSeenByUsername;
 
         Map<Long, ChatResponse> responsesByChatId = chats.stream().map(chat -> {
-            List<ChatParticipant> participants = byChat.getOrDefault(chat.getId(), List.of());
-            Optional<Message>     lastMsg      = Optional.ofNullable(lastMessagesByChatId.get(chat.getId()));
+                    List<ChatParticipant> participants = byChat.getOrDefault(chat.getId(), List.of());
+                    Optional<Message> lastMsg = Optional.ofNullable(lastMessagesByChatId.get(chat.getId()));
 
-            String        lastContent   = lastMsg.map(Message::getContent).orElse(null);
-            Long          lastMessageId = lastMsg.map(Message::getId).orElse(null);
-            LocalDateTime lastAt        = lastMsg.map(Message::getCreatedAt).orElse(null);
-            Long          lastSenderId  = lastMsg.map(Message::getSenderId).orElse(null);
-            long          unread        = unreadByChatId.getOrDefault(chat.getId(), 0L);
-            boolean       isSaved       = "SAVED".equals(chat.getType());
-            boolean       isGroup       = "GROUP".equals(chat.getType());
+                    String lastContent = lastMsg.map(Message::getContent).orElse(null);
+                    Long lastMessageId = lastMsg.map(Message::getId).orElse(null);
+                    LocalDateTime lastAt = lastMsg.map(Message::getCreatedAt).orElse(null);
+                    Long lastSenderId = lastMsg.map(Message::getSenderId).orElse(null);
+                    long unread = unreadByChatId.getOrDefault(chat.getId(), 0L);
+                    boolean isSaved = "SAVED".equals(chat.getType());
+                    boolean isGroup = "GROUP".equals(chat.getType());
 
-            if (isSaved) {
-                return ChatResponse.forSaved(new ChatResponse.SavedParams(
-                        chat.getId(),
-                        chat.getType(),
-                        savedName,
-                        lastContent,
-                        lastMessageId,
-                        lastAt,
-                        lastSenderId,
-                        participants.stream().map(ChatParticipant::getUserId).toList(),
-                        unread
-                ));
-            }
+                    if (isSaved) {
+                        return ChatResponse.forSaved(new ChatResponse.SavedParams(
+                                chat.getId(),
+                                chat.getType(),
+                                savedName,
+                                lastContent,
+                                lastMessageId,
+                                lastAt,
+                                lastSenderId,
+                                participants.stream().map(ChatParticipant::getUserId).toList(),
+                                unread
+                        ));
+                    }
 
-            if (isGroup) {
-                ChatParticipant me = participants.stream()
-                        .filter(p -> p.getUserId().equals(currentUser.getId()))
-                        .findFirst().orElse(null);
-                List<GroupParticipantInfo> groupInfos = participants.stream()
-                        .map(p -> {
-                            User u = usersById.get(p.getUserId());
-                            if (u == null && p.getUserId().equals(currentUser.getId())) u = currentUser;
-                            return new GroupParticipantInfo(
-                                    p.getUserId(),
-                                    u != null ? u.getUsername()  : null,
-                                    u != null ? u.getFirstName() : null,
-                                    u != null ? u.getLastName()  : null,
-                                    u != null ? u.getAvatarUrl() : null,
-                                    p.groupRole().name(),
-                                    p.getMutedUntil(),
-                                    p.isBanned()
-                            );
-                        })
-                        .toList();
-                return ChatResponse.forGroup(new ChatResponse.GroupParams(
-                        chat.getId(),
-                        chat.getType(),
-                        chat.getName(),
-                        lastContent,
-                        lastMessageId,
-                        lastAt,
-                        lastSenderId,
-                        participants.stream().map(ChatParticipant::getUserId).toList(),
-                        unread,
-                        chat.getAvatarUrl(),
-                        chat.getBio(),
-                        chat.getWhoCanWrite(),
-                        chat.getWhoCanEditInfo(),
-                        chat.getWhoCanInvite(),
-                        me != null ? me.groupRole().name() : GroupRole.MEMBER.name(),
-                        groupInfos
-                ));
-            }
+                    if (isGroup) {
+                        ChatParticipant me = participants.stream()
+                                .filter(p -> p.getUserId().equals(currentUser.getId()))
+                                .findFirst().orElse(null);
+                        List<GroupParticipantInfo> groupInfos = participants.stream()
+                                .map(p -> {
+                                    User u = usersById.get(p.getUserId());
+                                    if (u == null && p.getUserId().equals(currentUser.getId())) u = currentUser;
+                                    return new GroupParticipantInfo(
+                                            p.getUserId(),
+                                            u != null ? u.getUsername() : null,
+                                            u != null ? u.getFirstName() : null,
+                                            u != null ? u.getLastName() : null,
+                                            u != null ? u.getAvatarUrl() : null,
+                                            p.groupRole().name(),
+                                            p.getMutedUntil(),
+                                            p.isBanned()
+                                    );
+                                })
+                                .toList();
+                        return ChatResponse.forGroup(new ChatResponse.GroupParams(
+                                chat.getId(),
+                                chat.getType(),
+                                chat.getName(),
+                                lastContent,
+                                lastMessageId,
+                                lastAt,
+                                lastSenderId,
+                                participants.stream().map(ChatParticipant::getUserId).toList(),
+                                unread,
+                                chat.getAvatarUrl(),
+                                chat.getBio(),
+                                chat.getWhoCanWrite(),
+                                chat.getWhoCanEditInfo(),
+                                chat.getWhoCanInvite(),
+                                me != null ? me.groupRole().name() : GroupRole.MEMBER.name(),
+                                groupInfos
+                        ));
+                    }
 
-            ChatParticipant otherP = participants.stream()
-                    .filter(p -> !p.getUserId().equals(currentUser.getId()))
-                    .findFirst().orElse(null);
-            User otherUser = otherP != null ? usersById.get(otherP.getUserId()) : null;
-            boolean online = otherUser != null && Boolean.TRUE.equals(onlineByUsername.get(otherUser.getUsername()));
-            LocalDateTime lastSeen = otherUser != null ? lastSeenByUsername.get(otherUser.getUsername()) : null;
+                    ChatParticipant otherP = participants.stream()
+                            .filter(p -> !p.getUserId().equals(currentUser.getId()))
+                            .findFirst().orElse(null);
+                    User otherUser = otherP != null ? usersById.get(otherP.getUserId()) : null;
+                    boolean online = otherUser != null && Boolean.TRUE.equals(onlineByUsername.get(otherUser.getUsername()));
+                    LocalDateTime lastSeen = otherUser != null ? lastSeenByUsername.get(otherUser.getUsername()) : null;
 
-            return ChatResponse.forDirect(new ChatResponse.DirectParams(
-                    chat.getId(),
-                    chat.getType(),
-                    lastContent,
-                    lastMessageId,
-                    lastAt,
-                    lastSenderId,
-                    participants.stream().map(ChatParticipant::getUserId).toList(),
-                    otherUser != null ? otherUser.getId() : null,
-                    otherUser != null ? otherUser.getUsername() : null,
-                    otherUser != null ? otherUser.getFirstName() : null,
-                    otherUser != null ? otherUser.getLastName() : null,
-                    otherUser != null ? otherUser.getBio() : null,
-                    otherUser != null ? otherUser.getAvatarUrl() : null,
-                    unread,
-                    online,
-                    lastSeen,
-                    chat.getDirectStatus(),
-                    chat.getDirectRequestedBy()
-            ));
-        })
-        .collect(Collectors.toMap(ChatResponse::chatId, response -> response));
+                    return ChatResponse.forDirect(new ChatResponse.DirectParams(
+                            chat.getId(),
+                            chat.getType(),
+                            lastContent,
+                            lastMessageId,
+                            lastAt,
+                            lastSenderId,
+                            participants.stream().map(ChatParticipant::getUserId).toList(),
+                            otherUser != null ? otherUser.getId() : null,
+                            otherUser != null ? otherUser.getUsername() : null,
+                            otherUser != null ? otherUser.getFirstName() : null,
+                            otherUser != null ? otherUser.getLastName() : null,
+                            otherUser != null ? otherUser.getBio() : null,
+                            otherUser != null ? otherUser.getAvatarUrl() : null,
+                            unread,
+                            online,
+                            lastSeen,
+                            chat.getDirectStatus(),
+                            chat.getDirectRequestedBy()
+                    ));
+                })
+                .collect(Collectors.toMap(ChatResponse::chatId, response -> response));
 
         return orderedVisibleIds.stream()
                 .map(responsesByChatId::get)
@@ -449,10 +455,10 @@ public class ChatService {
         Map<Long, Long> rawUnreadByChatId = unreadService.getMany(currentUser.getId(), chatIds);
         final Map<Long, Long> unreadByChatId = (rawUnreadByChatId == null || rawUnreadByChatId.isEmpty())
                 ? chatIds.stream()
-                    .collect(Collectors.toMap(
-                            Function.identity(),
-                            chatId -> unreadService.get(currentUser.getId(), chatId)
-                    ))
+                .collect(Collectors.toMap(
+                        Function.identity(),
+                        chatId -> unreadService.get(currentUser.getId(), chatId)
+                ))
                 : rawUnreadByChatId;
 
         Set<String> usernames = usersById.values().stream()
@@ -466,12 +472,12 @@ public class ChatService {
                 : rawOnlineByUsername;
         final Map<String, LocalDateTime> lastSeenByUsername = (rawLastSeenByUsername == null || rawLastSeenByUsername.isEmpty())
                 ? usernames.stream().collect(Collectors.toMap(
-                        Function.identity(),
-                        uname -> {
-                            LocalDateTime lastSeen = onlineService.getLastSeen(uname);
-                            return lastSeen != null ? lastSeen : LocalDateTime.now().minusDays(1);
-                        }
-                ))
+                Function.identity(),
+                uname -> {
+                    LocalDateTime lastSeen = onlineService.getLastSeen(uname);
+                    return lastSeen != null ? lastSeen : LocalDateTime.now().minusDays(1);
+                }
+        ))
                 : rawLastSeenByUsername;
 
         Map<Long, ChatResponse> responsesByChatId = chats.stream().map(chat -> {
@@ -537,11 +543,12 @@ public class ChatService {
 
         chat.setDirectStatus("ACCEPTED");
         chatRepository.save(chat);
+        List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
 
         TransactionUtils.afterCommit(() -> {
             // Move from requests -> chats for the recipient, update chats for requester.
             notifyRequestsUpdated(username, chatId, "request_accepted");
-            participantRepository.findDistinctUsernamesByChatId(chatId).forEach(u ->
+            participantUsernames.forEach(u ->
                     notifyChatListUpdated(u, chatId, "request_accepted")
             );
         });
@@ -565,10 +572,11 @@ public class ChatService {
 
         chat.setDirectStatus("DECLINED");
         chatRepository.save(chat);
+        List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
 
         TransactionUtils.afterCommit(() -> {
             notifyRequestsUpdated(username, chatId, "request_declined");
-            participantRepository.findDistinctUsernamesByChatId(chatId).forEach(u ->
+            participantUsernames.forEach(u ->
                     notifyChatListUpdated(u, chatId, "request_declined")
             );
         });
@@ -615,10 +623,11 @@ public class ChatService {
                 .map(u -> new ChatParticipant(chatId, u.getId(), GroupRole.MEMBER))
                 .toList();
         participantRepository.saveAll(added);
+        List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
 
         TransactionUtils.afterCommit(() -> {
             notifyChatListUpdated(username, chatId, "group_participants_invited");
-            participantRepository.findDistinctUsernamesByChatId(chatId).forEach(u ->
+            participantUsernames.forEach(u ->
                     notifyChatListUpdated(u, chatId, "group_participants_invited"));
         });
 
@@ -648,9 +657,10 @@ public class ChatService {
             chat.setBio(bio.isBlank() ? null : bio);
         }
         chatRepository.save(chat);
+        List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
 
         TransactionUtils.afterCommit(() ->
-                participantRepository.findDistinctUsernamesByChatId(chatId).forEach(u ->
+                participantUsernames.forEach(u ->
                         notifyChatListUpdated(u, chatId, "group_settings_updated")));
 
         return getChatForUser(username, chatId);
@@ -661,6 +671,7 @@ public class ChatService {
         User actor = userRepository.findByUsername(username).orElseThrow(() -> new ChatException("User not found"));
         requireActiveGroup(chatId);
 
+        participantRepository.findByChatIdForUpdate(chatId);
         ChatParticipant actorParticipant = requireParticipantEntity(chatId, actor.getId());
         ChatParticipant targetParticipant = requireParticipantEntity(chatId, targetUserId);
         GroupRole targetRole = parseRole(request.role());
@@ -672,9 +683,10 @@ public class ChatService {
         }
         targetParticipant.setGroupRole(targetRole);
         participantRepository.save(targetParticipant);
+        List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
 
         TransactionUtils.afterCommit(() ->
-                participantRepository.findDistinctUsernamesByChatId(chatId).forEach(u ->
+                participantUsernames.forEach(u ->
                         notifyChatListUpdated(u, chatId, "group_role_updated")));
 
         return getChatForUser(username, chatId);
@@ -699,9 +711,10 @@ public class ChatService {
             chat.setWhoCanInvite(parsePolicy(request.whoCanInvite(), false).name());
         }
         chatRepository.save(chat);
+        List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
 
         TransactionUtils.afterCommit(() ->
-                participantRepository.findDistinctUsernamesByChatId(chatId).forEach(u ->
+                participantUsernames.forEach(u ->
                         notifyChatListUpdated(u, chatId, "group_permissions_updated")));
 
         return getChatForUser(username, chatId);
@@ -717,9 +730,10 @@ public class ChatService {
         validateCanModerate(actorParticipant, targetParticipant, actor.getId(), "remove participants");
 
         participantRepository.delete(targetParticipant);
+        List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
         TransactionUtils.afterCommit(() -> {
             notifyChatListUpdated(username, chatId, "group_participant_removed");
-            participantRepository.findDistinctUsernamesByChatId(chatId).forEach(u ->
+            participantUsernames.forEach(u ->
                     notifyChatListUpdated(u, chatId, "group_participant_removed"));
         });
     }
@@ -734,9 +748,10 @@ public class ChatService {
         }
         chat.setDeletedAt(LocalDateTime.now());
         chatRepository.save(chat);
+        List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
 
         TransactionUtils.afterCommit(() ->
-                participantRepository.findDistinctUsernamesByChatId(chatId).forEach(u ->
+                participantUsernames.forEach(u ->
                         notifyChatListUpdated(u, chatId, "group_archived")));
     }
 
@@ -891,9 +906,10 @@ public class ChatService {
 
         targetParticipant.setMutedUntil(LocalDateTime.now().plusMinutes(minutes));
         participantRepository.save(targetParticipant);
+        List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
 
         TransactionUtils.afterCommit(() ->
-                participantRepository.findDistinctUsernamesByChatId(chatId).forEach(u ->
+                participantUsernames.forEach(u ->
                         notifyChatListUpdated(u, chatId, "group_participant_muted")));
         return getChatForUser(username, chatId);
     }
@@ -908,8 +924,9 @@ public class ChatService {
 
         targetParticipant.setMutedUntil(null);
         participantRepository.save(targetParticipant);
+        List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
         TransactionUtils.afterCommit(() ->
-                participantRepository.findDistinctUsernamesByChatId(chatId).forEach(u ->
+                participantUsernames.forEach(u ->
                         notifyChatListUpdated(u, chatId, "group_participant_unmuted")));
         return getChatForUser(username, chatId);
     }
@@ -927,8 +944,9 @@ public class ChatService {
         targetParticipant.setBanReason(normalizeReason(reason));
         targetParticipant.setMutedUntil(null);
         participantRepository.save(targetParticipant);
+        List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
         TransactionUtils.afterCommit(() ->
-                participantRepository.findDistinctUsernamesByChatId(chatId).forEach(u ->
+                participantUsernames.forEach(u ->
                         notifyChatListUpdated(u, chatId, "group_participant_banned")));
         return getChatForUser(username, chatId);
     }
@@ -945,8 +963,9 @@ public class ChatService {
         targetParticipant.setBannedBy(null);
         targetParticipant.setBanReason(null);
         participantRepository.save(targetParticipant);
+        List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
         TransactionUtils.afterCommit(() ->
-                participantRepository.findDistinctUsernamesByChatId(chatId).forEach(u ->
+                participantUsernames.forEach(u ->
                         notifyChatListUpdated(u, chatId, "group_participant_unbanned")));
         return getChatForUser(username, chatId);
     }
