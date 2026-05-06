@@ -547,7 +547,13 @@ public class MessageService {
     private void fanoutCreatedEvent(Message message, Map<String, MessageEnvelope> byDevice) {
         byDevice.forEach((deviceId, envelope) -> messagingTemplate.convertAndSend(
                 "/topic/devices/" + deviceId + "/chats/" + message.getChatId(),
-                toDeviceEvent("MESSAGE_CREATED", message, envelope, envelope.getTargetUserId())
+                toDeviceEvent(
+                        "MESSAGE_CREATED",
+                        message,
+                        envelope,
+                        Map.of(),
+                        Set.of()
+                )
         ));
     }
 
@@ -626,6 +632,22 @@ public class MessageService {
     }
 
     private DeviceMessageEventResponse toDeviceEvent(String type, Message message, MessageEnvelope envelope, Long viewerUserId) {
+        return toDeviceEvent(
+                type,
+                message,
+                envelope,
+                reactionSummary(message.getId()),
+                myReactions(message.getId(), viewerUserId)
+        );
+    }
+
+    private DeviceMessageEventResponse toDeviceEvent(
+            String type,
+            Message message,
+            MessageEnvelope envelope,
+            Map<String, Long> reactions,
+            Set<String> myReactions
+    ) {
         return new DeviceMessageEventResponse(
                 type,
                 message.getId(),
@@ -648,8 +670,8 @@ public class MessageService {
                         envelope.getSignedPreKeyId(),
                         envelope.getOneTimePreKeyId(),
                         envelope.getMessageIndex()),
-                reactionSummary(message.getId()),
-                myReactions(message.getId(), viewerUserId)
+                reactions,
+                myReactions
         );
     }
 

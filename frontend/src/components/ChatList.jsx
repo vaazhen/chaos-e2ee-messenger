@@ -1,13 +1,6 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import Ava from "./Ava";
-
-const FILTERS = [
-  { key: "all",    label: "Все" },
-  { key: "direct", label: "Личные" },
-  { key: "group",  label: "Группы" },
-  { key: "saved",  label: "Избранное" },
-  { key: "unread", label: "Непрочитанные" },
-];
+import { truncateChatPreview } from "../helpers";
 
 function chatActivityMs(chat) {
   const raw =
@@ -26,6 +19,7 @@ function chatActivityMs(chat) {
 export default function ChatList({
   me,
   chats = [],
+  requests = [],
   activeId,
   search = "",
   loadingChats,
@@ -36,16 +30,54 @@ export default function ChatList({
   onNewChat,
   onOpenНастройки,
   onMarkAllRead,
+  onDeleteChat,
+  onDeleteChatEveryone,
+  onToggleMuteChat,
+  onToggleArchiveChat,
+  sidebarCompact = false,
+  sidebarResizeEnabled = false,
+  onSidebarResizePointerDown,
+  onSidebarResizePointerMove,
+  onSidebarResizePointerUp,
+  onSidebarResizePointerCancel,
+  onSidebarResizeLostCapture,
+  l = (ru) => ru,
 }) {
   const [filterOpen, setFilterOpen] = useState(false);
   const [searchFocused, setПоискFocused] = useState(false);
+  const [chatMenu, setChatMenu] = useState(null);
+  const [showArchived, setShowArchived] = useState(false);
 
-  const myName = [me?.firstName, me?.lastName].filter(Boolean).join(" ") || me?.username || "Я";
+  const filters = useMemo(
+    () => [
+      { key: "all", label: l("Все", "All") },
+      { key: "direct", label: l("Личные", "Direct") },
+      { key: "group", label: l("Группы", "Groups") },
+      { key: "saved", label: l("Избранное", "Saved Messages") },
+      { key: "unread", label: l("Непрочитанные", "Unread") },
+    ],
+    [l]
+  );
+
+  const myName = [me?.firstName, me?.lastName].filter(Boolean).join(" ") || me?.username || l("Я", "Me");
+
+  const chatDisplayName = (chat) => {
+    if (chat?.type === "saved") return l("Избранное", "Saved Messages");
+    if (
+      chat?.type === "group" &&
+      (!chat.name || chat.name === "Группа" || chat.name === "Group")
+    ) {
+      return l("Группа", "Group");
+    }
+    return chat?.name || "";
+  };
 
   const filtered = useMemo(() => {
     const q = String(search || "").trim().toLowerCase();
 
-    return chats.filter(chat => {
+    const source = chats.filter(c => showArchived ? c.archived : !c.archived);
+
+    return source.filter(chat => {
       if (!chat?.id) return false;
 
       if (filter === "direct" && chat.type !== "direct") return false;
@@ -66,9 +98,19 @@ export default function ChatList({
 
       return Number(b.id || 0) - Number(a.id || 0);
     });
-  }, [chats, search, filter]);
+  }, [chats, search, filter, showArchived]);
 
-  const currentFilter = FILTERS.find(f => f.key === filter)?.label || "Все";
+  const archivedCount = useMemo(
+    () => chats.filter(c => c.archived).length,
+    [chats]
+  );
+  const requestsCount = useMemo(
+    () => (requests || []).filter(r => r?.isRequest).length,
+    [requests]
+  );
+  const currentFilter = showArchived
+    ? l("Архив", "Archive")
+    : (filters.find((f) => f.key === filter)?.label || filters[0].label);
 
   const selectChat = (chatId) => {
     if (!chatId) return;
@@ -76,12 +118,22 @@ export default function ChatList({
     onSelectChat?.(chatId);
   };
 
+  useEffect(() => {
+    if (sidebarCompact) {
+      setFilterOpen(false);
+      setChatMenu(null);
+    }
+  }, [sidebarCompact]);
+
   return (
-    <aside className="home-screen" onClick={() => setFilterOpen(false)}>
+    <aside
+      className={`home-screen${sidebarCompact ? " home-screen--compact" : ""}`}
+      onClick={() => { setFilterOpen(false); setChatMenu(null); }}
+    >
       <style>{PLUS_BUTTON_CSS}</style>
       <div className="ios-status-spacer" />
 
-      <header className="home-topbar">
+      <header className={`home-topbar${sidebarCompact ? " home-topbar--compact" : ""}`}>
         <button
           type="button"
           className="avatar-button"
@@ -90,30 +142,34 @@ export default function ChatList({
             setFilterOpen(false);
             onOpenНастройки?.();
           }}
-          title="Настройки"
+          title={l("Настройки", "Settings")}
         >
           <Ava user={me} name={myName} className="avatar-face" />
         </button>
 
-        <div className="screen-title">Чаты</div>
+        {!sidebarCompact && <div className="screen-title">{l("Чаты", "Chats")}</div>}
 
-        <button
-          type="button"
-          className={`round-action filter-top-btn${filterOpen ? " active" : ""}`}
-          onClick={(e) => {
-            e.stopPropagation();
-            setFilterOpen(v => !v);
-          }}
-          title="Фильтры"
-        >
-          ≡
-        </button>
+        <div className="home-topbar-end">
+          {!sidebarCompact && (
+            <button
+              type="button"
+              className={`round-action filter-top-btn${filterOpen ? " active" : ""}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                setFilterOpen(v => !v);
+              }}
+              title={l("Фильтры", "Filters")}
+            >
+              ≡
+            </button>
+          )}
+        </div>
 
-        {filterOpen && (
+        {!sidebarCompact && filterOpen && (
           <div className="filter-popover" onClick={e => e.stopPropagation()}>
-            <div className="filter-title">Показать</div>
+            <div className="filter-title">{l("Показать", "Show")}</div>
 
-            {FILTERS.map(item => (
+            {filters.map(item => (
               <button
                 key={item.key}
                 type="button"
@@ -139,17 +195,40 @@ export default function ChatList({
               }}
             >
               <span className="filter-check">✓</span>
-              <span>Прочитать все</span>
+              <span>{l("Прочитать все", "Mark all read")}</span>
             </button>
           </div>
         )}
       </header>
 
-      <main className="home-content scroll">
+      <main className={`home-content scroll${sidebarCompact ? " home-content--compact" : ""}`}>
+        {!sidebarCompact && (
         <div className="list-hint">
           <span>{currentFilter}</span>
-          {search.trim() && <b>поиск: {search.trim()}</b>}
+          <button
+            type="button"
+            className={`archive-toggle-btn${showArchived ? " active" : ""}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowArchived(v => !v);
+              setChatMenu(null);
+            }}
+            title={
+              showArchived
+                ? l("Показать обычные чаты", "Show active chats")
+                : l("Открыть архив", "Open archive")
+            }
+          >
+            {l("Архив", "Archive")}
+            {archivedCount > 0 ? ` (${archivedCount})` : ""}
+          </button>
+          {search.trim() && (
+            <b>
+              {l("поиск:", "search:")} {search.trim()}
+            </b>
+          )}
         </div>
+        )}
 
         {loadingChats ? (
           <div className="product-empty">
@@ -158,47 +237,128 @@ export default function ChatList({
         ) : filtered.length === 0 ? (
           <div className="product-empty">
             <div className="product-empty-icon">◯</div>
-            <div className="product-empty-title">Нет чатов</div>
-            <div className="product-empty-sub">Создайте переписку или выберите другой фильтр.</div>
+            <div className="product-empty-title">{l("Нет чатов", "No chats")}</div>
+            <div className="product-empty-sub">
+              {l("Создайте переписку или выберите другой фильтр.", "Create a conversation or choose another filter.")}
+            </div>
           </div>
         ) : (
-          <div className="conversation-list">
-            {filtered.map(chat => (
+          <div className={`conversation-list${sidebarCompact ? " conversation-list--compact" : ""}`}>
+            {filtered.map(chat => {
+              const hasPreview = Boolean(chat.preview || chat.lastMessageId);
+              const isEncrypted = !chat.preview && chat.lastMessageId;
+              const basePreview =
+                chat.preview ||
+                (isEncrypted
+                  ? l("Зашифрованное сообщение", "Encrypted message")
+                  : l("Сообщений пока нет", "No messages yet"));
+              const prefix = chat.lastOut && chat.preview ? l("Вы: ", "You: ") : "";
+              const fullPreview = truncateChatPreview(prefix + basePreview);
+
+              return (
               <button
                 key={chat.id}
                 type="button"
                 className={`conversation-item${Number(activeId) === Number(chat.id) ? " active" : ""}`}
+                title={sidebarCompact ? chatDisplayName(chat) : undefined}
                 onClick={(e) => {
                   e.stopPropagation();
                   selectChat(chat.id);
                 }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setChatMenu({
+                    id: chat.id,
+                    muted: Boolean(chat.muted),
+                    archived: Boolean(chat.archived),
+                    x: Math.min(e.clientX, window.innerWidth - 220),
+                    y: Math.min(e.clientY, window.innerHeight - 220),
+                  });
+                }}
               >
-                <Ava name={chat.name} colorIdx={chat.colorIdx} online={chat.online} avatarUrl={chat.avatarUrl} />
+                <span className="conversation-ava-wrap">
+                  <Ava
+                    name={chatDisplayName(chat)}
+                    colorIdx={chat.colorIdx}
+                    size="md"
+                    online={chat.online}
+                    avatarUrl={chat.avatarUrl}
+                  />
+                  {chat.unread > 0 && (
+                    <span className="conversation-unread-floating">
+                      {chat.unread > 99 ? "99+" : chat.unread}
+                    </span>
+                  )}
+                </span>
 
                 <div className="conversation-main">
                   <div className="conversation-line">
-                    <span className="conversation-name trim">{chat.name}</span>
-                    <span className="conversation-time">{chat.time}</span>
+                    <span className="conversation-name trim">
+                      {chatDisplayName(chat)}
+                      {chat.muted && (
+                        <span
+                          className="mute-icon-inline"
+                          aria-label={l("Без звука", "Muted")}
+                          title={l("Без звука", "Muted")}
+                        >
+                          <svg viewBox="0 0 24 24">
+                            <path d="M5 10v4h4l5 4V6l-5 4H5z" />
+                            <path d="M4 4l16 16" />
+                          </svg>
+                        </span>
+                      )}
+                    </span>
+                    <div className="conversation-tools">
+                      <span className="conversation-time">{chat.time}</span>
+                    </div>
                   </div>
 
                   <div className="conversation-line">
                     <span className="conversation-preview trim">
-                      {chat.lastOut && chat.preview ? "Вы: " : ""}
-                      {chat.preview || (chat.lastMessageId ? "Зашифрованное сообщение" : "Сообщений пока нет")}
+                      {fullPreview}
                     </span>
 
-                    {chat.type === "saved" && <span className="soft-chip">★</span>}
                     {chat.type === "group" && <span className="soft-chip">{chat.members}</span>}
                     {chat.unread > 0 && <span className="badge">{chat.unread}</span>}
                   </div>
+
                 </div>
               </button>
-            ))}
+            );})}
           </div>
         )}
       </main>
 
-      <footer className={`floating-searchbar restored${searchFocused ? " focused" : ""}`} onClick={e => e.stopPropagation()}>
+      {chatMenu && (
+        <div
+          className="chat-item-menu"
+          style={{ left: chatMenu.x, top: chatMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button type="button" className="ctx-item" onClick={() => { onDeleteChat?.(chatMenu.id); setChatMenu(null); }}>
+            <span className="ci">⌫</span>
+            {l("Удалить у себя", "Delete for me")}
+          </button>
+          <button type="button" className="ctx-item" onClick={() => { onDeleteChatEveryone?.(chatMenu.id); setChatMenu(null); }}>
+            <span className="ci">⨯</span>
+            {l("Удалить у всех", "Delete for everyone")}
+          </button>
+          <button type="button" className="ctx-item" onClick={() => { onToggleMuteChat?.(chatMenu.id); setChatMenu(null); }}>
+            <span className="ci">◔</span>
+            {chatMenu.muted ? l("Включить звук", "Unmute") : l("Выключить звук", "Mute")}
+          </button>
+          <button type="button" className="ctx-item" onClick={() => { onToggleArchiveChat?.(chatMenu.id); setChatMenu(null); }}>
+            <span className="ci">▤</span>
+            {chatMenu.archived ? l("Убрать из архива", "Remove from archive") : l("В архив", "Archive")}
+          </button>
+        </div>
+      )}
+
+      <footer
+        className={`floating-searchbar restored${searchFocused ? " focused" : ""}${sidebarCompact ? " floating-searchbar--compact" : ""}`}
+        onClick={e => e.stopPropagation()}
+      >
         <label className="bottom-search restored-search">
           <span>⌕</span>
           <input
@@ -206,7 +366,7 @@ export default function ChatList({
             onChange={e => onПоиск(e.target.value)}
             onFocus={() => setПоискFocused(true)}
             onBlur={() => setПоискFocused(false)}
-            placeholder="Поиск"
+            placeholder={l("Поиск", "Search")}
           />
         </label>
 
@@ -214,11 +374,26 @@ export default function ChatList({
           type="button"
           className="bottom-round new-chat-action-btn"
           onClick={onNewChat}
-          title="Новый чат"
+          title={l("Новый чат", "New chat")}
         >
           <span className="new-chat-plus-icon" aria-hidden="true" />
+          {requestsCount > 0 && <span className="badge plus-req-badge">{requestsCount}</span>}
         </button>
       </footer>
+
+      {sidebarResizeEnabled && onSidebarResizePointerDown && (
+        <div
+          className="sidebar-resize-handle"
+          onPointerDown={onSidebarResizePointerDown}
+          onPointerMove={onSidebarResizePointerMove}
+          onPointerUp={onSidebarResizePointerUp}
+          onPointerCancel={onSidebarResizePointerCancel}
+          onLostPointerCapture={onSidebarResizeLostCapture}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={l("Изменить ширину списка чатов", "Resize chat list width")}
+        />
+      )}
     </aside>
   );
 }
@@ -229,7 +404,27 @@ const PLUS_BUTTON_CSS = `
   align-items:center;
 }
 
+.floating-searchbar.restored.floating-searchbar--compact{
+  grid-template-columns:1fr!important;
+  justify-items:center;
+  left:10px;
+  right:16px;
+}
+.floating-searchbar.restored.floating-searchbar--compact .restored-search{
+  display:none!important;
+}
+.floating-searchbar.restored.floating-searchbar--compact .bottom-round.new-chat-action-btn{
+  width:52px;
+  height:52px;
+  min-width:52px;
+}
+
+.floating-searchbar.restored.floating-searchbar--compact .bottom-round.new-chat-action-btn .plus-req-badge{
+  right:0;
+}
+
 .bottom-round.new-chat-action-btn{
+  position:relative;
   width:56px;
   height:56px;
   min-width:56px;
@@ -239,6 +434,15 @@ const PLUS_BUTTON_CSS = `
   justify-content:center;
   padding:0;
   line-height:1;
+}
+.plus-req-badge{
+  position:absolute;
+  top:-5px;
+  right:-5px;
+  min-width:16px;
+  height:16px;
+  padding:0 4px;
+  font-size:10px;
 }
 
 .new-chat-plus-icon{

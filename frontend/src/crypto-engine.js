@@ -551,7 +551,17 @@
             let isNewSession = false;
 
             if (!session) {
-                const created = await createInitiatorSessionWrapped(localBundle, targetDevice);
+                // Reserve one-time prekey only when we have no existing session with the target device.
+                const reserved = await api(
+                    '/api/crypto/chats/' + encodeURIComponent(chatId) + '/devices/' + encodeURIComponent(targetDevice.deviceId) + '/reserve-prekey',
+                    { method: 'POST' }
+                );
+                const created = await createInitiatorSessionWrapped(localBundle, {
+                    ...targetDevice,
+                    // Ensure we use the reserved one-time prekey (if any) for X3DH.
+                    signedPreKey: reserved?.signedPreKey || targetDevice.signedPreKey,
+                    oneTimePreKey: reserved?.oneTimePreKey || null,
+                });
                 session = created.session;
                 ephemeralPublicKey = created.ephemeralPublicKey;
                 isNewSession = true;

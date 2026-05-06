@@ -15,6 +15,7 @@ import ru.messenger.chaosmessenger.user.repository.UserRepository;
 @Service
 @RequiredArgsConstructor
 public class CurrentDeviceService {
+    private static final String CURRENT_DEVICE_REQUEST_ATTR = CurrentDeviceService.class.getName() + ".CURRENT_DEVICE";
 
     private final HttpServletRequest request;
     private final UserDeviceRepository userDeviceRepository;
@@ -22,6 +23,11 @@ public class CurrentDeviceService {
     private final UserIdentityService userIdentityService;
 
     public UserDevice requireCurrentDevice() {
+        Object cached = request.getAttribute(CURRENT_DEVICE_REQUEST_ATTR);
+        if (cached instanceof UserDevice device) {
+            return device;
+        }
+
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
         if (authentication == null || authentication.getName() == null) {
@@ -37,7 +43,9 @@ public class CurrentDeviceService {
 
         User user = userIdentityService.require(username);
 
-        return userDeviceRepository.findByUserIdAndDeviceIdAndActiveTrue(user.getId(), deviceId)
+        UserDevice device = userDeviceRepository.findByUserIdAndDeviceIdAndActiveTrue(user.getId(), deviceId)
                 .orElseThrow(() -> new AuthException("Active device not found for current user"));
+        request.setAttribute(CURRENT_DEVICE_REQUEST_ATTR, device);
+        return device;
     }
 }

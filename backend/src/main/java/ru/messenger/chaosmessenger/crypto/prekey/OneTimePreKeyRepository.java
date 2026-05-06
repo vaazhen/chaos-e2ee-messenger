@@ -49,4 +49,20 @@ public interface OneTimePreKeyRepository extends JpaRepository<OneTimePreKey, Lo
            order by o.createdAt asc
            """)
     List<OneTimePreKey> findAvailableForUpdate(@Param("deviceId") Long deviceId);
+
+    /**
+     * Reserve a single available one-time prekey for a device.
+     * <p>
+     * Uses {@code FOR UPDATE SKIP LOCKED} to avoid locking the entire key pool under contention.
+     */
+    @Query(value = """
+            select *
+            from one_time_prekeys
+            where device_db_id = :deviceId
+              and used_at is null
+            order by created_at asc, id asc
+            limit 1
+            for update skip locked
+            """, nativeQuery = true)
+    Optional<OneTimePreKey> findOneAvailableForUpdate(@Param("deviceId") Long deviceId);
 }
