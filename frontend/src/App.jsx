@@ -84,8 +84,21 @@ export default function ChaosMessenger() {
   const auth      = useAuth();
   const { lang, t, loadTranslations, switchLang } = useI18n();
   useUiTranslator(lang);
-  const chatStore = useChats(auth.me?.id);
+  const chatStore = useChats(auth.me?.id, lang);
   const msgStore  = useMessages(auth.me?.id);
+
+  const loadChatsForI18n = chatStore.loadChats;
+  const loadRequestsForI18n = chatStore.loadRequests;
+  const langReloadSkipRef = useRef(false);
+  useEffect(() => {
+    if (!langReloadSkipRef.current) {
+      langReloadSkipRef.current = true;
+      return;
+    }
+    if (auth.screen !== "app" || auth.me?.id == null) return;
+    void loadChatsForI18n(auth.me.id);
+    void loadRequestsForI18n(auth.me.id);
+  }, [lang, auth.screen, auth.me?.id, loadChatsForI18n, loadRequestsForI18n]);
 
   const [replyTo,        setReplyTo]        = useState(null);
   const [ctx,            setCtx]            = useState(null);
@@ -811,7 +824,9 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
             chatStore.setChats(prev => prev.map(c => ({ ...c, unread: 0 })));
           }}
           onDeleteChat={async (chatId) => {
-            const ok = window.confirm("Удалить переписку только у себя?");
+            const ok = window.confirm(
+              l("Удалить переписку только у себя?", "Delete this chat only for you?")
+            );
             if (!ok) return;
             chatStore.deleteChatForMe(chatId);
             if (String(chatStore.activeId) === String(chatId)) {
@@ -819,7 +834,12 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
             }
           }}
           onDeleteChatEveryone={async () => {
-            window.alert("Удаление чата у всех пока не реализовано на сервере.");
+            window.alert(
+              l(
+                "Удаление чата у всех пока не реализовано на сервере.",
+                "Deleting the chat for everyone is not implemented on the server yet."
+              )
+            );
           }}
           onToggleMuteChat={(chatId) => {
             toggleMuted(auth.me?.id, chatId);
@@ -839,20 +859,22 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
           onSidebarResizePointerUp={onSidebarResizePointerUp}
           onSidebarResizePointerCancel={onSidebarResizePointerUp}
           onSidebarResizeLostCapture={onSidebarResizeLostCapture}
-          t={t}
+          l={l}
         />
 
         <section className={`chat-view chat-bg-${chatBg}`}>
           {!activeChat ? (
             <div className="product-empty">
               <div className="product-empty-icon">◯</div>
-              <div className="product-empty-title">Нет сообщений</div>
-              <div className="product-empty-sub">Создайте новую переписку.</div>
+              <div className="product-empty-title">{l("Нет сообщений", "No messages")}</div>
+              <div className="product-empty-sub">
+                {l("Создайте новую переписку.", "Start a new conversation.")}
+              </div>
             </div>
           ) : (
             <>
               <div className="product-chat-head">
-                <button className="round-action desktop-hidden" onClick={goBackToList} title="Back">‹</button>
+                <button className="round-action desktop-hidden" onClick={goBackToList} title={l("Назад", "Back")}>‹</button>
                 <button
                   type="button"
                   className="chat-head-user"
@@ -861,7 +883,7 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
                     else setChatInfoOpen(true);
                     setChatSearchOpen(false);
                   }}
-                  title="Profile"
+                  title={l("Профиль", "Profile")}
                 >
                   <Ava name={activeChatName || activeChat.name} colorIdx={activeChat.colorIdx} size="md" online={activeChat.online} avatarUrl={activeChat.avatarUrl} />
                 </button>
@@ -873,7 +895,7 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
                     else setChatInfoOpen(true);
                     setChatSearchOpen(false);
                   }}
-                  title="Profile"
+                  title={l("Профиль", "Profile")}
                 >
                   <div className="head-name">{activeChatName || activeChat.name}</div>
                   <div className={`head-status${activeChat.online ? "" : " off"}`}>
@@ -904,9 +926,9 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
                   <button
                     ref={chatInfoBtnRef}
                     className={`chat-head-btn chat-head-btn--info${chatInfoOpen ? " active" : ""}`}
-                    title="Chat info"
+                    title={l("О чате", "Chat info")}
                     onClick={() => { setChatInfoOpen(v => !v); setChatSearchOpen(false); }}
-                    aria-label="Chat info"
+                    aria-label={l("О чате", "Chat info")}
                   >
                     <svg className="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
                       <circle cx="12" cy="12" r="9" />
@@ -936,21 +958,21 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
                         goToMatch(e.shiftKey ? -1 : 1);
                       }
                     }}
-                    placeholder="Search messages"
+                    placeholder={l("Поиск по сообщениям", "Search messages")}
                     autoFocus
                   />
                   <b>{messageSearch.trim() ? (matchIds.length ? `${matchIndex + 1}/${matchIds.length}` : "0") : ""}</b>
                   <button
                     type="button"
                     className="chat-search-nav"
-                    title="Prev"
+                    title={l("К предыдущему", "Previous")}
                     disabled={!matchIds.length}
                     onClick={() => goToMatch(-1)}
                   >↑</button>
                   <button
                     type="button"
                     className="chat-search-nav"
-                    title="Next"
+                    title={l("К следующему", "Next")}
                     disabled={!matchIds.length}
                     onClick={() => goToMatch(1)}
                   >↓</button>
@@ -986,6 +1008,7 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
               {profileOpen && activeChat?.type === "direct" && (
                 <UserProfileModal
                   me={auth.me}
+                  l={l}
                   chat={{ ...activeChat, name: activeChatName || activeChat.name }}
                   onClose={() => setProfileOpen(false)}
                   onAliasChanged={() => setAliasTick(v => v + 1)}
@@ -1007,21 +1030,10 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
 
               {isRequesterInPendingChat && requesterFirstMsgSent && (
                 <div className="request-wait-banner">
-                  Подождите, пока пользователь примет ваш запрос.
-                </div>
-              )}
-
-              {myGroupMuteUntilMs && (
-                <div className="group-mute-banner" role="status" aria-live="polite">
-                  <span className="group-mute-banner__icon" aria-hidden>
-                    🔇
-                  </span>
-                  <span>
-                    {l(
-                      `Вы в муте в этой группе. Осталось: ${myGroupMuteCountdown || "…"}`,
-                      `You are muted in this group. Time left: ${myGroupMuteCountdown || "…"}`
-                    )}
-                  </span>
+                  {l(
+                    "Подождите, пока пользователь примет ваш запрос.",
+                    "Please wait until the user accepts your request."
+                  )}
                 </div>
               )}
 
@@ -1041,6 +1053,16 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
                   Boolean(myGroupMuteUntilMs)
                 }
                 pendingFirstMessageOnly={isRequesterInPendingChat && !requesterFirstMsgSent}
+                muteInlineNotice={
+                  myGroupMuteUntilMs
+                    ? l(
+                        `Вы в муте в этой группе. Осталось: ${myGroupMuteCountdown || "…"}`,
+                        `You are muted in this group. Time left: ${myGroupMuteCountdown || "…"}`
+                      )
+                    : null
+                }
+                messagePlaceholder={t.message_placeholder}
+                replyPreviewTitle={l("Ответить", "Reply")}
               />
             </>
           )}
@@ -1057,20 +1079,20 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
           <div className="menu-line" />
           {ctx.msg?._out && !ctx.msg?._temp && (ctx.msg?._text || ctx.msg?._img || ctx.msg?._voice) && (
             <button className="ctx-item" onClick={() => beginEdit(ctx.msg)}>
-              <span className="ci">✎</span>Edit
+              <span className="ci">✎</span>{l("Изменить", "Edit")}
             </button>
           )}
           <button className="ctx-item" onClick={() => { setReplyTo(ctx.msg); setCtx(null); }}>
-            <span className="ci">↩</span>Reply
+            <span className="ci">↩</span>{l("Ответить", "Reply")}
           </button>
           {ctx.msg?._text && (
             <button className="ctx-item" onClick={() => { navigator.clipboard?.writeText(ctx.msg._text || ""); setCtx(null); }}>
-              <span className="ci">▣</span>Copy
+              <span className="ci">▣</span>{l("Копировать", "Copy")}
             </button>
           )}
           <div className="menu-line" />
           <button className="ctx-item danger" onClick={() => beginDelete(ctx.msg)}>
-            <span className="ci">♜</span>Delete
+            <span className="ci">♜</span>{l("Удалить", "Delete")}
           </button>
         </div>
       )}
@@ -1079,7 +1101,7 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
         <div className="modal-bg" onClick={() => !editLoading && setEditTarget(null)}>
           <div className="modal small-modal glass-card" onClick={e => e.stopPropagation()}>
             <div className="modal-title">
-              Edit message
+              {l("Изменить сообщение", "Edit message")}
               <button className="modal-close" onClick={() => !editLoading && setEditTarget(null)}>×</button>
             </div>
             <textarea
@@ -1089,12 +1111,22 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
               autoFocus rows={4}
               onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) submitEdit(); }}
             />
-            {editTarget._img && <div className="field-hint">Only the image caption will be changed.</div>}
-            {editTarget._voice && <div className="field-hint">Only the voice caption will be changed.</div>}
+            {editTarget._img && (
+              <div className="field-hint">
+                {l("Будет изменена только подпись к изображению.", "Only the image caption will be changed.")}
+              </div>
+            )}
+            {editTarget._voice && (
+              <div className="field-hint">
+                {l("Будет изменена только подпись к голосовому сообщению.", "Only the voice caption will be changed.")}
+              </div>
+            )}
             <div className="btn-row">
-              <button className="btn-sec" disabled={editLoading} onClick={() => setEditTarget(null)}>Cancel</button>
+              <button className="btn-sec" disabled={editLoading} onClick={() => setEditTarget(null)}>
+                {l("Отмена", "Cancel")}
+              </button>
               <button className="btn-pri" disabled={editLoading || !editText.trim()} onClick={submitEdit}>
-                {editLoading ? "Saving..." : "Save"}
+                {editLoading ? l("Сохраняем...", "Saving...") : l("Сохранить", "Save")}
               </button>
             </div>
           </div>
@@ -1105,16 +1137,24 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
         <div className="modal-bg" onClick={() => setDeleteTarget(null)}>
           <div className="modal small-modal glass-card" onClick={e => e.stopPropagation()}>
             <div className="modal-title">
-              Delete message
+              {l("Удалить сообщение", "Delete message")}
               <button className="modal-close" onClick={() => setDeleteTarget(null)}>×</button>
             </div>
-            <div className="confirm-text">Choose how to delete this message.</div>
+            <div className="confirm-text">
+              {l("Выберите способ удаления.", "Choose how to delete this message.")}
+            </div>
             <div className="delete-actions">
-              <button className="btn-sec" onClick={() => confirmDelete("me")}>Delete for me</button>
+              <button className="btn-sec" onClick={() => confirmDelete("me")}>
+                {l("Удалить у меня", "Delete for me")}
+              </button>
               {deleteTarget._out && !deleteTarget._temp && (
-                <button className="btn-pri danger-pri" onClick={() => confirmDelete("everyone")}>Delete for everyone</button>
+                <button className="btn-pri danger-pri" onClick={() => confirmDelete("everyone")}>
+                  {l("Удалить у всех", "Delete for everyone")}
+                </button>
               )}
-              <button className="btn-sec" onClick={() => setDeleteTarget(null)}>Cancel</button>
+              <button className="btn-sec" onClick={() => setDeleteTarget(null)}>
+                {l("Отмена", "Cancel")}
+              </button>
             </div>
           </div>
         </div>
@@ -1136,6 +1176,7 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
       {showNewChat && (
         <NewChatModal
           me={auth.me}
+          l={l}
           onClose={() => setShowNewChat(false)}
           onCreated={onChatCreated}
           initialTab={newChatInitialTab}

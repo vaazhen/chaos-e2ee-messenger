@@ -57,7 +57,17 @@ function saveRecentEmojis(list) {
   }
 }
 
-export default function MessageInput({ onSend, replyTo, onОтменаОтветить, disabled, onTyping, pendingFirstMessageOnly = false }) {
+export default function MessageInput({
+  onSend,
+  replyTo,
+  onОтменаОтветить,
+  disabled,
+  onTyping,
+  pendingFirstMessageOnly = false,
+  muteInlineNotice = null,
+  messagePlaceholder = "Сообщение...",
+  replyPreviewTitle = "Ответить",
+}) {
   const [text, setText] = useState("");
   const [showEmoji, setShowEmoji] = useState(false);
   const [emojiClosing, setEmojiClosing] = useState(false);
@@ -126,6 +136,14 @@ const typingTimerRef = useRef(null);
     setEmojiClosing(false);
     setShowEmoji(true);
   };
+
+  const groupMuteLocksInput = Boolean(muteInlineNotice) && !recording;
+
+  useEffect(() => {
+    if (!muteInlineNotice) return;
+    setShowEmoji(false);
+    setEmojiClosing(false);
+  }, [muteInlineNotice]);
 
   useEffect(() => {
     if (!showEmoji) return;
@@ -541,7 +559,7 @@ return (
         <div className="reply-prev" onClick={e => e.stopPropagation()}>
           <div style={{ color: "var(--acc)", fontSize: 18 }}>↩</div>
           <div className="reply-prev-inner">
-            <div className="reply-prev-name">Ответить</div>
+            <div className="reply-prev-name">{replyPreviewTitle}</div>
             <div className="reply-prev-txt">{replyPreview(replyTo)}</div>
           </div>
           <button className="modal-close" onClick={onОтменаОтветить}>×</button>
@@ -588,7 +606,7 @@ return (
       )}
 
       <div ref={emojiRootRef} className="input-bar" onClick={e => e.stopPropagation()}>
-        {showEmoji && (
+        {!groupMuteLocksInput && showEmoji && (
           <div className={`emoji-picker${emojiClosing ? " closing" : ""}`} onClick={e => e.stopPropagation()}>
             <div className="emoji-cats">
               {emojiCategories.map((cat) => (
@@ -630,7 +648,10 @@ return (
           </div>
         )}
 
-        <div className={`inp-area${recording ? " recording-inline" : ""}`} onClick={recording ? e => e.stopPropagation() : focusInput}>
+        <div
+          className={`inp-area${recording ? " recording-inline" : ""}${groupMuteLocksInput ? " inp-area--group-muted" : ""}`}
+          onClick={recording ? e => e.stopPropagation() : focusInput}
+        >
           {recording && (
             <>
               <button type="button" className="recording-inline-cancel" onClick={cancelRecording}>×</button>
@@ -646,18 +667,27 @@ return (
               </button>
             </>
           )}
-          <button type="button" className="emoji-trigger" onClick={toggleEmoji}>😊</button>
-          <textarea
-            ref={inpRef}
-            className="msg-inp"
-            rows={1}
-            placeholder="Сообщение..."
-            value={text}
-            onChange={handleTextChange}
-            onKeyDown={handleKey}
-            disabled={disabled}
-          />
-          {!pendingFirstMessageOnly && (
+          {!groupMuteLocksInput && (
+            <button type="button" className="emoji-trigger" onClick={toggleEmoji}>😊</button>
+          )}
+          <div className={`msg-inp-wrap${muteInlineNotice && !recording ? " msg-inp-wrap--mute" : ""}`}>
+            {muteInlineNotice && !recording && (
+              <div className="group-mute-in-inp" role="status" aria-live="polite">
+                <span className="group-mute-in-inp__text">{muteInlineNotice}</span>
+              </div>
+            )}
+            <textarea
+              ref={inpRef}
+              className="msg-inp"
+              rows={1}
+              placeholder={muteInlineNotice && !recording ? "" : messagePlaceholder}
+              value={text}
+              onChange={handleTextChange}
+              onKeyDown={handleKey}
+              disabled={disabled}
+            />
+          </div>
+          {!pendingFirstMessageOnly && !groupMuteLocksInput && (
             <>
               <button className="emoji-trigger" onClick={e => { e.stopPropagation(); fileRef.current?.click(); }}>📎</button>
               <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onFileChange} />
@@ -665,19 +695,21 @@ return (
           )}
         </div>
 
-        <button
-          type="button"
-          className={`send-btn${canQuickRecord ? " voice-ready" : ""}${recording ? " recording" : ""}${recordingLocked ? " locked" : ""}`}
-          onClick={onPrimaryClick}
-          onPointerDown={onPrimaryPointerDown}
-          onPointerMove={onPrimaryPointerMove}
-          onPointerUp={onPrimaryPointerUp}
-          onPointerCancel={pendingFirstMessageOnly ? undefined : cancelRecording}
-          disabled={disabled}
-          title={recordingLocked ? "Send voice" : canQuickRecord ? "Hold to record" : "Send"}
-        >
-          {recordingLocked ? <SendIcon /> : canQuickRecord ? <MicIcon /> : <SendIcon />}
-        </button>
+        {!groupMuteLocksInput && (
+          <button
+            type="button"
+            className={`send-btn${canQuickRecord ? " voice-ready" : ""}${recording ? " recording" : ""}${recordingLocked ? " locked" : ""}`}
+            onClick={onPrimaryClick}
+            onPointerDown={onPrimaryPointerDown}
+            onPointerMove={onPrimaryPointerMove}
+            onPointerUp={onPrimaryPointerUp}
+            onPointerCancel={pendingFirstMessageOnly ? undefined : cancelRecording}
+            disabled={disabled}
+            title={recordingLocked ? "Send voice" : canQuickRecord ? "Hold to record" : "Send"}
+          >
+            {recordingLocked ? <SendIcon /> : canQuickRecord ? <MicIcon /> : <SendIcon />}
+          </button>
+        )}
       </div>
     </>
   );

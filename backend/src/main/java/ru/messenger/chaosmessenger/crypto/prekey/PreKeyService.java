@@ -46,7 +46,7 @@ public class PreKeyService {
         );
     }
 
-    @Transactional
+    @Transactional(readOnly = true)
     public ResolvedChatDevicesResponse resolveChatDevices(String username, Long chatId) {
         User currentUser = userIdentityService.require(username);
 
@@ -67,7 +67,6 @@ public class PreKeyService {
                 : userDeviceRepository.findActiveByUserIdsWithUser(participantUserIds);
 
         Map<Long, SignedPreKey> signedByDeviceId = latestSignedPreKeys(participantDevices);
-        ReadOnlyPreKeys readOnlyPreKeys = loadReadOnlyPreKeys(List.of(currentDevice));
 
         for (UserDevice device : participantDevices) {
             if (!seenDeviceIds.add(device.getDeviceId())) {
@@ -75,16 +74,53 @@ public class PreKeyService {
                 // Skip duplicates to avoid broadcasting the same envelope twice.
                 continue;
             }
-            if (Objects.equals(device.getId(), currentDevice.getId())) {
-                // Include the sender's own device so that sent messages remain
-                // decryptable in the timeline after a page reload.
-                targets.add(toDeviceBundleReadOnly(device, readOnlyPreKeys));
-                continue;
-            }
-            targets.add(toDeviceBundleWithReservedPreKey(device, signedByDeviceId.get(device.getId())));
+            targets.add(toDeviceBundleWithoutOneTimePreKey(device, signedByDeviceId.get(device.getId())));
         }
 
         return new ResolvedChatDevicesResponse(chatId, username, currentDevice.getDeviceId(), targets);
+    }
+
+    /**
+     * Reserve a one-time prekey for a specific target device in a chat.
+     * <p>
+     * This endpoint must be used only when the client has no session with the target device.
+     * It performs membership checks to prevent burning prekeys for arbitrary devices.
+     */
+    @Transactional
+    public DeviceBundleDto reserveChatDeviceOneTimePreKey(String username, Long chatId, String targetDeviceId) {
+        if (targetDeviceId == null || targetDeviceId.isBlank()) {
+            throw new CryptoException("targetDeviceId is required");
+        }
+
+        User currentUser = userIdentityService.require(username);
+        UserDevice currentDevice = currentDeviceService.requireCurrentDevice();
+
+        if (!chatParticipantRepository.existsByChatIdAndUserId(chatId, currentUser.getId())) {
+            throw new ChatException("Chat not found");
+        }
+
+        UserDevice targetDevice = userDeviceRepository.findByDeviceIdAndActiveTrueWithUser(targetDeviceId)
+                .orElseThrow(() -> new CryptoException("Target device not found"));
+
+        if (Objects.equals(targetDevice.getDeviceId(), currentDevice.getDeviceId())) {
+            throw new CryptoException("Cannot reserve prekey for the current device");
+        }
+
+        // Ensure the target device belongs to a participant of this chat.
+        if (!chatParticipantRepository.existsByChatIdAndUserId(chatId, targetDevice.getUser().getId())) {
+            throw new ChatException("Chat not found");
+        }
+
+        SignedPreKey signedPreKey = latestSignedPreKeys(List.of(targetDevice)).get(targetDevice.getId());
+
+        OneTimePreKey oneTimePreKey = oneTimePreKeyRepository.findOneAvailableForUpdate(targetDevice.getId())
+                .orElse(null);
+        if (oneTimePreKey != null && oneTimePreKey.getUsedAt() == null) {
+            oneTimePreKey.setUsedAt(LocalDateTime.now());
+            oneTimePreKeyRepository.save(oneTimePreKey);
+        }
+
+        return buildDto(targetDevice, signedPreKey, oneTimePreKey);
     }
 
     private ReadOnlyPreKeys loadReadOnlyPreKeys(Collection<UserDevice> devices) {
@@ -153,9 +189,17 @@ public class PreKeyService {
         );
     }
 
+    /**
+     * IMPORTANT: read-only resolve MUST NOT return one-time prekeys.
+     * Otherwise clients could reuse a "one-time" prekey multiple times.
+     * One-time prekeys should only be issued via an explicit reserve endpoint.
+     */
+    private DeviceBundleDto toDeviceBundleWithoutOneTimePreKey(UserDevice device, SignedPreKey signedPreKey) {
+        return buildDto(device, signedPreKey, null);
+    }
+
     private DeviceBundleDto toDeviceBundleWithReservedPreKey(UserDevice device, SignedPreKey signedPreKey) {
-        OneTimePreKey oneTimePreKey =
-                oneTimePreKeyRepository.findAvailableForUpdate(device.getId()).stream().findFirst().orElse(null);
+        OneTimePreKey oneTimePreKey = oneTimePreKeyRepository.findOneAvailableForUpdate(device.getId()).orElse(null);
 
         if (oneTimePreKey != null && oneTimePreKey.getUsedAt() == null) {
             oneTimePreKey.setUsedAt(LocalDateTime.now());

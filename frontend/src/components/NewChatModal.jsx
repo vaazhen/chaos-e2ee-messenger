@@ -12,6 +12,7 @@ export default function NewChatModal({
   loadingRequests = false,
   onAcceptRequest,
   onDeclineRequest,
+  l = (ru) => ru,
 }) {
   const [mode, setMode] = useState(initialTab === "requests" ? "requests" : "direct");
   const [query, setQuery] = useState("");
@@ -83,7 +84,7 @@ export default function NewChatModal({
         );
       } catch (e) {
         if (!cancelled) {
-          setHint(e.message || "Не удалось выполнить поиск");
+          setHint(e.message || l("Не удалось выполнить поиск.", "Search failed."));
           setResults([]);
         }
       } finally {
@@ -117,10 +118,10 @@ export default function NewChatModal({
 
     try {
       const res = await api.createSaved();
-      if (!res?.chatId) throw new Error("Backend не вернул chatId");
+      if (!res?.chatId) throw new Error(l("Сервер не вернул chatId.", "Backend did not return chatId."));
       onCreated?.(res.chatId);
     } catch (e) {
-      setHint(e.message || "Не удалось открыть Избранное");
+      setHint(e.message || l("Не удалось открыть Избранное.", "Could not open Saved Messages."));
     } finally {
       setLoading(false);
     }
@@ -134,10 +135,10 @@ export default function NewChatModal({
 
     try {
       const res = await api.createDirect(username);
-      if (!res?.chatId) throw new Error("Backend не вернул chatId");
+      if (!res?.chatId) throw new Error(l("Сервер не вернул chatId.", "Backend did not return chatId."));
       onCreated?.(res.chatId);
     } catch (e) {
-      setHint(e.message || "Не удалось создать чат");
+      setHint(e.message || l("Не удалось создать чат.", "Could not create chat."));
     } finally {
       setLoading(false);
     }
@@ -159,10 +160,10 @@ export default function NewChatModal({
 
     try {
       const res = await api.createGroup(groupName.trim(), selected.map(u => u.id));
-      if (!res?.chatId) throw new Error("Backend не вернул chatId");
+      if (!res?.chatId) throw new Error(l("Сервер не вернул chatId.", "Backend did not return chatId."));
       onCreated?.(res.chatId);
     } catch (e) {
-      setHint(e.message || "Не удалось создать группу");
+      setHint(e.message || l("Не удалось создать группу.", "Could not create group."));
     } finally {
       setLoading(false);
     }
@@ -187,7 +188,7 @@ export default function NewChatModal({
 
         <header className="new-chat-drawer-head">
           <button type="button" className="new-chat-round-close" onClick={closeModal}>×</button>
-          <div className="new-chat-drawer-title">Новый чат</div>
+          <div className="new-chat-drawer-title">{l("Новый чат", "New chat")}</div>
           <div className="new-chat-head-spacer" />
         </header>
 
@@ -196,7 +197,7 @@ export default function NewChatModal({
           <input
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Поиск по username"
+            placeholder={l("Поиск по username", "Search by username")}
             autoFocus
           />
         </div>
@@ -207,7 +208,7 @@ export default function NewChatModal({
             className={mode === "direct" ? "active" : ""}
             onClick={() => setMode("direct")}
           >
-            Личные
+            {l("Личные", "Direct")}
           </button>
 
           <button
@@ -215,14 +216,14 @@ export default function NewChatModal({
             className={mode === "group" ? "active" : ""}
             onClick={() => setMode("group")}
           >
-            Группа
+            {l("Группа", "Group")}
           </button>
           <button
             type="button"
             className={mode === "requests" ? "active" : ""}
             onClick={() => setMode("requests")}
           >
-            Запросы
+            {l("Запросы", "Requests")}
           </button>
         </div>
 
@@ -234,8 +235,8 @@ export default function NewChatModal({
               <button type="button" className="new-chat-drawer-action" onClick={openSaved} disabled={loading}>
                 <span className="new-chat-drawer-action-icon">★</span>
                 <span className="new-chat-drawer-action-text">
-                  <b>Избранное</b>
-                  <small>Личные зашифрованные заметки и файлы</small>
+                  <b>{l("Избранное", "Saved Messages")}</b>
+                  <small>{l("Личные зашифрованные заметки и файлы", "Personal encrypted notes and files")}</small>
                 </span>
                 <i>›</i>
               </button>
@@ -243,8 +244,10 @@ export default function NewChatModal({
               <button type="button" className="new-chat-drawer-action" onClick={() => setMode("group")}>
                 <span className="new-chat-drawer-action-icon">♙</span>
                 <span className="new-chat-drawer-action-text">
-                  <b>Создать группу</b>
-                  <small>Закрытая переписка с несколькими участниками</small>
+                  <b>{l("Создать группу", "Create group")}</b>
+                  <small>
+                    {l("Закрытая переписка с несколькими участниками", "Private conversation with several members")}
+                  </small>
                 </span>
                 <i>›</i>
               </button>
@@ -253,12 +256,12 @@ export default function NewChatModal({
 
           {mode === "group" && (
             <div className="new-chat-drawer-group-card">
-              <label className="field-label">Название группы</label>
+              <label className="field-label">{l("Название группы", "Group name")}</label>
               <input
                 className="field-inp"
                 value={groupName}
                 onChange={e => setGroupName(e.target.value)}
-                placeholder="Команда, семья, проект..."
+                placeholder={l("Команда, семья, проект...", "Team, family, project...")}
               />
 
               {selected.length > 0 && (
@@ -277,7 +280,7 @@ export default function NewChatModal({
             <>
               <div className="requests-head-actions">
                 <button className="mini-btn" type="button" onClick={() => setSelectReqMode(v => !v)}>
-                  {selectReqMode ? "Отмена" : "Выбрать"}
+                  {selectReqMode ? l("Отмена", "Cancel") : l("Выбрать", "Select")}
                 </button>
                 {selectReqMode && (
                   <button
@@ -292,7 +295,7 @@ export default function NewChatModal({
                       setSelectReqMode(false);
                     }}
                   >
-                    Удалить выбранные
+                    {l("Удалить выбранные", "Delete selected")}
                   </button>
                 )}
               </div>
@@ -313,7 +316,7 @@ export default function NewChatModal({
                   />
                   <span className="new-chat-drawer-user-main">
                     <b>{chat.name}</b>
-                    <small>{chat.preview || "Запрос на переписку"}</small>
+                    <small>{chat.preview || l("Запрос на переписку", "Chat request")}</small>
                   </span>
                   {selectReqMode ? (
                     <label className="req-select">
@@ -330,8 +333,12 @@ export default function NewChatModal({
                     </label>
                   ) : (
                     <div className="conversation-req-actions">
-                      <button className="req-btn accept" type="button" onClick={() => onAcceptRequest?.(chat.id)}>Принять</button>
-                      <button className="req-btn decline" type="button" onClick={() => onDeclineRequest?.(chat.id)}>Удалить</button>
+                      <button className="req-btn accept" type="button" onClick={() => onAcceptRequest?.(chat.id)}>
+                        {l("Принять", "Accept")}
+                      </button>
+                      <button className="req-btn decline" type="button" onClick={() => onDeclineRequest?.(chat.id)}>
+                        {l("Отклонить", "Decline")}
+                      </button>
                     </div>
                   )}
                 </div>
@@ -339,8 +346,13 @@ export default function NewChatModal({
 
               {!loadingRequests && requestItems.length === 0 && (
                 <div className="product-empty mini">
-                  <div className="product-empty-title">Нет запросов</div>
-                  <div className="product-empty-sub">Новые обращения на переписку появятся здесь.</div>
+                  <div className="product-empty-title">{l("Нет запросов", "No requests")}</div>
+                  <div className="product-empty-sub">
+                    {l(
+                      "Новые обращения на переписку появятся здесь.",
+                      "New chat requests will appear here."
+                    )}
+                  </div>
                 </div>
               )}
             </>
@@ -382,28 +394,36 @@ export default function NewChatModal({
 
           {!searching && query.trim().length >= 2 && results.length === 0 && (
             <div className="product-empty mini">
-              <div className="product-empty-title">Ничего не найдено</div>
-              <div className="product-empty-sub">Поиск сейчас работает по username.</div>
+              <div className="product-empty-title">{l("Ничего не найдено", "Nothing found")}</div>
+              <div className="product-empty-sub">
+                {l("Поиск сейчас работает по username.", "Search currently works by username.")}
+              </div>
             </div>
           )}
           {!searching && mode === "group" && query.trim().length < 2 && suggestedUsers.length === 0 && (
             <div className="product-empty mini">
-              <div className="product-empty-title">Нет предложений</div>
-              <div className="product-empty-sub">Введите username для приглашения участников.</div>
+              <div className="product-empty-title">{l("Нет предложений", "No suggestions")}</div>
+              <div className="product-empty-sub">
+                {l("Введите username для приглашения участников.", "Enter a username to invite members.")}
+              </div>
             </div>
           )}
         </div>
 
         {mode === "group" && (
           <div className="new-chat-drawer-bottom">
-            <button type="button" className="btn-sec" onClick={closeModal}>Отмена</button>
+            <button type="button" className="btn-sec" onClick={closeModal}>
+              {l("Отмена", "Cancel")}
+            </button>
             <button
               type="button"
               className="btn-pri"
               onClick={createGroup}
               disabled={loading || !groupName.trim() || selected.length === 0}
             >
-              {loading ? "Создаём..." : `Создать (${selected.length})`}
+              {loading
+                ? l("Создаём...", "Creating...")
+                : l(`Создать (${selected.length})`, `Create (${selected.length})`)}
             </button>
           </div>
         )}

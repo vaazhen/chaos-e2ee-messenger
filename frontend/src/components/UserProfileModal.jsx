@@ -2,7 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import Ava from "./Ava";
 import { getAlias, setAlias } from "../contactAliases";
 
-export default function UserProfileModal({ me, chat, onClose, onAliasChanged }) {
+export default function UserProfileModal({
+  me,
+  chat,
+  onClose,
+  onAliasChanged,
+  l = (ru) => ru,
+}) {
   const otherUserId = chat?.otherUserId;
   const username = chat?.username || "";
   const initialAlias = useMemo(
@@ -40,20 +46,31 @@ export default function UserProfileModal({ me, chat, onClose, onAliasChanged }) 
   if (!chat) return null;
 
   const isGroup = chat.type === "group";
-  const title = chat.name || "Профиль";
+  const title = chat.name || l("Профиль", "Profile");
   const statusText = isGroup
-    ? `${chat.members || 0} участников`
-    : (chat.online ? "в сети" : "был недавно");
+    ? `${chat.members || 0} ${l("участников", "members")}`
+    : (chat.online ? l("в сети", "online") : l("был недавно", "last seen recently"));
   const bioText = String(chat.bio || "").trim();
-  const accentText = isGroup ? "Групповой чат" : "Личный чат";
+  const accentText = isGroup
+    ? l("Групповой чат", "Group chat")
+    : l("Личный чат", "Direct chat");
   const hasLocalAlias = !isGroup && alias.trim().length > 0;
 
   return (
     <div className="modal-bg user-profile-modal-bg" onClick={onClose}>
       <div className="user-profile-screen" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-head">
-          <div className="sheet-title">{isGroup ? "Информация" : "Профиль"}</div>
-          <button className="round-action" onClick={onClose} title="Close">×</button>
+          <div className="sheet-title">
+            {isGroup ? l("Информация", "Info") : l("Профиль", "Profile")}
+          </div>
+          <button
+            className="round-action"
+            onClick={onClose}
+            title={l("Закрыть", "Close")}
+            aria-label={l("Закрыть", "Close")}
+          >
+            ×
+          </button>
         </div>
 
         <div className="user-profile-content scroll">
@@ -78,7 +95,7 @@ export default function UserProfileModal({ me, chat, onClose, onAliasChanged }) 
               <span className="user-profile-pill">{accentText}</span>
               {hasLocalAlias && (
                 <span className="user-profile-pill user-profile-pill--muted">
-                  Имя для вас: {alias.trim()}
+                  {l("Имя для вас:", "Name for you:")} {alias.trim()}
                 </span>
               )}
             </div>
@@ -90,13 +107,13 @@ export default function UserProfileModal({ me, chat, onClose, onAliasChanged }) 
           {!isGroup && (
             <>
               <div className="settings-section">
-                <div className="section-title">Имя для вас</div>
+                <div className="section-title">{l("Имя для вас", "Name for you")}</div>
                 <div className="settings-card user-alias-card">
                   <div className="user-alias-row">
                     <input
                       value={alias}
                       onChange={(e) => setAliasValue(e.target.value)}
-                      placeholder="Например: Мой коллега"
+                      placeholder={l("Например: Мой коллега", "e.g. My colleague")}
                       maxLength={64}
                     />
                     <button
@@ -105,11 +122,14 @@ export default function UserProfileModal({ me, chat, onClose, onAliasChanged }) 
                       onClick={save}
                       disabled={saving}
                     >
-                      Сохранить
+                      {l("Сохранить", "Save")}
                     </button>
                   </div>
                   <div className="user-alias-hint">
-                    Это имя видно только вам (локально на этом устройстве).
+                    {l(
+                      "Это имя видно только вам (локально на этом устройстве).",
+                      "This name is visible only to you (locally on this device)."
+                    )}
                   </div>
                 </div>
               </div>

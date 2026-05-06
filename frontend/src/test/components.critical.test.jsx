@@ -450,7 +450,13 @@ describe("critical UI components", () => {
     vi.doMock("../hooks/useI18n", () => ({
       useI18n: () => ({
         lang: "en",
-        t: { participants: "members", online: "online", offline: "offline", encrypted_notice: "Encrypted on device" },
+        t: {
+          participants: "members",
+          online: "online",
+          offline: "offline",
+          encrypted_notice: "Encrypted on device",
+          message_placeholder: "Message...",
+        },
         loadTranslations: vi.fn(),
         switchLang: vi.fn(),
       }),
@@ -554,7 +560,12 @@ describe("critical UI components", () => {
       vi.doMock("../hooks/useChats", () => ({ useChats: () => chatStore }));
       vi.doMock("../hooks/useMessages", () => ({ useMessages: () => msgStore }));
       vi.doMock("../hooks/useI18n", () => ({
-        useI18n: () => ({ lang: "ru", t: { participants: "участников" }, loadTranslations: vi.fn(), switchLang: vi.fn() }),
+        useI18n: () => ({
+          lang: "ru",
+          t: { participants: "участников", message_placeholder: "Сообщение...", encrypted_notice: "Сообщения шифруются на устройстве" },
+          loadTranslations: vi.fn(),
+          switchLang: vi.fn(),
+        }),
       }));
       vi.doMock("../hooks/useWebSocket", () => ({ default: () => ({ sendTyping: vi.fn() }) }));
       vi.doMock("../i18n/useUiTranslator", () => ({ useUiTranslator: vi.fn() }));
@@ -565,7 +576,7 @@ describe("critical UI components", () => {
 
     await mockAndRender("MEMBER");
     expect(screen.queryByTitle("Администрирование группы")).toBeNull();
-    fireEvent.click(screen.getByTitle("Chat info"));
+    fireEvent.click(screen.getByTitle("О чате"));
     expect(screen.queryByRole("dialog", { name: "Управление группой" })).toBeNull();
     expect(screen.queryByText("Политики группы (только владелец)")).toBeNull();
     expect(screen.queryByText("Удалить группу")).toBeNull();
