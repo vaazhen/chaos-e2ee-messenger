@@ -39,10 +39,12 @@ public class PreKeyService {
     @Transactional(readOnly = true)
     public PreKeyBundleResponse getBundleByUsername(String username) {
         List<UserDevice> devices = userDeviceRepository.findActiveByUsernameWithUser(username);
-        ReadOnlyPreKeys preKeys = loadReadOnlyPreKeys(devices);
+        Map<Long, SignedPreKey> signedByDeviceId = latestSignedPreKeys(devices);
         return new PreKeyBundleResponse(
                 username,
-                devices.stream().map(device -> toDeviceBundleReadOnly(device, preKeys)).toList()
+                devices.stream()
+                        .map(device -> toDeviceBundleWithoutOneTimePreKey(device, signedByDeviceId.get(device.getId())))
+                        .toList()
         );
     }
 
@@ -231,6 +233,7 @@ public class PreKeyService {
                 device.getRegistrationId(),
                 device.getDeviceName(),
                 device.getIdentityPublicKey(),
+                device.getSigningPublicKey(),
                 signedDto,
                 oneTimeDto
         );
