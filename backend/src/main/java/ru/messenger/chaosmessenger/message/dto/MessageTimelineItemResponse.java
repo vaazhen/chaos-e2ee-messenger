@@ -17,5 +17,6 @@ public record MessageTimelineItemResponse(
         String status,
         TimelineEnvelopeDto envelope,
         Map<String, Long> reactions,
-        Set<String> myReactions
+        Set<String> myReactions,
+        LocalDateTime expiresAt
 ) {}

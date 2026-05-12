@@ -87,6 +87,9 @@ public class Message {
     @Column(name = "edited_at")
     private LocalDateTime editedAt;
 
+    @Column(name = "expires_at")
+    private LocalDateTime expiresAt;
+
     /**
      * Message version, starting at 1. Incremented on each edit.
      * Allows clients to discard stale WebSocket events.
