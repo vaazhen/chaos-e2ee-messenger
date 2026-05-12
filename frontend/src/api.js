@@ -29,11 +29,38 @@ export function getCurrentDeviceId() {
   return deviceId;
 }
 
+let _refreshPromise = null;
+
+async function tryAutoRefresh() {
+  if (_refreshPromise) return _refreshPromise;
+  _refreshPromise = (async () => {
+    try {
+      const rt = localStorage.getItem("cm_refresh_token");
+      if (!rt) return false;
+      const response = await fetch(API_BASE + "/auth/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken: rt }),
+      });
+      if (!response.ok) return false;
+      const data = await response.json();
+      if (data?.token) {
+        setToken(data.token);
+        if (data.refreshToken) localStorage.setItem("cm_refresh_token", data.refreshToken);
+        return true;
+      }
+      return false;
+    } catch { return false; }
+    finally { _refreshPromise = null; }
+  })();
+  return _refreshPromise;
+}
+
 export async function call(path, opts = {}) {
   const token    = getToken();
   const deviceId = getCurrentDeviceId();
 
-  const response = await fetch(API_BASE + path, {
+  let response = await fetch(API_BASE + path, {
     ...opts,
     headers: {
       "Content-Type": "application/json",
@@ -42,6 +69,23 @@ export async function call(path, opts = {}) {
       ...(opts.headers || {}),
     },
   });
+
+  // Auto-refresh on 401 (skip refresh endpoint itself to avoid loop)
+  if (response.status === 401 && !path.includes("/auth/refresh") && !path.includes("/auth/login")) {
+    const refreshed = await tryAutoRefresh();
+    if (refreshed) {
+      const newToken = getToken();
+      response = await fetch(API_BASE + path, {
+        ...opts,
+        headers: {
+          "Content-Type": "application/json",
+          ...(newToken ? { Authorization: "Bearer " + newToken } : {}),
+          ...(deviceId ? { "X-Device-Id": deviceId }             : {}),
+          ...(opts.headers || {}),
+        },
+      });
+    }
+  }
 
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
