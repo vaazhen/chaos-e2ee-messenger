@@ -11,5 +11,8 @@ public record MessageEnvelopeDto(
         String nonce,
         Integer signedPreKeyId,
         Integer oneTimePreKeyId,
-        Long timestamp
+        Long timestamp,
+        Integer messageIndex,
+        String ratchetPublicKey,
+        Integer previousChainLength
 ) {}

@@ -27,5 +27,8 @@ public record EncryptedMessageEnvelopeInput(
         Integer signedPreKeyId,
         Integer oneTimePreKeyId,
         Long timestamp,
-        Integer messageIndex
+        Integer messageIndex,
+        @Size(max = 4096, message = "Ratchet public key is too long")
+        String ratchetPublicKey,
+        Integer previousChainLength
 ) {}

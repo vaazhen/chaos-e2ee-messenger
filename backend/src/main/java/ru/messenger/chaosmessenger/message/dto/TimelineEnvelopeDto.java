@@ -9,5 +9,7 @@ public record TimelineEnvelopeDto(
         String nonce,
         Integer signedPreKeyId,
         Integer oneTimePreKeyId,
-        Integer messageIndex
+        Integer messageIndex,
+        String ratchetPublicKey,
+        Integer previousChainLength
 ) {}
