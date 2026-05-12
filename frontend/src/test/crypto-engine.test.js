@@ -51,17 +51,17 @@ describe("crypto-engine frontend safety checks", () => {
     localStorage.setItem("cm_token", token);
     localStorage.setItem("cm_device_id:alice", "device-old");
     localStorage.setItem("cm_device_bundle_v2:alice", JSON.stringify({ deviceId: "device-old" }));
-    localStorage.setItem("cm_e2ee_sessions_v4:alice", JSON.stringify({ session: true }));
+    localStorage.setItem("cm_e2ee_sessions_v5:alice", JSON.stringify({ session: true }));
 
     await loadCryptoEngine();
 
     expect(localStorage.getItem("cm_device_id")).toBe("device-old");
     expect(JSON.parse(localStorage.getItem("cm_device_bundle_v2"))).toEqual({ deviceId: "device-old" });
-    expect(JSON.parse(localStorage.getItem("cm_e2ee_sessions_v4"))).toEqual({ session: true });
+    expect(JSON.parse(localStorage.getItem("cm_e2ee_sessions_v5"))).toEqual({ session: true });
 
     expect(localStorage.getItem("cm_device_id:alice")).toBeNull();
     expect(localStorage.getItem("cm_device_bundle_v2:alice")).toBeNull();
-    expect(localStorage.getItem("cm_e2ee_sessions_v4:alice")).toBeNull();
+    expect(localStorage.getItem("cm_e2ee_sessions_v5:alice")).toBeNull();
   });
 
   it("does not overwrite already existing unscoped crypto storage during migration", async () => {
@@ -93,12 +93,12 @@ describe("crypto-engine frontend safety checks", () => {
 
     localStorage.setItem("cm_device_id", "device-old");
     localStorage.setItem("cm_device_bundle_v2", JSON.stringify({ deviceId: "device-old" }));
-    localStorage.setItem("cm_e2ee_sessions_v4", JSON.stringify({ session: true }));
+    localStorage.setItem("cm_e2ee_sessions_v5", JSON.stringify({ session: true }));
 
     window.e2ee.resetLocalDeviceIdentity();
 
     expect(localStorage.getItem("cm_device_bundle_v2")).toBeNull();
-    expect(localStorage.getItem("cm_e2ee_sessions_v4")).toBeNull();
+    expect(localStorage.getItem("cm_e2ee_sessions_v5")).toBeNull();
     expect(localStorage.getItem("cm_device_id")).toBeNull();
     expect(window.e2ee.getOrCreateDeviceId()).toMatch(/^device-/);
     expect(window.e2ee.getOrCreateDeviceId()).not.toBe("device-old");

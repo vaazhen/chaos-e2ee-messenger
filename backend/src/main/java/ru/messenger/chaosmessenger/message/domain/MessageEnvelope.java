@@ -112,12 +112,26 @@ public class MessageEnvelope {
     private Integer oneTimePreKeyId;
 
     /**
-     * Sequential index of this message within the ratchet session (zero-based).
-     * Used by the client to synchronise the receiving chain
-     * when messages arrive out of order.
+     * Sequential index of this message within the current sending chain (zero-based).
+     * Resets with each DH ratchet step in the Double Ratchet protocol.
      */
     @Column(name = "message_index")
     private Integer messageIndex;
+
+    /**
+     * Base64-encoded current DH ratchet public key of the sender (X25519).
+     * Present in every {@code WHISPER} and {@code PREKEY_WHISPER} message.
+     * Used by the recipient to perform the DH ratchet step.
+     */
+    @Column(name = "ratchet_public_key", columnDefinition = "text")
+    private String ratchetPublicKey;
+
+    /**
+     * Number of messages sent in the previous sending chain before the DH ratchet.
+     * Used by the recipient to skip and store message keys for out-of-order delivery.
+     */
+    @Column(name = "previous_chain_length")
+    private Integer previousChainLength;
 
     /** Server-side creation timestamp of this envelope. */
     @Column(name = "created_at", nullable = false)
