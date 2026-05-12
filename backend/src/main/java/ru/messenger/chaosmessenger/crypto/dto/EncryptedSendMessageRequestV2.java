@@ -20,5 +20,6 @@ public record EncryptedSendMessageRequestV2(
         @Valid
         @NotEmpty(message = "At least one encrypted envelope is required")
         @Size(max = 1000, message = "Too many encrypted envelopes")
-        List<EncryptedMessageEnvelopeInput> envelopes
+        List<EncryptedMessageEnvelopeInput> envelopes,
+        Integer selfDestructSeconds
 ) {}

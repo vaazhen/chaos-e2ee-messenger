@@ -27,7 +27,9 @@ import ru.messenger.chaosmessenger.crypto.device.UserDeviceRepository;
 import ru.messenger.chaosmessenger.crypto.dto.EncryptedEditMessageRequestV2;
 import ru.messenger.chaosmessenger.crypto.dto.EncryptedMessageEnvelopeInput;
 import ru.messenger.chaosmessenger.crypto.dto.EncryptedSendMessageRequestV2;
+import ru.messenger.chaosmessenger.infra.presence.OnlineService;
 import ru.messenger.chaosmessenger.infra.presence.UnreadService;
+import ru.messenger.chaosmessenger.push.service.PushNotificationService;
 import ru.messenger.chaosmessenger.message.domain.MessageEnvelope;
 import ru.messenger.chaosmessenger.message.domain.MessageEvent;
 import ru.messenger.chaosmessenger.message.domain.MessageReaction;
@@ -64,6 +66,8 @@ public class MessageService {
     private final UserDeviceRepository userDeviceRepository;
     private final CurrentDeviceService currentDeviceService;
     private final UnreadService unreadService;
+    private final OnlineService onlineService;
+    private final PushNotificationService pushNotificationService;
     private final SimpMessagingTemplate messagingTemplate;
     private final ObjectMapper objectMapper;
     private final MeterRegistry meterRegistry;
@@ -97,6 +101,9 @@ public class MessageService {
         message.setContent("[encrypted]");
         message.setCreatedAt(LocalDateTime.now());
         message.setStatus(Message.MessageStatus.SENT);
+        if (request.selfDestructSeconds() != null && request.selfDestructSeconds() > 0) {
+            message.setExpiresAt(LocalDateTime.now().plusSeconds(request.selfDestructSeconds()));
+        }
         try {
             message = messageRepository.save(message);
             messageRepository.flush();
@@ -134,6 +141,7 @@ public class MessageService {
                     }
                 });
             }
+            notifyOfflineUsersViaPush(msgFinal, sender);
         });
 
         return toDeviceEvent("MESSAGE_CREATED", message, byDevice.get(currentDevice.getDeviceId()), sender.getId());
@@ -754,7 +762,8 @@ public class MessageService {
                 message.getStatus().name(),
                 envelope == null ? null : toEnvelopeDto(envelope),
                 reactions,
-                myReactions
+                myReactions,
+                message.getExpiresAt()
         );
     }
 
@@ -781,7 +790,24 @@ public class MessageService {
                 message.getStatus().name(),
                 envelope == null ? null : toEnvelopeDto(envelope),
                 reactions,
-                myReactions
+                myReactions,
+                message.getExpiresAt()
+        );
+    }
+
+    private TimelineEnvelopeDto toEnvelopeDto(MessageEnvelope envelope) {
+        return new TimelineEnvelopeDto(
+                envelope.getTargetDeviceId(),
+                envelope.getMessageType(),
+                envelope.getSenderIdentityPublicKey(),
+                envelope.getEphemeralPublicKey(),
+                envelope.getCiphertext(),
+                envelope.getNonce(),
+                envelope.getSignedPreKeyId(),
+                envelope.getOneTimePreKeyId(),
+                envelope.getMessageIndex(),
+                envelope.getRatchetPublicKey(),
+                envelope.getPreviousChainLength()
         );
     }
 
@@ -889,6 +915,17 @@ public class MessageService {
                 .stream()
                 .distinct()
                 .toList();
+    }
+
+    private void notifyOfflineUsersViaPush(Message message, User sender) {
+        participantRepository.findDistinctUsernamesByChatId(message.getChatId()).forEach(username -> {
+            if (Objects.equals(username, sender.getUsername())) return;
+            if (!onlineService.isOnline(username)) {
+                userIdentityService.resolve(username).ifPresent(user ->
+                        pushNotificationService.sendPushToUser(user.getId(), "New message", "You have a new encrypted message")
+                );
+            }
+        });
     }
 
     private void incrementUnreadForOthers(Long chatId, Long senderId) {

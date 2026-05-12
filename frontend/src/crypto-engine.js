@@ -794,6 +794,31 @@
         return plainText;
     }
 
+    // ─── File encryption / decryption (AES-256-GCM with random key) ────────────
+
+    async function encryptFile(fileArrayBuffer) {
+        assertWebCryptoAvailable();
+        const key = crypto.getRandomValues(new Uint8Array(32));
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+        const cryptoKey = await crypto.subtle.importKey("raw", key, "AES-GCM", false, ["encrypt"]);
+        const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, cryptoKey, fileArrayBuffer);
+        const result = new Uint8Array(iv.length + encrypted.byteLength);
+        result.set(iv, 0);
+        result.set(new Uint8Array(encrypted), iv.length);
+        return { encrypted: result, fileKey: btoa(String.fromCharCode(...key)) };
+    }
+
+    async function decryptFile(encryptedArrayBuffer, fileKeyBase64) {
+        assertWebCryptoAvailable();
+        const keyBytes = Uint8Array.from(atob(fileKeyBase64), c => c.charCodeAt(0));
+        const data = new Uint8Array(encryptedArrayBuffer);
+        const iv = data.slice(0, 12);
+        const ciphertext = data.slice(12);
+        const cryptoKey = await crypto.subtle.importKey("raw", keyBytes, "AES-GCM", false, ["decrypt"]);
+        const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, cryptoKey, ciphertext);
+        return decrypted;
+    }
+
     // ─── Public API ────────────────────────────────────────────────────────────
 
     window.e2ee = {
@@ -802,7 +827,9 @@
         resetLocalDeviceIdentity,
         ensureDeviceRegistered,
         buildFanoutRequest,
-        decryptEnvelope
+        decryptEnvelope,
+        encryptFile,
+        decryptFile
     };
 
 })();

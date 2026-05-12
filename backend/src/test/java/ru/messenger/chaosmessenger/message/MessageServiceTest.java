@@ -68,6 +68,8 @@ class MessageServiceTest {
     @Mock UserDeviceRepository userDeviceRepository;
     @Mock CurrentDeviceService currentDeviceService;
     @Mock UnreadService unreadService;
+    @Mock ru.messenger.chaosmessenger.infra.presence.OnlineService onlineService;
+    @Mock ru.messenger.chaosmessenger.push.service.PushNotificationService pushNotificationService;
     @Mock SimpMessagingTemplate messagingTemplate;
     @Mock ObjectMapper objectMapper;
     @Spy MeterRegistry meterRegistry = new SimpleMeterRegistry();
@@ -280,8 +282,10 @@ class MessageServiceTest {
                 senderDeviceId,
                 List.of(new EncryptedMessageEnvelopeInput(
                         "device-alice-1", 1L, "WHISPER", "identity",
-                        null, "ciphertext", "nonce", null, null, null, 1
-                ))
+                        null, "ciphertext", "nonce", null, null, null, 1,
+                        null, null
+                )),
+                null
         );
     }
 }

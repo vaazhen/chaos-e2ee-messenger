@@ -5,6 +5,17 @@ const EMOJI_STORAGE_KEY = "cm_recent_emojis";
 const MAX_RECENT_EMOJIS = 16;
 const MAX_VOICE_MS = 30_000;
 const MAX_VOICE_BYTES = 110 * 1024;
+const MAX_FILE_BYTES = 20 * 1024 * 1024;
+
+const TTL_OPTIONS = [
+  { label: "Off", value: null },
+  { label: "5s", value: 5 },
+  { label: "30s", value: 30 },
+  { label: "1m", value: 60 },
+  { label: "5m", value: 300 },
+  { label: "1h", value: 3600 },
+  { label: "24h", value: 86400 },
+];
 
 const EMOJI_CATEGORIES = [
   {
@@ -74,15 +85,22 @@ export default function MessageInput({
   const [emojiCat, setEmojiCat] = useState("recent");
   const [recentEmojis, setRecentEmojis] = useState(() => loadRecentEmojis());
   const [imgFile, setImgFile] = useState(null);
+  const [generalFile, setGeneralFile] = useState(null);
+  const [ttl, setTtl] = useState(null);
+  const [showTtl, setShowTtl] = useState(false);
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [voiceFile, setVoiceFile] = useState(null);
   const [recording, setRecording] = useState(false);
   const [recordingLocked, setRecordingLocked] = useState(false);
   const [recordingPaused, setRecordingPaused] = useState(false);
   const [recordingMs, setRecordingMs] = useState(0);
-  const [voiceLevels, setVoiceLevels] = useState(() => Array(24).fill(0.18));
+  const [voiceLevels, setVoiceLevels] = useState(() => Array(48).fill(0.18));
   const [voiceError, setVoiceError] = useState("");
   const inpRef = useRef(null);
   const fileRef = useRef(null);
+  const generalFileRef = useRef(null);
+  const ttlRef = useRef(null);
+  const attachMenuRef = useRef(null);
   const inputBarRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const mediaStreamRef = useRef(null);
@@ -182,10 +200,11 @@ const typingTimerRef = useRef(null);
 
   const handleSend = (overrideVoiceFile = null) => {
     const nextVoiceFile = overrideVoiceFile || voiceFile;
-    if (!text.trim() && !imgFile && !nextVoiceFile) return;
-    onSend({ text: text.trim(), imgFile, voiceFile: nextVoiceFile, replyTo });
+    if (!text.trim() && !imgFile && !nextVoiceFile && !generalFile) return;
+    onSend({ text: text.trim(), imgFile, voiceFile: nextVoiceFile, generalFile, ttl, replyTo });
     setText("");
     setImgFile(null);
+    setGeneralFile(null);
     setVoiceFile(null);
     setRecordingLocked(false);
     setVoiceError("");
@@ -208,6 +227,19 @@ const typingTimerRef = useRef(null);
     const reader = new FileReader();
     reader.onload = ev => setImgFile({ src: ev.target.result, file });
     reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+
+  const onGeneralFileChange = e => {
+    const file = e.target.files[0]; if (!file) return;
+    if (file.size > MAX_FILE_BYTES) {
+      setVoiceError("File is too large (max 20MB)");
+      e.target.value = "";
+      return;
+    }
+    cancelVoice();
+    setImgFile(null);
+    setGeneralFile(file);
     e.target.value = "";
   };
 
@@ -312,7 +344,7 @@ const typingTimerRef = useRef(null);
       recordingPausedRef.current = false;
       setRecordingPaused(false);
       setRecordingMs(0);
-      setVoiceLevels(Array(24).fill(0.18));
+      setVoiceLevels(Array(48).fill(0.18));
       startVoiceAnalyser(stream);
 
       recorder.ondataavailable = (event) => {
@@ -443,7 +475,7 @@ const typingTimerRef = useRef(null);
     setRecordingPaused(true);
   };
 
-  const canQuickRecord = !pendingFirstMessageOnly && !text.trim() && !imgFile && !voiceFile;
+  const canQuickRecord = !pendingFirstMessageOnly && !text.trim() && !imgFile && !voiceFile && !generalFile;
 
   const onPrimaryPointerDown = (e) => {
     if (pendingFirstMessageOnly || disabled || !canQuickRecord || recording) return;
@@ -503,7 +535,28 @@ const typingTimerRef = useRef(null);
     inpRef.current?.focus();
   };
 
-  
+  useEffect(() => {
+    if (!showAttachMenu) return;
+    const closeAttachOutside = (event) => {
+      if (attachMenuRef.current && !attachMenuRef.current.contains(event.target)) {
+        setShowAttachMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", closeAttachOutside, true);
+    return () => document.removeEventListener("mousedown", closeAttachOutside, true);
+  }, [showAttachMenu]);
+
+  useEffect(() => {
+    if (!showTtl) return;
+    const closeTtlOutside = (event) => {
+      if (ttlRef.current && !ttlRef.current.contains(event.target)) {
+        setShowTtl(false);
+      }
+    };
+    document.addEventListener("mousedown", closeTtlOutside, true);
+    return () => document.removeEventListener("mousedown", closeTtlOutside, true);
+  }, [showTtl]);
+
   // emoji-outside-close-pass
   useEffect(() => {
     if (!showEmoji) return;
@@ -573,6 +626,20 @@ return (
             <button style={{ position: "absolute", top: -4, right: -4, width: 20, height: 20, borderRadius: "50%", background: "var(--red)", border: "none", color: "#fff", cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center" }}
               onClick={() => setImgFile(null)}>×</button>
           </div>
+        </div>
+      )}
+
+      {!pendingFirstMessageOnly && generalFile && (
+        <div style={{ padding: "8px 14px 0", background: "var(--bg1)", display: "flex", alignItems: "center", gap: 8 }}>
+          <div className="msg-file" style={{ flex: 1 }}>
+            <FileTypeIcon name={generalFile.name} />
+            <div className="msg-file-info">
+              <div className="msg-file-name">{generalFile.name}</div>
+              <div className="msg-file-size">{formatFileSize(generalFile.size)}</div>
+            </div>
+          </div>
+          <button style={{ width: 20, height: 20, borderRadius: "50%", background: "var(--red)", border: "none", color: "#fff", cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center" }}
+            onClick={() => setGeneralFile(null)}>×</button>
         </div>
       )}
 
@@ -667,9 +734,35 @@ return (
               </button>
             </>
           )}
-          {!groupMuteLocksInput && (
-            <button type="button" className="emoji-trigger" onClick={toggleEmoji}>😊</button>
+
+          {/* Attach button (inside input pill, left side) */}
+          {!pendingFirstMessageOnly && !groupMuteLocksInput && !recording && (
+            <div style={{ position: "relative" }} ref={attachMenuRef}>
+              <button
+                type="button"
+                className="inp-icon-btn"
+                onClick={(e) => { e.stopPropagation(); setShowAttachMenu(v => !v); }}
+                title="Attach"
+              >
+                <AttachIcon />
+              </button>
+              {showAttachMenu && (
+                <div className="attach-menu" onClick={e => e.stopPropagation()}>
+                  <div className="attach-menu-item" onClick={() => { setShowAttachMenu(false); fileRef.current?.click(); }}>
+                    <PhotoIcon />
+                    <span>{messagePlaceholder === "Сообщение..." ? "Фото или видео" : "Photo or video"}</span>
+                  </div>
+                  <div className="attach-menu-item" onClick={() => { setShowAttachMenu(false); generalFileRef.current?.click(); }}>
+                    <DocIcon />
+                    <span>{messagePlaceholder === "Сообщение..." ? "Документ" : "Document"}</span>
+                  </div>
+                </div>
+              )}
+              <input ref={fileRef} type="file" accept="image/*,video/*" style={{ display: "none" }} onChange={onFileChange} />
+              <input ref={generalFileRef} type="file" style={{ display: "none" }} onChange={onGeneralFileChange} />
+            </div>
           )}
+
           <div className={`msg-inp-wrap${muteInlineNotice && !recording ? " msg-inp-wrap--mute" : ""}`}>
             {muteInlineNotice && !recording && (
               <div className="group-mute-in-inp" role="status" aria-live="polite">
@@ -687,11 +780,39 @@ return (
               disabled={disabled}
             />
           </div>
-          {!pendingFirstMessageOnly && !groupMuteLocksInput && (
-            <>
-              <button className="emoji-trigger" onClick={e => { e.stopPropagation(); fileRef.current?.click(); }}>📎</button>
-              <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onFileChange} />
-            </>
+
+          {/* Emoji button (inside input pill, right side) */}
+          {!groupMuteLocksInput && !recording && (
+            <button type="button" className="inp-icon-btn" onClick={toggleEmoji}>
+              <EmojiIcon />
+            </button>
+          )}
+
+          {/* Timer button (inside input pill, right side) */}
+          {!groupMuteLocksInput && !pendingFirstMessageOnly && !recording && (
+            <div style={{ position: "relative" }} ref={ttlRef}>
+              <button
+                type="button"
+                className={`inp-icon-btn${ttl ? " active" : ""}`}
+                onClick={(e) => { e.stopPropagation(); setShowTtl(v => !v); }}
+                title="Self-destruct timer"
+              >
+                <TimerIcon />
+              </button>
+              {showTtl && (
+                <div className="ttl-popup" onClick={e => e.stopPropagation()}>
+                  {TTL_OPTIONS.map(opt => (
+                    <div
+                      key={opt.label}
+                      className={`ttl-option${ttl === opt.value ? " selected" : ""}`}
+                      onClick={() => { setTtl(opt.value); setShowTtl(false); }}
+                    >
+                      {opt.label}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
         </div>
 
@@ -768,4 +889,69 @@ function PlayIcon() {
       <path d="M9 6.5v11l8-5.5-8-5.5Z" />
     </svg>
   );
+}
+
+function TimerIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="13" r="8" />
+      <path d="M12 9v4l2 2" />
+      <path d="M10 2h4" />
+    </svg>
+  );
+}
+
+function EmojiIcon() {
+  return (
+    <svg className="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M8.5 14.5c.8 1.2 2 2 3.5 2s2.7-.8 3.5-2" />
+      <circle cx="9" cy="10" r="0.8" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="10" r="0.8" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+function AttachIcon() {
+  return (
+    <svg className="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+    </svg>
+  );
+}
+
+function PhotoIcon() {
+  return (
+    <svg className="attach-menu-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="3" y="3" width="18" height="18" rx="3" />
+      <circle cx="9" cy="9" r="2" />
+      <path d="M21 15l-5-5L5 21" />
+    </svg>
+  );
+}
+
+function DocIcon() {
+  return (
+    <svg className="attach-menu-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="16" y1="13" x2="8" y2="13" />
+      <line x1="16" y1="17" x2="8" y2="17" />
+      <polyline points="10 9 9 9 8 9" />
+    </svg>
+  );
+}
+
+function FileTypeIcon({ name }) {
+  const ext = String(name || "").split(".").pop().toLowerCase();
+  const iconMap = { pdf: "📄", doc: "📝", docx: "📝", xls: "📊", xlsx: "📊", zip: "🗜️", rar: "🗜️", mp3: "🎵", mp4: "🎬", txt: "📃" };
+  const icon = iconMap[ext] || "📁";
+  return <div className="msg-file-icon">{icon}</div>;
+}
+
+function formatFileSize(bytes) {
+  if (!bytes || bytes < 0) return "0 B";
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
 }

@@ -155,6 +155,55 @@ export const api = {
   deleteMsg:      (id)                 => call(`/messages/${id}`, { method: "DELETE" }),
   toggleReaction: (id, emoji)          => call(`/messages/${id}/reactions`, { method: "PUT", body: JSON.stringify({ emoji }) }),
 
+  // ── Attachments ──────────────────────────────────────────────────────────
+  uploadAttachment: async (encryptedBlob) => {
+    const token = getToken();
+    const deviceId = getCurrentDeviceId();
+    const form = new FormData();
+    form.append("file", new Blob([encryptedBlob]), "encrypted.bin");
+    const res = await fetch(API_BASE + "/attachments/upload", {
+      method: "POST",
+      headers: {
+        ...(token ? { Authorization: "Bearer " + token } : {}),
+        ...(deviceId ? { "X-Device-Id": deviceId } : {}),
+      },
+      body: form,
+    });
+    if (!res.ok) throw new Error("Upload failed");
+    return res.json();
+  },
+  downloadAttachment: async (attachmentId) => {
+    const token = getToken();
+    const deviceId = getCurrentDeviceId();
+    const res = await fetch(API_BASE + "/attachments/" + attachmentId, {
+      headers: {
+        ...(token ? { Authorization: "Bearer " + token } : {}),
+        ...(deviceId ? { "X-Device-Id": deviceId } : {}),
+      },
+    });
+    if (!res.ok) throw new Error("Download failed");
+    return res.arrayBuffer();
+  },
+
+  // ── Push Notifications ──────────────────────────────────────────────────
+  subscribePush: (subscription) => call("/push/subscribe", { method: "POST", body: JSON.stringify(subscription) }),
+  unsubscribePush: () => call("/push/unsubscribe", { method: "DELETE" }),
+  getVapidKey: async () => {
+    const token = getToken();
+    const deviceId = getCurrentDeviceId();
+    const res = await fetch(API_BASE + "/push/vapid-public-key", {
+      headers: {
+        ...(token ? { Authorization: "Bearer " + token } : {}),
+        ...(deviceId ? { "X-Device-Id": deviceId } : {}),
+      },
+    });
+    if (!res.ok) return null;
+    return res.text();
+  },
+
+  // ── Delete Chat ─────────────────────────────────────────────────────────
+  deleteChatForEveryone: (chatId) => call(`/chats/${chatId}`, { method: "DELETE" }),
+
   // ── i18n ──────────────────────────────────────────────────────────────────
   getTranslations: (lang) => call(`/v1/i18n/messages?lang=${encodeURIComponent(lang)}`),
   setLang:         (lang) => call(`/v1/i18n/lang?lang=${encodeURIComponent(lang)}`, { method: "POST" }),

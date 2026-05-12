@@ -6,6 +6,7 @@ import { saveMessagePreview } from "../previewCache";
 import { compressImageToDataUrl, IMAGE_PROFILES } from "../imagePipeline";
 
 const MAX_ENCRYPTED_PAYLOAD_CHARS = 180_000;
+const ATTACHMENT_THRESHOLD_BYTES = 50 * 1024;
 
 /**
  * Manages per-chat message maps, loading, sending (E2EE), editing, deleting.
@@ -85,6 +86,39 @@ export function useMessages(myId) {
     const parsed = parseMessagePayload(decryptedText);
     const isOut = event.senderId === myId;
     const preview = messagePreview(parsed);
+
+    let resolvedImg = parsed.img;
+    let resolvedVoice = parsed.voice;
+    let resolvedAttachment = parsed.attachment || null;
+
+    if (resolvedAttachment?.attachmentId && window.e2ee?.decryptFile) {
+      try {
+        const encryptedBuf = await api.downloadAttachment(resolvedAttachment.attachmentId);
+        const decryptedBuf = await window.e2ee.decryptFile(encryptedBuf, resolvedAttachment.fileKey);
+        const blob = new Blob([decryptedBuf], { type: resolvedAttachment.mimeType || "application/octet-stream" });
+        const objectUrl = URL.createObjectURL(blob);
+
+        if (parsed.payload?.type === "image") {
+          resolvedImg = objectUrl;
+        } else if (parsed.payload?.type === "voice") {
+          resolvedVoice = {
+            dataUrl: objectUrl,
+            durationMs: resolvedAttachment.durationMs || 0,
+            mime: resolvedAttachment.mimeType || "audio/webm",
+          };
+        } else {
+          resolvedAttachment = { ...resolvedAttachment, objectUrl, blob };
+        }
+      } catch (e) {
+        console.warn("[WS] attachment decrypt:", e.message);
+      }
+    }
+
+    let expiresAt = null;
+    if (parsed.ttl && event.createdAt) {
+      expiresAt = new Date(new Date(event.createdAt).getTime() + parsed.ttl * 1000).toISOString();
+    }
+
     saveMessagePreview({
       userId: myId,
       chatId,
@@ -105,9 +139,12 @@ export function useMessages(myId) {
       myReactions: event.myReactions || [],
       _out:      isOut,
       _text:     parsed.text,
-      _img:      parsed.img,
-      _voice:    parsed.voice,
+      _img:      resolvedImg,
+      _voice:    resolvedVoice,
       _payload:  parsed.payload,
+      _attachment: resolvedAttachment,
+      _ttl:      parsed.ttl || null,
+      expiresAt,
       _time:     getTime(event.createdAt),
     };
 
@@ -152,7 +189,9 @@ export function useMessages(myId) {
     const text = typeof input === "string" ? input : String(input?.text || "").trim();
     const imgFile = typeof input === "string" ? null : input?.imgFile;
     const voiceFile = typeof input === "string" ? null : input?.voiceFile;
-    if ((!text && !imgFile && !voiceFile) || !chatId) return null;
+    const generalFile = typeof input === "string" ? null : input?.generalFile;
+    const ttl = typeof input === "string" ? null : input?.ttl;
+    if ((!text && !imgFile && !voiceFile && !generalFile) || !chatId) return null;
     if (!window.e2ee?.buildFanoutRequest) {
       console.error("[Send] crypto-engine is not loaded");
       return null;
@@ -163,43 +202,101 @@ export function useMessages(myId) {
     let encryptedPlaintext = text;
 
     try {
-      if (imgFile?.file) {
-        const image = await compressImageFile(imgFile.file);
-        parsedPayload = {
-          text,
-          img: image.dataUrl,
-          payload: {
-            v: 1,
-            type: "image",
-            text,
-            image,
-          },
-        };
-        encryptedPlaintext = JSON.stringify(parsedPayload.payload);
-      } else if (voiceFile) {
-        const voice = await prepareVoiceFile(voiceFile);
+      if (generalFile) {
+        const attachment = await encryptAndUploadFile(generalFile);
         parsedPayload = {
           text,
           img: null,
-          voice,
+          voice: null,
           payload: {
             v: 1,
-            type: "voice",
+            type: "file",
             text,
-            voice,
+            attachment,
           },
         };
         encryptedPlaintext = JSON.stringify(parsedPayload.payload);
+      } else if (imgFile?.file) {
+        const image = await compressImageFile(imgFile.file);
+        if (estimateBase64Bytes(image.dataUrl) > ATTACHMENT_THRESHOLD_BYTES && window.e2ee?.encryptFile) {
+          const buf = dataUrlToArrayBuffer(image.dataUrl);
+          const { encrypted, fileKey } = await window.e2ee.encryptFile(buf);
+          const uploadResult = await api.uploadAttachment(encrypted);
+          const attachment = {
+            attachmentId: uploadResult.id || uploadResult.attachmentId,
+            fileKey,
+            fileName: image.name || "image",
+            mimeType: image.mime || "image/jpeg",
+            size: image.size,
+            width: image.width,
+            height: image.height,
+          };
+          parsedPayload = {
+            text,
+            img: image.dataUrl,
+            payload: { v: 1, type: "image", text, attachment },
+          };
+          encryptedPlaintext = JSON.stringify(parsedPayload.payload);
+        } else {
+          parsedPayload = {
+            text,
+            img: image.dataUrl,
+            payload: { v: 1, type: "image", text, image },
+          };
+          encryptedPlaintext = JSON.stringify(parsedPayload.payload);
+        }
+      } else if (voiceFile) {
+        const voice = await prepareVoiceFile(voiceFile);
+        if (estimateBase64Bytes(voice.dataUrl) > ATTACHMENT_THRESHOLD_BYTES && window.e2ee?.encryptFile) {
+          const buf = dataUrlToArrayBuffer(voice.dataUrl);
+          const { encrypted, fileKey } = await window.e2ee.encryptFile(buf);
+          const uploadResult = await api.uploadAttachment(encrypted);
+          const attachment = {
+            attachmentId: uploadResult.id || uploadResult.attachmentId,
+            fileKey,
+            fileName: voice.name || "voice-message.webm",
+            mimeType: voice.mime || "audio/webm",
+            size: voice.size,
+            durationMs: voice.durationMs,
+          };
+          parsedPayload = {
+            text,
+            img: null,
+            voice,
+            payload: { v: 1, type: "voice", text, attachment },
+          };
+          encryptedPlaintext = JSON.stringify(parsedPayload.payload);
+        } else {
+          parsedPayload = {
+            text,
+            img: null,
+            voice,
+            payload: { v: 1, type: "voice", text, voice },
+          };
+          encryptedPlaintext = JSON.stringify(parsedPayload.payload);
+        }
       }
     } catch (e) {
       console.error("[Send] media prepare error:", e);
       return null;
     }
+
+    if (ttl) {
+      try {
+        const payloadObj = encryptedPlaintext.startsWith("{") ? JSON.parse(encryptedPlaintext) : { v: 1, type: "text", text: encryptedPlaintext };
+        payloadObj.ttl = ttl;
+        encryptedPlaintext = JSON.stringify(payloadObj);
+      } catch (_) {
+        encryptedPlaintext = JSON.stringify({ v: 1, type: "text", text: encryptedPlaintext, ttl });
+      }
+    }
+
     if (encryptedPlaintext.length > MAX_ENCRYPTED_PAYLOAD_CHARS) {
       console.error("[Send] payload too large after compression");
       return null;
     }
 
+    const tempExpiresAt = ttl ? new Date(Date.now() + ttl * 1000).toISOString() : null;
     const tempMsg = {
       id: clientMessageId,
       _clientMessageId: clientMessageId,
@@ -209,6 +306,9 @@ export function useMessages(myId) {
       _img: parsedPayload.img,
       _voice: parsedPayload.voice,
       _payload: parsedPayload.payload,
+      _attachment: parsedPayload.payload?.attachment || null,
+      _ttl: ttl || null,
+      expiresAt: tempExpiresAt,
       _time: getTime(),
       content: encryptedPlaintext,
       senderId: myId,
@@ -430,6 +530,39 @@ async function decryptMsg(msg, myId, fallbackChatId) {
     }
   }
   const parsed = parseMessagePayload(decryptedText);
+
+  let resolvedImg = parsed.img;
+  let resolvedVoice = parsed.voice;
+  let resolvedAttachment = parsed.attachment || null;
+
+  if (resolvedAttachment?.attachmentId && window.e2ee?.decryptFile) {
+    try {
+      const encryptedBuf = await api.downloadAttachment(resolvedAttachment.attachmentId);
+      const decryptedBuf = await window.e2ee.decryptFile(encryptedBuf, resolvedAttachment.fileKey);
+      const blob = new Blob([decryptedBuf], { type: resolvedAttachment.mimeType || "application/octet-stream" });
+      const objectUrl = URL.createObjectURL(blob);
+
+      if (parsed.payload?.type === "image") {
+        resolvedImg = objectUrl;
+      } else if (parsed.payload?.type === "voice") {
+        resolvedVoice = {
+          dataUrl: objectUrl,
+          durationMs: resolvedAttachment.durationMs || 0,
+          mime: resolvedAttachment.mimeType || "audio/webm",
+        };
+      } else {
+        resolvedAttachment = { ...resolvedAttachment, objectUrl, blob };
+      }
+    } catch (e) {
+      console.warn("[Timeline] attachment decrypt:", e.message);
+    }
+  }
+
+  let expiresAt = null;
+  if (parsed.ttl && msg.createdAt) {
+    expiresAt = new Date(new Date(msg.createdAt).getTime() + parsed.ttl * 1000).toISOString();
+  }
+
   saveMessagePreview({
     userId: myId,
     chatId: msg.chatId || fallbackChatId,
@@ -442,9 +575,12 @@ async function decryptMsg(msg, myId, fallbackChatId) {
     ...msg,
     content: decryptedText,
     _text: parsed.text,
-    _img: parsed.img,
-    _voice: parsed.voice,
+    _img: resolvedImg,
+    _voice: resolvedVoice,
     _payload: parsed.payload,
+    _attachment: resolvedAttachment,
+    _ttl: parsed.ttl || null,
+    expiresAt,
     _out:  msg.senderId === myId,
     _time: getTime(msg.createdAt),
   };
@@ -486,35 +622,66 @@ function adjustReactionSummary(summary, emoji, delta) {
 function parseMessagePayload(raw) {
   const fallbackText = String(raw || "");
   if (!fallbackText || fallbackText === "[encrypted]") {
-    return { text: fallbackText, img: null, voice: null, payload: null };
+    return { text: fallbackText, img: null, voice: null, payload: null, attachment: null };
   }
   try {
     const payload = JSON.parse(fallbackText);
     if (payload?.v === 1 && payload?.type === "image") {
       const image = payload.image || {};
+      const attachment = payload.attachment || null;
       return {
         text: String(payload.text || ""),
         img: image.dataUrl || payload.dataUrl || null,
         voice: null,
         payload,
+        attachment,
+        ttl: payload.ttl || null,
       };
     }
     if (payload?.v === 1 && payload?.type === "voice") {
       const voice = payload.voice || {};
+      const attachment = payload.attachment || null;
       return {
         text: String(payload.text || ""),
         img: null,
         voice: voice.dataUrl ? voice : null,
         payload,
+        attachment,
+        ttl: payload.ttl || null,
+      };
+    }
+    if (payload?.v === 1 && payload?.type === "file") {
+      const attachment = payload.attachment || {};
+      return {
+        text: String(payload.text || ""),
+        img: null,
+        voice: null,
+        payload,
+        attachment,
+        ttl: payload.ttl || null,
+      };
+    }
+    if (payload?.v === 1 && payload?.ttl) {
+      return {
+        text: String(payload.text || fallbackText),
+        img: null,
+        voice: null,
+        payload,
+        attachment: null,
+        ttl: payload.ttl,
       };
     }
   } catch (_) {
     // regular text message
   }
-  return { text: fallbackText, img: null, voice: null, payload: null };
+  return { text: fallbackText, img: null, voice: null, payload: null, attachment: null };
 }
 
 function messagePreview(parsed) {
+  if (parsed?.attachment?.attachmentId && parsed?.payload?.type === "file") {
+    const name = parsed.attachment.fileName || "File";
+    return parsed.text ? `📎 ${parsed.text}` : `📎 ${name}`;
+  }
   if (parsed?.img) return parsed.text ? `📷 ${parsed.text}` : "📷 Photo";
   if (parsed?.voice) return parsed.text ? `Voice: ${parsed.text}` : "Voice message";
   return parsed?.text || "";
@@ -636,4 +803,33 @@ function blobToDataUrl(blob) {
     reader.onerror = () => reject(reader.error || new Error("Cannot read voice"));
     reader.readAsDataURL(blob);
   });
+}
+
+function estimateBase64Bytes(dataUrl) {
+  if (!dataUrl) return 0;
+  const commaIdx = dataUrl.indexOf(",");
+  const base64Part = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
+  return Math.round((base64Part.length * 3) / 4);
+}
+
+function dataUrlToArrayBuffer(dataUrl) {
+  const commaIdx = dataUrl.indexOf(",");
+  const base64 = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+
+async function encryptAndUploadFile(file) {
+  const buf = await file.arrayBuffer();
+  const { encrypted, fileKey } = await window.e2ee.encryptFile(buf);
+  const uploadResult = await api.uploadAttachment(encrypted);
+  return {
+    attachmentId: uploadResult.id || uploadResult.attachmentId,
+    fileKey,
+    fileName: file.name || "file",
+    mimeType: file.type || "application/octet-stream",
+    size: file.size || 0,
+  };
 }
