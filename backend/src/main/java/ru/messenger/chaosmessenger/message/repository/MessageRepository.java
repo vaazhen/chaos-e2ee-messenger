@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import ru.messenger.chaosmessenger.chat.domain.Message;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -121,4 +122,6 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
     long countByChatId(Long chatId);
 
     long countByChatIdAndSenderIdAndDeletedAtIsNull(Long chatId, Long senderId);
+
+    List<Message> findByExpiresAtBeforeAndDeletedAtIsNull(LocalDateTime now);
 }

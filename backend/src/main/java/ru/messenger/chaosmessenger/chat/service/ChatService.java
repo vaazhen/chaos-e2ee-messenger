@@ -891,6 +891,34 @@ public class ChatService {
         ));
     }
 
+    @Transactional
+    public void deleteChatForEveryone(String username, Long chatId) {
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new ChatException("User not found"));
+        Chat chat = chatRepository.findById(chatId)
+                .orElseThrow(() -> new ChatException("Chat not found"));
+
+        if (!participantRepository.existsByChatIdAndUserId(chatId, user.getId())) {
+            throw new ChatException("Not a chat participant");
+        }
+
+        if ("GROUP".equals(chat.getType())) {
+            ChatParticipant actorParticipant = participantRepository.findByChatIdAndUserId(chatId, user.getId())
+                    .orElseThrow(() -> new ChatException("Not a chat participant"));
+            if (actorParticipant.groupRole() != GroupRole.OWNER) {
+                throw new ChatException("Only owner can delete group");
+            }
+        }
+
+        chat.setDeletedAt(LocalDateTime.now());
+        chatRepository.save(chat);
+
+        List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
+        TransactionUtils.afterCommit(() ->
+                participantUsernames.forEach(u ->
+                        notifyChatListUpdated(u, chatId, "chat_deleted_for_everyone")));
+    }
+
     // ── private ───────────────────────────────────────────────────────────────
 
     @Transactional

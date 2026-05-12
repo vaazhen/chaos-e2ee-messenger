@@ -1269,7 +1269,8 @@ button{color:inherit}
   box-shadow:var(--soft-shadow);
   display:flex;
   align-items:flex-end;
-  gap:8px;
+  gap:2px;
+  padding:0 8px;
   padding:8px 8px 8px 12px;
   cursor:text;
 }
@@ -1280,11 +1281,12 @@ button{color:inherit}
 }
 .inp-area.recording-inline{
   align-items:center;
-  padding:8px 10px;
+  padding:8px 12px;
   cursor:default;
 }
-.inp-area.recording-inline>.emoji-trigger,
 .inp-area.recording-inline .msg-inp-wrap,
+.inp-area.recording-inline .inp-icon-btn,
+.inp-area.recording-inline>.emoji-trigger,
 .inp-area.recording-inline>input{
   display:none;
 }
@@ -1315,16 +1317,19 @@ button{color:inherit}
 }
 .voice-live-wave{
   flex:1;
-  min-width:80px;
+  min-width:0;
   height:32px;
   display:flex;
   align-items:center;
   gap:2px;
   overflow:hidden;
+  justify-content:flex-start;
 }
 .voice-live-wave i{
-  width:3px;
-  min-height:5px;
+  flex:1;
+  max-width:6px;
+  min-width:2px;
+  min-height:4px;
   border-radius:999px;
   background:var(--t2);
   opacity:.72;
@@ -1399,24 +1404,76 @@ button{color:inherit}
   padding:3px 0;
 }
 .msg-inp::placeholder{color:var(--t2)}
-.emoji-trigger{
+/* ── Unified icon button inside the input pill ──────────────────────────── */
+.inp-icon-btn{
   border:none;background:transparent;
   cursor:pointer;
-  font-size:20px;
   height:34px;
   width:34px;
   display:flex;
   align-items:center;
   justify-content:center;
+  color:var(--t2);
+  transition:color .15s ease;
+  padding:0;
+  flex-shrink:0;
+  border-radius:50%;
+}
+.inp-icon-btn .btn-icon{width:21px;height:21px}
+.inp-icon-btn:hover{color:var(--t1)}
+.inp-icon-btn.active{color:var(--acc)}
+.inp-icon-btn:disabled{opacity:.45;cursor:default}
+
+/* legacy alias kept for recording state */
+.emoji-trigger{
+  border:none;background:transparent;
+  cursor:pointer;height:34px;width:34px;
+  display:flex;align-items:center;justify-content:center;
+  color:var(--t2);padding:0;flex-shrink:0;
 }
 .emoji-trigger.recording{
   color:var(--red);
   animation:pulseVoice 1s ease-in-out infinite;
 }
-.emoji-trigger:disabled{
-  opacity:.45;
-  cursor:default;
+
+/* ── Attach popup menu (Telegram-style) ─────────────────────────────────── */
+.attach-menu{
+  position:absolute;
+  bottom:calc(100% + 12px);
+  left:-4px;
+  background:var(--bg1);
+  border:1px solid var(--bdr);
+  border-radius:12px;
+  padding:6px;
+  box-shadow:var(--shadow);
+  min-width:185px;
+  animation:pop .15s ease;
+  z-index:20;
 }
+.attach-menu-item{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:10px 14px;
+  border-radius:8px;
+  cursor:pointer;
+  font-size:14px;
+  color:var(--t1);
+  transition:background .12s ease;
+  white-space:nowrap;
+}
+.attach-menu-item:hover{background:var(--bg2)}
+.attach-menu-icon{
+  width:20px;height:20px;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:1.8;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+  color:var(--t2);
+  flex-shrink:0;
+}
+
 .old-voice-trigger{
   display:none;
 }
@@ -1550,7 +1607,7 @@ button{color:inherit}
 .emoji-picker{
   position:absolute;
   bottom:calc(100% + 8px);
-  left:14px;
+  right:60px;
   width:310px;
   padding:12px;
   background:rgba(255,255,255,.86);
@@ -3194,4 +3251,108 @@ button{color:inherit}
   color:#111;
   box-shadow:0 4px 10px rgba(0,0,0,.24);
 }
+
+/* ── UI POLISH: Smooth scrollbar ────────────────────────────────────────── */
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--bdr);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--t3)}
+
+/* ── UI POLISH: Message transitions ─────────────────────────────────────── */
+.msg-wrap{
+  transition:opacity 0.2s ease,transform 0.2s ease;
+}
+
+/* ── UI POLISH: Chat list hover effects ─────────────────────────────────── */
+.conversation-item{
+  transition:
+    background .15s ease,
+    transform .1s ease,
+    box-shadow .15s ease,
+    width .28s cubic-bezier(.4,0,.2,1),
+    height .28s cubic-bezier(.4,0,.2,1),
+    padding .28s cubic-bezier(.4,0,.2,1),
+    border-radius .28s cubic-bezier(.4,0,.2,1),
+    gap .28s cubic-bezier(.4,0,.2,1);
+}
+.conversation-item:hover{background:var(--bg2)}
+.conversation-item:active{transform:scale(.98)}
+
+/* ── UI POLISH: Send button press ───────────────────────────────────────── */
+.send-btn{transition:transform .1s ease,box-shadow .15s ease}
+.send-btn:active{transform:scale(.95)}
+
+/* ── UI POLISH: Self-destruct countdown ─────────────────────────────────── */
+.msg-ttl{
+  font-size:11px;
+  color:var(--t3);
+  display:flex;
+  align-items:center;
+  gap:4px;
+  margin-top:2px;
+  opacity:.8;
+}
+.msg-ttl svg{width:12px;height:12px}
+
+/* ── UI POLISH: Message fade-out animation ──────────────────────────────── */
+@keyframes msgFadeOut{from{opacity:1;transform:scale(1)}to{opacity:0;transform:scale(.95)}}
+.msg-expiring{animation:msgFadeOut .5s ease forwards}
+
+/* ── UI POLISH: File attachment styles ──────────────────────────────────── */
+.msg-file{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:8px 12px;
+  background:var(--bg2);
+  border-radius:8px;
+  cursor:pointer;
+  transition:background .15s ease;
+}
+.msg-file:hover{background:var(--bg3)}
+.msg-file-icon{width:32px;height:32px;font-size:24px;display:flex;align-items:center;justify-content:center;color:var(--acc)}
+.msg-file-info{flex:1}
+.msg-file-name{font-size:13px;font-weight:500;color:var(--t1)}
+.msg-file-size{font-size:11px;color:var(--t3)}
+
+/* ── UI POLISH: TTL selector ────────────────────────────────────────────── */
+.ttl-btn{
+  background:none;
+  border:none;
+  color:var(--t3);
+  cursor:pointer;
+  padding:6px;
+  border-radius:50%;
+  transition:color .15s,background .15s;
+  display:flex;
+  align-items:center;
+}
+.ttl-btn:hover{color:var(--acc);background:var(--bg2)}
+.ttl-btn.active{color:var(--acc)}
+.ttl-popup{
+  position:absolute;
+  bottom:calc(100% + 12px);
+  right:-4px;
+  background:var(--bg1);
+  border:1px solid var(--bdr);
+  border-radius:12px;
+  padding:6px;
+  box-shadow:var(--shadow);
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+  min-width:120px;
+  animation:pop .15s ease;
+  z-index:50;
+}
+.ttl-option{
+  padding:6px 12px;
+  border-radius:8px;
+  cursor:pointer;
+  font-size:13px;
+  color:var(--t1);
+  transition:background .1s;
+}
+.ttl-option:hover{background:var(--bg2)}
+.ttl-option.selected{color:var(--acc);font-weight:600}
 `;

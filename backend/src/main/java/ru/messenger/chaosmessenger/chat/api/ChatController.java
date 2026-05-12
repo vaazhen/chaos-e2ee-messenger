@@ -143,6 +143,12 @@ public class ChatController {
         chatService.archiveGroup(auth.getName(), chatId);
     }
 
+    @Operation(summary = "Delete chat for everyone")
+    @DeleteMapping("/{chatId}")
+    public void deleteChatForEveryone(@PathVariable Long chatId, Authentication auth) {
+        chatService.deleteChatForEveryone(auth.getName(), chatId);
+    }
+
     @Operation(summary = "Mute group participant")
     @PostMapping("/{chatId}/group/participants/{participantUserId}/mute")
     public ChatResponse muteParticipant(

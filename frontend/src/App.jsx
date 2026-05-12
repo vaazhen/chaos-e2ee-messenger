@@ -53,6 +53,32 @@ const GROUP_CHAT_LIST_WS_REASONS = new Set([
 const SIDEBAR_COMPACT_ENTER = 112;
 const SIDEBAR_COMPACT_EXIT = 128;
 
+async function registerPushSubscription() {
+  try {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    const reg = await navigator.serviceWorker.register("/sw.js");
+    const vapidKey = await api.getVapidKey();
+    if (!vapidKey) return;
+    const applicationServerKey = urlBase64ToUint8Array(vapidKey);
+    const subscription = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey,
+    });
+    await api.subscribePush(subscription.toJSON());
+  } catch (e) {
+    console.warn("[Push] registration failed:", e.message);
+  }
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64);
+  const arr = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
+}
+
 function clampSidebarWidth(n) {
   return Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, Math.round(Number(n))));
 }
@@ -498,6 +524,7 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
       await chatStore.loadChats(meData.id);
       await chatStore.loadRequests(meData.id);
       auth.setScreen("app");
+      registerPushSubscription();
     });
   }, []); // eslint-disable-line
 
@@ -535,9 +562,20 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
 
     onChatListUpdate: (evt) => {
       const reason = evt?.reason;
-      // Backend publishes ChatListUpdateEvent for many reasons (message_created, chat_read, etc).
-      // For message-related reasons we already update the preview/unread locally via onMessage/onStatusUpdate.
-      // Full reload is reserved for structural chat list changes (new chat) and profile updates.
+
+      if (reason === "chat_deleted_for_everyone") {
+        const deletedChatId = evt?.chatId;
+        if (deletedChatId) {
+          chatStore.deleteChatForMe(deletedChatId);
+          if (String(chatStore.activeId) === String(deletedChatId)) {
+            chatStore.setActiveId(null);
+          }
+        } else {
+          scheduleChatsRefresh();
+        }
+        return;
+      }
+
       const needsHardRefresh =
         reason === "profile_updated" ||
         reason === "chat_created" ||
@@ -614,6 +652,7 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
     } else {
       await chatStore.loadChats(meData.id);
       auth.setScreen("app");
+      registerPushSubscription();
     }
   };
 
@@ -632,16 +671,18 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
     setShowSettings(false);
   };
 
-  const sendMsg = async ({ text, imgFile, voiceFile }) => {
-    if ((!String(text || "").trim() && !imgFile && !voiceFile) || !chatStore.activeId) return;
-    const preview = imgFile
-      ? (String(text || "").trim() ? `📷 ${String(text).trim()}` : "📷 Фото")
-      : voiceFile
-        ? (String(text || "").trim() ? `Voice: ${String(text).trim()}` : "Voice message")
-      : String(text).trim();
+  const sendMsg = async ({ text, imgFile, voiceFile, generalFile, ttl }) => {
+    if ((!String(text || "").trim() && !imgFile && !voiceFile && !generalFile) || !chatStore.activeId) return;
+    const preview = generalFile
+      ? (String(text || "").trim() ? `📎 ${String(text).trim()}` : `📎 ${generalFile.name}`)
+      : imgFile
+        ? (String(text || "").trim() ? `📷 ${String(text).trim()}` : "📷 Фото")
+        : voiceFile
+          ? (String(text || "").trim() ? `Voice: ${String(text).trim()}` : "Voice message")
+        : String(text).trim();
     chatStore.updateChatPreview(chatStore.activeId, preview, true, getTime());
     setReplyTo(null);
-    const result = await msgStore.sendMessage(chatStore.activeId, { text, imgFile, voiceFile });
+    const result = await msgStore.sendMessage(chatStore.activeId, { text, imgFile, voiceFile, generalFile, ttl });
     if (!result) {
       // Re-sync chat preview/status in case optimistic update was rejected
       // (e.g. request is pending and second message is blocked).
@@ -833,13 +874,20 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
               chatStore.setActiveId(null);
             }
           }}
-          onDeleteChatEveryone={async () => {
-            window.alert(
-              l(
-                "Удаление чата у всех пока не реализовано на сервере.",
-                "Deleting the chat for everyone is not implemented on the server yet."
-              )
+          onDeleteChatEveryone={async (chatId) => {
+            const ok = window.confirm(
+              l("Удалить переписку у всех участников?", "Delete this chat for everyone?")
             );
+            if (!ok) return;
+            try {
+              await api.deleteChatForEveryone(chatId);
+              chatStore.deleteChatForMe(chatId);
+              if (String(chatStore.activeId) === String(chatId)) {
+                chatStore.setActiveId(null);
+              }
+            } catch (e) {
+              window.alert(e.message || l("Ошибка", "Error"));
+            }
           }}
           onToggleMuteChat={(chatId) => {
             toggleMuted(auth.me?.id, chatId);

@@ -72,6 +72,8 @@ class MessageServiceAdvancedTest {
     @Mock UserDeviceRepository userDeviceRepository;
     @Mock CurrentDeviceService currentDeviceService;
     @Mock UnreadService unreadService;
+    @Mock ru.messenger.chaosmessenger.infra.presence.OnlineService onlineService;
+    @Mock ru.messenger.chaosmessenger.push.service.PushNotificationService pushNotificationService;
     @Mock SimpMessagingTemplate messagingTemplate;
 
     private MessageService messageService;
@@ -104,6 +106,8 @@ class MessageServiceAdvancedTest {
                 userDeviceRepository,
                 currentDeviceService,
                 unreadService,
+                onlineService,
+                pushNotificationService,
                 messagingTemplate,
                 new ObjectMapper(),
                 new SimpleMeterRegistry()
@@ -728,7 +732,7 @@ class MessageServiceAdvancedTest {
             String senderDeviceId,
             List<EncryptedMessageEnvelopeInput> envelopes
     ) {
-        return new EncryptedSendMessageRequestV2(chatId, clientMessageId, senderDeviceId, envelopes);
+        return new EncryptedSendMessageRequestV2(chatId, clientMessageId, senderDeviceId, envelopes, null);
     }
 
     private static EncryptedEditMessageRequestV2 editRequest(
@@ -755,7 +759,9 @@ class MessageServiceAdvancedTest {
                 7,
                 11,
                 123456L,
-                messageIndex
+                messageIndex,
+                null,
+                null
         );
     }
 
