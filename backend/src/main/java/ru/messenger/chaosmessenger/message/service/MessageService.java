@@ -811,22 +811,6 @@ public class MessageService {
         );
     }
 
-    private TimelineEnvelopeDto toEnvelopeDto(MessageEnvelope envelope) {
-        return new TimelineEnvelopeDto(
-                envelope.getTargetDeviceId(),
-                envelope.getMessageType(),
-                envelope.getSenderIdentityPublicKey(),
-                envelope.getEphemeralPublicKey(),
-                envelope.getCiphertext(),
-                envelope.getNonce(),
-                envelope.getSignedPreKeyId(),
-                envelope.getOneTimePreKeyId(),
-                envelope.getMessageIndex(),
-                envelope.getRatchetPublicKey(),
-                envelope.getPreviousChainLength()
-        );
-    }
-
     private Map<Long, Map<String, Long>> reactionSummaries(Collection<Long> messageIds) {
         if (messageIds == null || messageIds.isEmpty()) {
             return Map.of();

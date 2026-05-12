@@ -783,7 +783,7 @@ return (
 
           {/* Emoji button (inside input pill, right side) */}
           {!groupMuteLocksInput && !recording && (
-            <button type="button" className="inp-icon-btn" onClick={toggleEmoji}>
+            <button type="button" className="inp-icon-btn" aria-label="Emoji" title="Emoji" onClick={toggleEmoji}>
               <EmojiIcon />
             </button>
           )}
