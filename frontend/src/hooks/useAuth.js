@@ -12,7 +12,6 @@ export function useAuth() {
   const [authError,   setAuthError]   = useState(null);
   const [authLoading, setAuthLoading] = useState(false);
   const [me,          setMe]          = useState(null);
-  // setupToken is held in memory only — it lives for the duration of the setup screen
   const [setupToken,  setSetupToken]  = useState(null);
 
   const otpRefs = [useRef(), useRef(), useRef(), useRef(), useRef(), useRef()];
@@ -58,7 +57,15 @@ export function useAuth() {
     if (!hasToken) hasToken = await tryRefresh();
     if (!hasToken) { setScreen("auth"); return; }
     try {
-      const meData = await api.getMe();
+      let meData;
+      try {
+        meData = await api.getMe();
+      } catch (firstErr) {
+        // JWT expired but refresh token may still be valid
+        const refreshed = await tryRefresh();
+        if (!refreshed) { clearToken(); clearRefreshToken(); setScreen("auth"); return; }
+        meData = await api.getMe();
+      }
       setMe(meData);
       await ensureDeviceOrRecover();
       if (!isProfileComplete(meData)) { setScreen("setup"); return; }

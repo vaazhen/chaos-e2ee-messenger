@@ -366,7 +366,7 @@ export default function AuthScreen({
           </>
         )}
 
-        <p className="auth-hint">X3DH · Symmetric Ratchet · AES-GCM</p>
+        <p className="auth-hint">X3DH · Double Ratchet · AES-GCM</p>
       </div>
     </div>
   );
