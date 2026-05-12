@@ -565,6 +565,8 @@ public class MessageService {
             entity.setSignedPreKeyId(input.signedPreKeyId());
             entity.setOneTimePreKeyId(input.oneTimePreKeyId());
             entity.setMessageIndex(input.messageIndex());
+            entity.setRatchetPublicKey(input.ratchetPublicKey());
+            entity.setPreviousChainLength(input.previousChainLength());
             entity.setCreatedAt(LocalDateTime.now());
 
             entity = messageEnvelopeRepository.save(entity);
@@ -695,16 +697,7 @@ public class MessageService {
                 message.getEditedAt(),
                 message.getDeletedAt(),
                 message.getStatus().name(),
-                envelope == null ? null : new TimelineEnvelopeDto(
-                        envelope.getTargetDeviceId(),
-                        envelope.getMessageType(),
-                        envelope.getSenderIdentityPublicKey(),
-                        envelope.getEphemeralPublicKey(),
-                        envelope.getCiphertext(),
-                        envelope.getNonce(),
-                        envelope.getSignedPreKeyId(),
-                        envelope.getOneTimePreKeyId(),
-                        envelope.getMessageIndex()),
+                envelope == null ? null : toEnvelopeDto(envelope),
                 reactions,
                 myReactions
         );
@@ -731,18 +724,25 @@ public class MessageService {
                 message.getCreatedAt(),
                 message.getEditedAt(),
                 message.getStatus().name(),
-                envelope == null ? null : new TimelineEnvelopeDto(
-                        envelope.getTargetDeviceId(),
-                        envelope.getMessageType(),
-                        envelope.getSenderIdentityPublicKey(),
-                        envelope.getEphemeralPublicKey(),
-                        envelope.getCiphertext(),
-                        envelope.getNonce(),
-                        envelope.getSignedPreKeyId(),
-                        envelope.getOneTimePreKeyId(),
-                        envelope.getMessageIndex()),
+                envelope == null ? null : toEnvelopeDto(envelope),
                 reactions,
                 myReactions
+        );
+    }
+
+    private TimelineEnvelopeDto toEnvelopeDto(MessageEnvelope envelope) {
+        return new TimelineEnvelopeDto(
+                envelope.getTargetDeviceId(),
+                envelope.getMessageType(),
+                envelope.getSenderIdentityPublicKey(),
+                envelope.getEphemeralPublicKey(),
+                envelope.getCiphertext(),
+                envelope.getNonce(),
+                envelope.getSignedPreKeyId(),
+                envelope.getOneTimePreKeyId(),
+                envelope.getMessageIndex(),
+                envelope.getRatchetPublicKey(),
+                envelope.getPreviousChainLength()
         );
     }
 
