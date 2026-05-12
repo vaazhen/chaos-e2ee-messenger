@@ -173,7 +173,7 @@ describe("critical UI components", () => {
     fireEvent.change(textarea, { target: { value: "hello world!" } });
     expect(onTyping).toHaveBeenCalledTimes(2);
 
-    fireEvent.click(screen.getByText("😊"));
+    fireEvent.click(screen.getByRole("button", { name: "Emoji" }));
     expect(screen.getByTitle("Smileys")).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("😀"));
@@ -185,6 +185,8 @@ describe("critical UI components", () => {
       text: "hello world!😀",
       imgFile: null,
       voiceFile: null,
+      generalFile: null,
+      ttl: null,
       replyTo: { _text: "old message" },
     });
   });
