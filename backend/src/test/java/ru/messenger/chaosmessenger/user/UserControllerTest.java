@@ -86,6 +86,7 @@ class UserControllerTest {
                 "alice@test.com",
                 "Alice",
                 "Smith",
+                null,
                 "alice.png",
                 "legacy-key"
         );
@@ -104,6 +105,7 @@ class UserControllerTest {
                 "alice@test.com",
                 "Alice",
                 "Smith",
+                null,
                 "alice.png"
         );
 
@@ -115,7 +117,7 @@ class UserControllerTest {
 
     @Test
     void updateProfileReturnsNewTokenAndNotifiesSharedChats() {
-        UpdateProfileRequest request = new UpdateProfileRequest(null, null, null, "alice_new");
+        UpdateProfileRequest request = new UpdateProfileRequest(null, null, null, null, "alice_new");
 
         UpdateProfileResponse updated = new UpdateProfileResponse(
                 1L,
@@ -123,6 +125,7 @@ class UserControllerTest {
                 "alice@test.com",
                 "Alice",
                 "Smith",
+                null,
                 "new-avatar.png",
                 "jwt-new"
         );

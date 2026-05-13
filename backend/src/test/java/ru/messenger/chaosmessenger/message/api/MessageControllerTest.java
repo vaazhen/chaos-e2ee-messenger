@@ -72,7 +72,7 @@ class MessageControllerTest {
     void getChatTimelineRequiresCurrentDeviceAndDelegatesToService() {
         MessageTimelineItemResponse item = new MessageTimelineItemResponse(
                 1L, 100L, 1L, "dev-a", "client-1", 1,
-                false, LocalDateTime.now(), null, "SENT", null, Map.of(), Set.of()
+                false, LocalDateTime.now(), null, "SENT", null, Map.of(), Set.of(), null
         );
 
         when(authentication.getName()).thenReturn("alice");
@@ -219,7 +219,7 @@ class MessageControllerTest {
     }
 
     private static EncryptedSendMessageRequestV2 sendRequest() {
-        return new EncryptedSendMessageRequestV2(100L, "client-1", "dev-a", List.of(envelope()));
+        return new EncryptedSendMessageRequestV2(100L, "client-1", "dev-a", List.of(envelope()), null);
     }
 
     private static EncryptedEditMessageRequestV2 editRequest() {
@@ -229,14 +229,14 @@ class MessageControllerTest {
     private static EncryptedMessageEnvelopeInput envelope() {
         return new EncryptedMessageEnvelopeInput(
                 "dev-b", 2L, "WHISPER", "identity", null, "ciphertext",
-                "nonce", null, null, 123L, 1
+                "nonce", null, null, 123L, 1, null, null
         );
     }
 
     private static DeviceMessageEventResponse eventResponse(String type) {
         return new DeviceMessageEventResponse(
                 type, 500L, 100L, 1L, "dev-a", "client-1", 1,
-                LocalDateTime.now(), null, null, "SENT", null, Map.of(), Set.of()
+                LocalDateTime.now(), null, null, "SENT", null, Map.of(), Set.of(), null
         );
     }
 }

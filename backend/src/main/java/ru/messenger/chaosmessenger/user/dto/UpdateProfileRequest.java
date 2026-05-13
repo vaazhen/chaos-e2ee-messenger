@@ -8,7 +8,9 @@ public record UpdateProfileRequest(
         String firstName,
         @Size(max = 100, message = "Last name is too long")
         String lastName,
-        @Size(max = 1024, message = "Avatar URL is too long")
+        @Size(max = 280, message = "Bio is too long")
+        String bio,
+        @Size(max = 262144, message = "Avatar URL is too long")
         String avatarUrl,
         @Size(min = 3, max = 32, message = "Username must be between 3 and 32 characters")
         @Pattern(regexp = "^[a-zA-Z0-9_]+$", message = "Username may only contain letters, digits and underscores")

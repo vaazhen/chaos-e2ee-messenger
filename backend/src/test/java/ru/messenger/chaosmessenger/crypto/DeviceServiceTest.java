@@ -9,16 +9,11 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import ru.messenger.chaosmessenger.TestFixtures;
-import ru.messenger.chaosmessenger.auth.service.DeviceRegistrationTokenService;
 import ru.messenger.chaosmessenger.common.exception.AuthException;
 import ru.messenger.chaosmessenger.crypto.device.DeviceService;
 import ru.messenger.chaosmessenger.crypto.device.UserDevice;
 import ru.messenger.chaosmessenger.crypto.device.UserDeviceRepository;
-import ru.messenger.chaosmessenger.crypto.dto.DeviceRegistrationRequest;
-import ru.messenger.chaosmessenger.crypto.dto.DeviceRegistrationResponse;
-import ru.messenger.chaosmessenger.crypto.dto.OneTimePreKeyDto;
-import ru.messenger.chaosmessenger.crypto.dto.SignedPreKeyDto;
-import ru.messenger.chaosmessenger.crypto.dto.UserDeviceResponse;
+import ru.messenger.chaosmessenger.crypto.dto.*;
 import ru.messenger.chaosmessenger.crypto.prekey.OneTimePreKey;
 import ru.messenger.chaosmessenger.crypto.prekey.OneTimePreKeyRepository;
 import ru.messenger.chaosmessenger.crypto.prekey.SignedPreKey;
@@ -41,26 +36,32 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class DeviceServiceTest {
 
-    @Mock UserRepository userRepository;
-    @Mock UserIdentityService userIdentityService;
-    @Mock UserDeviceRepository userDeviceRepository;
-    @Mock SignedPreKeyRepository signedPreKeyRepository;
-    @Mock OneTimePreKeyRepository oneTimePreKeyRepository;
+    @Mock
+    UserRepository userRepository;
+    @Mock
+    UserIdentityService userIdentityService;
+    @Mock
+    UserDeviceRepository userDeviceRepository;
+    @Mock
+    SignedPreKeyRepository signedPreKeyRepository;
+    @Mock
+    OneTimePreKeyRepository oneTimePreKeyRepository;
 
-    @InjectMocks DeviceService deviceService;
+    @InjectMocks
+    DeviceService deviceService;
 
     private User alice;
+    private User bob;
 
     @BeforeEach
     void setUp() {
         alice = TestFixtures.user(1L, "alice");
+        bob = TestFixtures.user(2L, "bob");
     }
 
     @Nested
@@ -179,6 +180,28 @@ class DeviceServiceTest {
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("signedPreKey.signature verification failed");
 
+            verify(signedPreKeyRepository, never()).save(any());
+            verify(oneTimePreKeyRepository, never()).save(any());
+        }
+
+        @Test
+        void rejectsDeviceIdOwnedByAnotherUserBeforeInsert() throws Exception {
+            DeviceRegistrationRequest request = validRegistrationRequest("dev-1");
+
+            UserDevice bobDevice = TestFixtures.device(20L, bob.getId(), "dev-1");
+            bobDevice.setUser(bob);
+
+            when(userIdentityService.require("alice")).thenReturn(alice);
+            when(userDeviceRepository.findByUserUsernameAndDeviceId("alice", "dev-1"))
+                    .thenReturn(Optional.empty());
+            when(userDeviceRepository.findByDeviceId("dev-1"))
+                    .thenReturn(Optional.of(bobDevice));
+
+            assertThatThrownBy(() -> deviceService.registerDevice("alice", request))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("Device id is already registered to another account");
+
+            verify(userDeviceRepository, never()).save(any());
             verify(signedPreKeyRepository, never()).save(any());
             verify(oneTimePreKeyRepository, never()).save(any());
         }

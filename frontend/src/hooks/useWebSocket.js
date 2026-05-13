@@ -11,18 +11,22 @@ export default function useWebSocket({
   chatIds = [],
   onMessage,
   onChatListUpdate,
+  onRequestsUpdate,
   onStatusUpdate,
   onTyping,
+  onConnectionState,
   enabled,
 }) {
   const clientRef   = useRef(null);
   const subsRef     = useRef({});
   const chatIdsRef  = useRef([]);
-  const handlersRef = useRef({ onMessage, onChatListUpdate, onStatusUpdate, onTyping });
+  const heartbeatRef = useRef(null);
+  const hadConnectedRef = useRef(false);
+  const handlersRef = useRef({ onMessage, onChatListUpdate, onRequestsUpdate, onStatusUpdate, onTyping, onConnectionState });
 
   useEffect(() => {
-    handlersRef.current = { onMessage, onChatListUpdate, onStatusUpdate, onTyping };
-  }, [onMessage, onChatListUpdate, onStatusUpdate, onTyping]);
+    handlersRef.current = { onMessage, onChatListUpdate, onRequestsUpdate, onStatusUpdate, onTyping, onConnectionState };
+  }, [onMessage, onChatListUpdate, onRequestsUpdate, onStatusUpdate, onTyping, onConnectionState]);
 
   useEffect(() => { chatIdsRef.current = chatIds; }, [chatIds]);
 
@@ -37,11 +41,29 @@ export default function useWebSocket({
     Object.keys(subsRef.current).forEach(unsub);
   };
 
+  const stopPresenceHeartbeat = () => {
+    if (heartbeatRef.current) {
+      clearInterval(heartbeatRef.current);
+      heartbeatRef.current = null;
+    }
+  };
+
+  const startPresenceHeartbeat = (client) => {
+    stopPresenceHeartbeat();
+    heartbeatRef.current = setInterval(() => {
+      if (!client?.connected) return;
+      try {
+        client.publish({ destination: "/app/user.online", body: "{}" });
+      } catch (_) {}
+    }, 25000);
+  };
+
   const setupPresence = (client, username) => {
     if (!client?.connected || !username) return;
     unsub("userStatus");
     unsub("myStatus");
     unsub("chats");
+    unsub("requests");
 
     const did = getOrCreateDeviceId();
     console.log("[WS] presence subs deviceId=", did, "username=", username);
@@ -60,10 +82,30 @@ export default function useWebSocket({
 
     subsRef.current["chats"] = client.subscribe(
       `/topic/users/${username}/chats`,
-      () => handlersRef.current.onChatListUpdate?.()
+      (msg) => {
+        try {
+          const data = JSON.parse(msg?.body || "{}");
+          handlersRef.current.onChatListUpdate?.(data);
+        } catch (_) {
+          handlersRef.current.onChatListUpdate?.();
+        }
+      }
+    );
+
+    subsRef.current["requests"] = client.subscribe(
+      `/topic/users/${username}/requests`,
+      (msg) => {
+        try {
+          const data = JSON.parse(msg?.body || "{}");
+          handlersRef.current.onRequestsUpdate?.(data);
+        } catch (_) {
+          handlersRef.current.onRequestsUpdate?.();
+        }
+      }
     );
 
     client.publish({ destination: "/app/user.online", body: "{}" });
+    startPresenceHeartbeat(client);
   };
 
   const subscribeToChat = (client, chatId) => {
@@ -137,15 +179,27 @@ export default function useWebSocket({
       clientRef.current = client;
       setupPresence(client, username);
       setupChatSubscriptions(client, chatIdsRef.current);
+      handlersRef.current.onConnectionState?.({
+        connected: true,
+        isReconnect: hadConnectedRef.current,
+      });
+      hadConnectedRef.current = true;
     };
 
-    client.onWebSocketClose = () => console.warn("[WS] Disconnected, reconnecting...");
+    client.onWebSocketClose = () => {
+      handlersRef.current.onConnectionState?.({
+        connected: false,
+        isReconnect: hadConnectedRef.current,
+      });
+      console.warn("[WS] Disconnected, reconnecting...");
+    };
     client.onStompError = (frame) => console.error("[WS] STOMP error:", frame);
 
     client.activate();
     clientRef.current = client;
 
     return () => {
+      stopPresenceHeartbeat();
       unsubAll();
       try { client.deactivate(); } catch (_) {}
       clientRef.current = null;

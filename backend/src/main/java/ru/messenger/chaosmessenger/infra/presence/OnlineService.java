@@ -4,6 +4,11 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 
 @Service
 public class OnlineService {
@@ -74,6 +79,59 @@ public class OnlineService {
 
     public LocalDateTime getLastSeen(String username) {
         String s = redisTemplate.opsForValue().get(lastSeenKey(username));
+        if (s == null) return LocalDateTime.now().minusDays(1);
+        try {
+            return LocalDateTime.parse(s);
+        } catch (Exception ex) {
+            return LocalDateTime.now().minusDays(1);
+        }
+    }
+
+    public Map<String, Boolean> isOnlineMany(Collection<String> usernames) {
+        if (usernames == null || usernames.isEmpty()) return Map.of();
+
+        List<String> distinct = usernames.stream()
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(s -> !s.isBlank())
+                .distinct()
+                .toList();
+        if (distinct.isEmpty()) return Map.of();
+
+        List<String> keys = distinct.stream().map(this::presenceKey).toList();
+        List<String> values = redisTemplate.opsForValue().multiGet(keys);
+
+        Map<String, Boolean> out = new HashMap<>();
+        for (int i = 0; i < distinct.size(); i++) {
+            String v = (values != null && i < values.size()) ? values.get(i) : null;
+            out.put(distinct.get(i), v != null);
+        }
+        return out;
+    }
+
+    public Map<String, LocalDateTime> getLastSeenMany(Collection<String> usernames) {
+        if (usernames == null || usernames.isEmpty()) return Map.of();
+
+        List<String> distinct = usernames.stream()
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(s -> !s.isBlank())
+                .distinct()
+                .toList();
+        if (distinct.isEmpty()) return Map.of();
+
+        List<String> keys = distinct.stream().map(this::lastSeenKey).toList();
+        List<String> values = redisTemplate.opsForValue().multiGet(keys);
+
+        Map<String, LocalDateTime> out = new HashMap<>();
+        for (int i = 0; i < distinct.size(); i++) {
+            String v = (values != null && i < values.size()) ? values.get(i) : null;
+            out.put(distinct.get(i), parseLastSeenOrDefault(v));
+        }
+        return out;
+    }
+
+    private LocalDateTime parseLastSeenOrDefault(String s) {
         if (s == null) return LocalDateTime.now().minusDays(1);
         try {
             return LocalDateTime.parse(s);

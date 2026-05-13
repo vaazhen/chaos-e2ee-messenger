@@ -1,6 +1,7 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useLayoutEffect, useState } from "react";
 import Ava from "./Ava";
-import { getTime, messageMatchesQuery } from "../helpers";
+import VoiceMessage from "./VoiceMessage";
+import { findWordStartMatches, getTime } from "../helpers";
 
 export default function MessageList({
   msgs,
@@ -11,16 +12,70 @@ export default function MessageList({
   onReact,
   searchQuery = "",
   typingUsername,
+  activeMatchId,
+  scrollToMessageId,
 }) {
   const endRef = useRef(null);
+  const listRef = useRef(null);
+  const initialScrollDoneRef = useRef(false);
+  const prevChatIdRef = useRef(null);
+  const prevLenRef = useRef(0);
+  const prevLastIdRef = useRef(null);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
+    const chatId = activeChat?.id ?? null;
+    if (prevChatIdRef.current !== chatId) {
+      prevChatIdRef.current = chatId;
+      initialScrollDoneRef.current = false;
+      prevLenRef.current = 0;
+      prevLastIdRef.current = null;
+    }
+  }, [activeChat?.id]);
+
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    if (!msgs?.length) return;
+
+    const bottomGap = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const nearBottom = bottomGap < 140;
+
+    const last = msgs[msgs.length - 1];
+    const lastId = last?.id ?? last?.messageId ?? `len:${msgs.length}`;
+    const grew = msgs.length >= (prevLenRef.current || 0);
+    const newTail = prevLastIdRef.current != null && lastId !== prevLastIdRef.current;
+    const appended = grew && newTail;
+
+    // First render for a chat: jump to bottom without animation to avoid visible "teleport".
+    if (!initialScrollDoneRef.current) {
+      initialScrollDoneRef.current = true;
+      // Ensure layout is ready (images/voice blocks may affect height).
+      requestAnimationFrame(() => {
+        const node = listRef.current;
+        if (!node) return;
+        node.scrollTo({ top: node.scrollHeight, behavior: "auto" });
+      });
+    } else if (nearBottom && appended) {
+      endRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+
+    prevLenRef.current = msgs.length;
+    prevLastIdRef.current = lastId;
   }, [msgs]);
+
+  useEffect(() => {
+    if (!scrollToMessageId) return;
+    const el = listRef.current;
+    if (!el) return;
+    const target = el.querySelector?.(`[data-mid="${String(scrollToMessageId)}"]`);
+    if (target && typeof target.scrollIntoView === "function") {
+      target.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+  }, [scrollToMessageId]);
 
   if (loadingMsgs) {
     return (
-      <div className="msgs scroll">
+      <div ref={listRef} className="msgs scroll">
         <div className="loading-msgs"><div className="spinner" /></div>
       </div>
     );
@@ -28,7 +83,7 @@ export default function MessageList({
 
   if (!msgs.length) {
     return (
-      <div className="msgs scroll">
+      <div ref={listRef} className="msgs scroll">
         <div className="product-empty">
           <div className="product-empty-icon">◯</div>
           <div className="product-empty-title">Нет сообщений</div>
@@ -39,7 +94,7 @@ export default function MessageList({
   }
 
   return (
-    <div className="msgs scroll">
+    <div ref={listRef} className="msgs scroll">
       <div className="date-div">today</div>
 
       {msgs.map((msg, idx) => {
@@ -50,65 +105,29 @@ export default function MessageList({
         const time = msg._time ?? getTime(msg.createdAt);
         const reactions = msg.reactions || {};
         const myReactions = msg.myReactions || [];
-        const isПоискHit = messageMatchesQuery(msg, searchQuery);
+        const isActiveHit = activeMatchId && String(activeMatchId) === String(msg.id ?? msg.messageId);
+        const shouldHighlightMessage = Boolean(searchQuery?.trim()) && Boolean(isActiveHit);
+        const attachment = msg._attachment;
+        const isFileAttachment = attachment && !msg._img && !msg._voice && attachment.fileName;
 
         return (
-          <div
+          <MsgRow
             key={msg.id ?? idx}
-            className={`msg-wrap${isOut ? " out" : ""}${isПоискHit ? " search-hit" : ""}`}
-            onContextMenu={e => onContextMenu(e, { ...msg, _text: text, _out: isOut })}
-          >
-            {!isOut && (
-              isGroupEnd
-                ? <Ava name={activeChat?.name} colorIdx={activeChat?.colorIdx} size="sm" avatarUrl={activeChat?.avatarUrl} />
-                : <div style={{ width: 28, flexShrink: 0 }} />
-            )}
-
-            <div
-              className={`bubble ${isOut ? "out" : "in"}${isGroupEnd ? (isOut ? " tl-out" : " tl-in") : ""}`}
-              onClick={e => e.stopPropagation()}
-            >
-              {msg._replyTo && (
-                <div className="reply-quote">
-                  <div className="reply-q-name">Ответить</div>
-                  <div className="reply-q-text">{msg._replyTo._text}</div>
-                </div>
-              )}
-
-              {msg._img && <img className="msg-img" src={msg._img} alt="" />}
-
-              {text && <span>{renderHighlightedText(text, searchQuery)}</span>}
-
-              <div className="msg-meta">
-                {msg.измененоAt && <span className="изменено-mark">изменено</span>}
-                <span>{time}</span>
-                {isOut && (
-                  <span className={`check${msg.status === "READ" ? " read" : ""}`}>
-                    {msg.status === "READ" ? "✓✓" : "✓"}
-                  </span>
-                )}
-              </div>
-
-              {Object.keys(reactions).length > 0 && (
-                <div className="message-reactions">
-                  {Object.entries(reactions).map(([emoji, count]) => (
-                    <button
-                      key={emoji}
-                      type="button"
-                      className={`reaction-chip${myReactions.includes(emoji) ? " mine" : ""}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onReact?.({ ...msg, _text: text, _out: isOut }, emoji);
-                      }}
-                    >
-                      <span>{emoji}</span>
-                      <span>{count}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+            msg={msg}
+            isOut={isOut}
+            isGroupEnd={isGroupEnd}
+            text={text}
+            time={time}
+            reactions={reactions}
+            myReactions={myReactions}
+            shouldHighlightMessage={shouldHighlightMessage}
+            searchQuery={searchQuery}
+            activeChat={activeChat}
+            onContextMenu={onContextMenu}
+            onReact={onReact}
+            isFileAttachment={isFileAttachment}
+            attachment={attachment}
+          />
         );
       })}
 
@@ -125,33 +144,172 @@ export default function MessageList({
     </div>
   );
 }
-function renderHighlightedText(text, query) {
-  const q = String(query || "").trim();
-  const source = String(text || "");
 
+function MsgRow({
+  msg, isOut, isGroupEnd, text, time, reactions, myReactions,
+  shouldHighlightMessage, searchQuery, activeChat, onContextMenu, onReact,
+  isFileAttachment, attachment,
+}) {
+  const [expiring, setExpiring] = useState(false);
+  const [hidden, setHidden] = useState(false);
+  const [countdown, setCountdown] = useState("");
+
+  useEffect(() => {
+    if (!msg.expiresAt) return;
+    const expiresMs = new Date(msg.expiresAt).getTime();
+    if (!Number.isFinite(expiresMs)) return;
+
+    const tick = () => {
+      const remaining = expiresMs - Date.now();
+      if (remaining <= 0) {
+        setExpiring(true);
+        setTimeout(() => setHidden(true), 500);
+        return;
+      }
+      if (remaining < 60000) setCountdown(`${Math.ceil(remaining / 1000)}s`);
+      else if (remaining < 3600000) setCountdown(`${Math.ceil(remaining / 60000)}m`);
+      else setCountdown(`${Math.ceil(remaining / 3600000)}h`);
+    };
+
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [msg.expiresAt]);
+
+  if (hidden) return null;
+
+  const downloadFile = (e) => {
+    e.stopPropagation();
+    if (!attachment?.objectUrl) return;
+    const a = document.createElement("a");
+    a.href = attachment.objectUrl;
+    a.download = attachment.fileName || "file";
+    a.click();
+  };
+
+  return (
+    <div
+      data-mid={String(msg.id ?? msg.messageId ?? "")}
+      className={`msg-wrap${isOut ? " out" : ""}${shouldHighlightMessage ? " search-hit-active" : ""}${expiring ? " msg-expiring" : ""}`}
+      onContextMenu={e => onContextMenu(e, { ...msg, _text: text, _out: isOut })}
+    >
+      {!isOut && (
+        isGroupEnd
+          ? <Ava name={activeChat?.name} colorIdx={activeChat?.colorIdx} size="sm" avatarUrl={activeChat?.avatarUrl} />
+          : <div style={{ width: 28, flexShrink: 0 }} />
+      )}
+
+      <div
+        className={`bubble ${isOut ? "out" : "in"}${isGroupEnd ? (isOut ? " tl-out" : " tl-in") : ""}`}
+        onClick={e => e.stopPropagation()}
+      >
+        {msg._replyTo && (
+          <div className="reply-quote">
+            <div className="reply-q-name">Ответить</div>
+            <div className="reply-q-text">{msg._replyTo._text}</div>
+          </div>
+        )}
+
+        {msg._img && <img className="msg-img" src={msg._img} alt="" />}
+
+        {msg._voice && (
+          <VoiceMessage
+            src={msg._voice.dataUrl}
+            durationMs={msg._voice.durationMs}
+            variant={isOut ? "out" : "in"}
+          />
+        )}
+
+        {isFileAttachment && (
+          <div className="msg-file" onClick={downloadFile}>
+            <MsgFileIcon name={attachment.fileName} />
+            <div className="msg-file-info">
+              <div className="msg-file-name">{attachment.fileName}</div>
+              {attachment.size > 0 && <div className="msg-file-size">{fmtSize(attachment.size)}</div>}
+            </div>
+          </div>
+        )}
+
+        {text && <span>{renderHighlightedText(text, shouldHighlightMessage ? searchQuery : "")}</span>}
+
+        {msg.expiresAt && countdown && (
+          <div className="msg-ttl">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="13" r="8" /><path d="M12 9v4l2 2" /><path d="M10 2h4" />
+            </svg>
+            <span>{countdown}</span>
+          </div>
+        )}
+
+        <div className="msg-meta">
+          {msg.editedAt && <span className="edited-mark">edited</span>}
+          <span>{time}</span>
+          {isOut && (
+            <span className={`check${msg.status === "READ" ? " read" : ""}`}>
+              {msg.status === "READ" ? "✓✓" : "✓"}
+            </span>
+          )}
+        </div>
+
+        {Object.keys(reactions).length > 0 && (
+          <div className="message-reactions">
+            {Object.entries(reactions).map(([emoji, count]) => (
+              <button
+                key={emoji}
+                type="button"
+                className={`reaction-chip${myReactions.includes(emoji) ? " mine" : ""}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onReact?.({ ...msg, _text: text, _out: isOut }, emoji);
+                }}
+              >
+                <span>{emoji}</span>
+                <span>{count}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MsgFileIcon({ name }) {
+  const ext = String(name || "").split(".").pop().toLowerCase();
+  const iconMap = { pdf: "📄", doc: "📝", docx: "📝", xls: "📊", xlsx: "📊", zip: "🗜️", rar: "🗜️", mp3: "🎵", mp4: "🎬", txt: "📃" };
+  return <div className="msg-file-icon">{iconMap[ext] || "📁"}</div>;
+}
+
+function fmtSize(bytes) {
+  if (!bytes || bytes < 0) return "";
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+}
+
+function renderHighlightedText(text, query) {
+  const source = String(text || "");
+  const q = String(query || "").trim();
   if (!q) return source;
 
-  const lower = source.toLowerCase();
-  const needle = q.toLowerCase();
+  const hits = findWordStartMatches(source, q);
+  if (!hits.length) return source;
+
   const parts = [];
-
   let pos = 0;
-  let idx = lower.indexOf(needle);
-
-  while (idx !== -1) {
+  for (const idx of hits) {
     if (idx > pos) parts.push(source.slice(pos, idx));
-
     parts.push(
-      <mark className="msg-search-mark" key={`${idx}-${needle}`}>
+      <mark className="msg-search-mark" key={`${idx}-${q}`}>
         {source.slice(idx, idx + q.length)}
       </mark>
     );
-
     pos = idx + q.length;
-    idx = lower.indexOf(needle, pos);
   }
 
-  if (pos < source.length) parts.push(source.slice(pos));
+  if (pos < source.length) {
+    parts.push(source.slice(pos));
+  }
 
   return parts;
 }

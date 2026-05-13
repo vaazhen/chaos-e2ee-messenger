@@ -6,6 +6,7 @@ public record UpdateProfileResponse(
         String email,
         String firstName,
         String lastName,
+        String bio,
         String avatarUrl,
         String token
 ) {

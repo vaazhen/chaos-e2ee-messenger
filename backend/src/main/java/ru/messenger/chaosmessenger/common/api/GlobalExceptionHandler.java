@@ -4,6 +4,7 @@ import ru.messenger.chaosmessenger.common.exception.*;
 
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -68,6 +69,17 @@ public class GlobalExceptionHandler {
                         HttpStatus.CONFLICT.value(),
                         code,
                         message,
+                        LocalDateTime.now()
+                ));
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiErrorResponse> handleDataIntegrityViolation(DataIntegrityViolationException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ApiErrorResponse(
+                        HttpStatus.CONFLICT.value(),
+                        "CONFLICT",
+                        "Data integrity conflict",
                         LocalDateTime.now()
                 ));
     }

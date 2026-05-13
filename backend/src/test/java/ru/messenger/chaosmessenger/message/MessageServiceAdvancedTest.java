@@ -15,6 +15,7 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import ru.messenger.chaosmessenger.TestFixtures;
 import ru.messenger.chaosmessenger.chat.domain.Message;
 import ru.messenger.chaosmessenger.chat.repository.ChatParticipantRepository;
+import ru.messenger.chaosmessenger.chat.repository.ChatRepository;
 import ru.messenger.chaosmessenger.common.exception.ChatException;
 import ru.messenger.chaosmessenger.common.exception.MessageException;
 import ru.messenger.chaosmessenger.crypto.device.CurrentDeviceService;
@@ -66,10 +67,13 @@ class MessageServiceAdvancedTest {
     @Mock MessageReceiptRepository messageReceiptRepository;
     @Mock MessageReactionRepository messageReactionRepository;
     @Mock ChatParticipantRepository participantRepository;
+    @Mock ChatRepository chatRepository;
     @Mock UserIdentityService userIdentityService;
     @Mock UserDeviceRepository userDeviceRepository;
     @Mock CurrentDeviceService currentDeviceService;
     @Mock UnreadService unreadService;
+    @Mock ru.messenger.chaosmessenger.infra.presence.OnlineService onlineService;
+    @Mock ru.messenger.chaosmessenger.push.service.PushNotificationService pushNotificationService;
     @Mock SimpMessagingTemplate messagingTemplate;
 
     private MessageService messageService;
@@ -97,10 +101,13 @@ class MessageServiceAdvancedTest {
                 messageReceiptRepository,
                 messageReactionRepository,
                 participantRepository,
+                chatRepository,
                 userIdentityService,
                 userDeviceRepository,
                 currentDeviceService,
                 unreadService,
+                onlineService,
+                pushNotificationService,
                 messagingTemplate,
                 new ObjectMapper(),
                 new SimpleMeterRegistry()
@@ -328,7 +335,7 @@ class MessageServiceAdvancedTest {
         stubParticipant(100L, bob.getId());
 
         Message message = TestFixtures.sentMessage(500L, 100L, alice.getId(), "alice-phone");
-        when(messageRepository.findById(500L)).thenReturn(Optional.of(message));
+        when(messageRepository.findByIdForUpdate(500L)).thenReturn(Optional.of(message));
 
         EncryptedEditMessageRequestV2 request = editRequest(
                 "bob-phone",
@@ -354,7 +361,7 @@ class MessageServiceAdvancedTest {
         Message message = TestFixtures.sentMessage(500L, 100L, alice.getId(), "alice-phone");
         message.setVersion(1);
 
-        when(messageRepository.findById(500L)).thenReturn(Optional.of(message));
+        when(messageRepository.findByIdForUpdate(500L)).thenReturn(Optional.of(message));
         when(messageRepository.save(message)).thenReturn(message);
         when(messageEnvelopeRepository.save(any(MessageEnvelope.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -403,7 +410,7 @@ class MessageServiceAdvancedTest {
         Message message = TestFixtures.sentMessage(500L, 100L, alice.getId(), "alice-phone");
         message.setDeletedAt(LocalDateTime.now());
 
-        when(messageRepository.findById(500L)).thenReturn(Optional.of(message));
+        when(messageRepository.findByIdForUpdate(500L)).thenReturn(Optional.of(message));
 
         EncryptedEditMessageRequestV2 request = editRequest(
                 "alice-phone",
@@ -725,7 +732,7 @@ class MessageServiceAdvancedTest {
             String senderDeviceId,
             List<EncryptedMessageEnvelopeInput> envelopes
     ) {
-        return new EncryptedSendMessageRequestV2(chatId, clientMessageId, senderDeviceId, envelopes);
+        return new EncryptedSendMessageRequestV2(chatId, clientMessageId, senderDeviceId, envelopes, null);
     }
 
     private static EncryptedEditMessageRequestV2 editRequest(
@@ -752,7 +759,9 @@ class MessageServiceAdvancedTest {
                 7,
                 11,
                 123456L,
-                messageIndex
+                messageIndex,
+                null,
+                null
         );
     }
 

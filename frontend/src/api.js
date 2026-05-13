@@ -29,11 +29,38 @@ export function getCurrentDeviceId() {
   return deviceId;
 }
 
+let _refreshPromise = null;
+
+async function tryAutoRefresh() {
+  if (_refreshPromise) return _refreshPromise;
+  _refreshPromise = (async () => {
+    try {
+      const rt = localStorage.getItem("cm_refresh_token");
+      if (!rt) return false;
+      const response = await fetch(API_BASE + "/auth/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken: rt }),
+      });
+      if (!response.ok) return false;
+      const data = await response.json();
+      if (data?.token) {
+        setToken(data.token);
+        if (data.refreshToken) localStorage.setItem("cm_refresh_token", data.refreshToken);
+        return true;
+      }
+      return false;
+    } catch { return false; }
+    finally { _refreshPromise = null; }
+  })();
+  return _refreshPromise;
+}
+
 export async function call(path, opts = {}) {
   const token    = getToken();
   const deviceId = getCurrentDeviceId();
 
-  const response = await fetch(API_BASE + path, {
+  let response = await fetch(API_BASE + path, {
     ...opts,
     headers: {
       "Content-Type": "application/json",
@@ -42,6 +69,23 @@ export async function call(path, opts = {}) {
       ...(opts.headers || {}),
     },
   });
+
+  // Auto-refresh on 401 (skip refresh endpoint itself to avoid loop)
+  if (response.status === 401 && !path.includes("/auth/refresh") && !path.includes("/auth/login")) {
+    const refreshed = await tryAutoRefresh();
+    if (refreshed) {
+      const newToken = getToken();
+      response = await fetch(API_BASE + path, {
+        ...opts,
+        headers: {
+          "Content-Type": "application/json",
+          ...(newToken ? { Authorization: "Bearer " + newToken } : {}),
+          ...(deviceId ? { "X-Device-Id": deviceId }             : {}),
+          ...(opts.headers || {}),
+        },
+      });
+    }
+  }
 
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
@@ -78,9 +122,31 @@ export const api = {
 
   // ── Chats ─────────────────────────────────────────────────────────────────
   getChats:       ()                   => call("/chats/my"),
+  getRequests:    ()                   => call("/chats/requests"),
   createSaved:    ()                   => call("/chats/saved", { method: "POST" }),
   createDirect:   (username)           => call(`/chats/direct/by-username?username=${encodeURIComponent(username)}`, { method: "POST" }),
   createGroup:    (name, members)      => call("/chats/group", { method: "POST", body: JSON.stringify({ name, memberIds: members }) }),
+  inviteGroupParticipants: (chatId, userIds) =>
+    call(`/chats/${chatId}/group/participants`, { method: "POST", body: JSON.stringify({ userIds }) }),
+  patchGroupSettings: (chatId, payload) =>
+    call(`/chats/${chatId}/group/settings`, { method: "PATCH", body: JSON.stringify(payload || {}) }),
+  patchParticipantRole: (chatId, participantUserId, role) =>
+    call(`/chats/${chatId}/group/participants/${participantUserId}/role`, { method: "PATCH", body: JSON.stringify({ role }) }),
+  patchGroupPermissions: (chatId, payload) =>
+    call(`/chats/${chatId}/group/permissions`, { method: "PATCH", body: JSON.stringify(payload || {}) }),
+  removeGroupParticipant: (chatId, participantUserId) =>
+    call(`/chats/${chatId}/group/participants/${participantUserId}`, { method: "DELETE" }),
+  muteGroupParticipant: (chatId, participantUserId, minutes) =>
+    call(`/chats/${chatId}/group/participants/${participantUserId}/mute?minutes=${encodeURIComponent(minutes)}`, { method: "POST" }),
+  unmuteGroupParticipant: (chatId, participantUserId) =>
+    call(`/chats/${chatId}/group/participants/${participantUserId}/mute`, { method: "DELETE" }),
+  banGroupParticipant: (chatId, participantUserId, reason = "") =>
+    call(`/chats/${chatId}/group/participants/${participantUserId}/ban?reason=${encodeURIComponent(reason)}`, { method: "POST" }),
+  unbanGroupParticipant: (chatId, participantUserId) =>
+    call(`/chats/${chatId}/group/participants/${participantUserId}/ban`, { method: "DELETE" }),
+  deleteGroup: (chatId) => call(`/chats/${chatId}/group`, { method: "DELETE" }),
+  acceptRequest:  (chatId)             => call(`/chats/${chatId}/requests/accept`, { method: "POST" }),
+  declineRequest: (chatId)             => call(`/chats/${chatId}/requests/decline`, { method: "POST" }),
 
   // ── Messages ──────────────────────────────────────────────────────────────
   getMessages:    (chatId, before)     => call(`/messages/chat/${chatId}/timeline?limit=50${before ? "&beforeMessageId=" + before : ""}`),
@@ -88,6 +154,55 @@ export const api = {
   markDelivered:  (chatId)             => call(`/messages/chat/${chatId}/delivered`, { method: "POST" }),
   deleteMsg:      (id)                 => call(`/messages/${id}`, { method: "DELETE" }),
   toggleReaction: (id, emoji)          => call(`/messages/${id}/reactions`, { method: "PUT", body: JSON.stringify({ emoji }) }),
+
+  // ── Attachments ──────────────────────────────────────────────────────────
+  uploadAttachment: async (encryptedBlob) => {
+    const token = getToken();
+    const deviceId = getCurrentDeviceId();
+    const form = new FormData();
+    form.append("file", new Blob([encryptedBlob]), "encrypted.bin");
+    const res = await fetch(API_BASE + "/attachments/upload", {
+      method: "POST",
+      headers: {
+        ...(token ? { Authorization: "Bearer " + token } : {}),
+        ...(deviceId ? { "X-Device-Id": deviceId } : {}),
+      },
+      body: form,
+    });
+    if (!res.ok) throw new Error("Upload failed");
+    return res.json();
+  },
+  downloadAttachment: async (attachmentId) => {
+    const token = getToken();
+    const deviceId = getCurrentDeviceId();
+    const res = await fetch(API_BASE + "/attachments/" + attachmentId, {
+      headers: {
+        ...(token ? { Authorization: "Bearer " + token } : {}),
+        ...(deviceId ? { "X-Device-Id": deviceId } : {}),
+      },
+    });
+    if (!res.ok) throw new Error("Download failed");
+    return res.arrayBuffer();
+  },
+
+  // ── Push Notifications ──────────────────────────────────────────────────
+  subscribePush: (subscription) => call("/push/subscribe", { method: "POST", body: JSON.stringify(subscription) }),
+  unsubscribePush: () => call("/push/unsubscribe", { method: "DELETE" }),
+  getVapidKey: async () => {
+    const token = getToken();
+    const deviceId = getCurrentDeviceId();
+    const res = await fetch(API_BASE + "/push/vapid-public-key", {
+      headers: {
+        ...(token ? { Authorization: "Bearer " + token } : {}),
+        ...(deviceId ? { "X-Device-Id": deviceId } : {}),
+      },
+    });
+    if (!res.ok) return null;
+    return res.text();
+  },
+
+  // ── Delete Chat ─────────────────────────────────────────────────────────
+  deleteChatForEveryone: (chatId) => call(`/chats/${chatId}`, { method: "DELETE" }),
 
   // ── i18n ──────────────────────────────────────────────────────────────────
   getTranslations: (lang) => call(`/v1/i18n/messages?lang=${encodeURIComponent(lang)}`),

@@ -11,21 +11,26 @@
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Chaos Messenger — Crypto Engine v3
-    // Protocol: X3DH for session establishment + Symmetric-key Ratchet for messages
+    // Chaos Messenger — Crypto Engine v4
+    // Protocol: X3DH for session establishment + Double Ratchet for messages
     //
-    // Symmetric Ratchet (simplified Double Ratchet):
-    //   After each message the chainKey evolves:
+    // Double Ratchet (Signal specification):
+    //   DH Ratchet — on every direction change a new X25519 keypair is generated,
+    //     a DH exchange is performed, and new root + chain keys are derived.
+    //     This provides break-in recovery: a compromised chain key is replaced
+    //     after a single round-trip.
+    //   Symmetric Ratchet — within each sending/receiving chain:
     //     nextChainKey  = HMAC-SHA256(chainKey, 0x02)
     //     messageKey    = HMAC-SHA256(chainKey, 0x01)
-    //   Each message is encrypted with a unique messageKey — old keys are never stored.
-    //   This provides per-message forward secrecy.
+    //   KDF_RK(rootKey, dhOutput) — HKDF-SHA256 with rootKey as salt,
+    //     dhOutput as IKM → 64 bytes split into newRootKey + newChainKey.
     // ─────────────────────────────────────────────────────────────────────────
 
-    // Storage keys — NOT scoped by username (device identity is independent of user account)
     const DEVICE_KEY_PREFIX    = 'cm_device_bundle_v2';
-    const SESSION_KEY_PREFIX   = 'cm_e2ee_sessions_v4';
+    const SESSION_KEY_PREFIX   = 'cm_e2ee_sessions_v5';
     const DEVICE_ID_KEY_PREFIX = 'cm_device_id';
+    const MAX_SKIP             = 2000;
+    const MAX_STORED_SKIPPED_KEYS = 4000;
 
     let registrationPromise = null;
     let registrationPromiseUsername = null;
@@ -50,6 +55,11 @@
         } catch (_) { return ''; }
     }
 
+    function b64ToArrayBuffer(base64) {
+        const bytes = b64ToBytes(base64);
+        return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    }
+
     // ─── JWT username (used only for registrationPromise scoping) ─────────────
 
     function getCurrentUsername() {
@@ -68,7 +78,6 @@
     }
 
     // ─── One-time migration: move username-scoped keys to unscoped ────────────
-    // Runs once per page load. Safe to call multiple times.
     function migrateUsernameScoped() {
         const username = getCurrentUsername();
         if (!username || username === 'anonymous') return;
@@ -122,7 +131,9 @@
         return new Uint8Array(bits);
     }
 
-    async function deriveRootAndChainKey(inputKeyMaterial) {
+    // ─── KDF functions ────────────────────────────────────────────────────────
+
+    async function deriveInitialRootAndChainKey(inputKeyMaterial) {
         assertWebCryptoAvailable();
         const salt = new Uint8Array(32);
         const baseKey = await crypto.subtle.importKey('raw', inputKeyMaterial, { name: 'HKDF' }, false, ['deriveBits']);
@@ -134,14 +145,31 @@
         return { rootKey: arr.slice(0, 32), chainKey: arr.slice(32, 64) };
     }
 
+    async function kdfRK(rootKeyBytes, dhOutputBytes) {
+        assertWebCryptoAvailable();
+        const baseKey = await crypto.subtle.importKey('raw', dhOutputBytes, { name: 'HKDF' }, false, ['deriveBits']);
+        const bits = await crypto.subtle.deriveBits(
+            { name: 'HKDF', hash: 'SHA-256', salt: rootKeyBytes, info: new TextEncoder().encode('ChaosDoubleRatchet') },
+            baseKey, 512
+        );
+        const arr = new Uint8Array(bits);
+        return { rootKey: arr.slice(0, 32), chainKey: arr.slice(32, 64) };
+    }
+
     async function ratchetStep(chainKeyBytes) {
         assertWebCryptoAvailable();
         const key = await crypto.subtle.importKey('raw', chainKeyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-        const mkBits   = await crypto.subtle.sign('HMAC', key, new Uint8Array([0x01]));
-        const ckBits   = await crypto.subtle.sign('HMAC', key, new Uint8Array([0x02]));
-        const mkRaw    = await crypto.subtle.importKey('raw', new Uint8Array(mkBits), { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
-        return { messageKey: mkRaw, nextChainKey: new Uint8Array(ckBits) };
+        const mkBits = new Uint8Array(await crypto.subtle.sign('HMAC', key, new Uint8Array([0x01])));
+        const ckBits = new Uint8Array(await crypto.subtle.sign('HMAC', key, new Uint8Array([0x02])));
+        return { messageKeyRaw: mkBits, nextChainKey: ckBits };
     }
+
+    async function importMessageKey(rawBytes) {
+        assertWebCryptoAvailable();
+        return crypto.subtle.importKey('raw', rawBytes, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+    }
+
+    // ─── AES-GCM encrypt / decrypt ───────────────────────────────────────────
 
     async function aesEncryptWithKey(plainText, aesKey) {
         assertWebCryptoAvailable();
@@ -158,6 +186,8 @@
         const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: nonce }, aesKey, ct);
         return new TextDecoder().decode(plain);
     }
+
+    // ─── Self-envelope encryption (for cross-device sync) ─────────────────────
 
     async function deriveSelfEnvelopeKey(localBundle) {
         assertWebCryptoAvailable();
@@ -201,7 +231,7 @@
         }
     }
 
-    // ─── Storage — NOT username-scoped ────────────────────────────────────────
+    // ─── Storage ──────────────────────────────────────────────────────────────
 
     function getOrCreateDeviceId() {
         let id = localStorage.getItem(DEVICE_ID_KEY_PREFIX);
@@ -225,6 +255,15 @@
     function getLocalDeviceBundle() { return loadJson(DEVICE_KEY_PREFIX); }
     function loadSessions()         { return loadJson(SESSION_KEY_PREFIX) || {}; }
     function saveSessions(sessions) { saveJson(SESSION_KEY_PREFIX, sessions); }
+
+    function resetLocalDeviceIdentity() {
+        localStorage.removeItem(DEVICE_KEY_PREFIX);
+        localStorage.removeItem(SESSION_KEY_PREFIX);
+        localStorage.removeItem(DEVICE_ID_KEY_PREFIX);
+        registrationPromise = null;
+        registrationPromiseUsername = null;
+        log('[E2EE] Local device identity reset');
+    }
 
     function sessionKey(localDeviceId, remoteDeviceId) {
         return `device:${localDeviceId}:remote:${remoteDeviceId}`;
@@ -355,15 +394,56 @@
         return registrationPromise;
     }
 
-    // ─── X3DH session establishment (initiator) ───────────────────────────────
+    // ─── Signed prekey verification ──────────────────────────────────────────
 
-    async function createInitiatorSessionWrapped(localBundle, targetDevice) {
+    async function verifySignedPreKeySignature(signingPublicKeyB64, signedPreKeyPublicB64, signatureB64) {
+        if (!signingPublicKeyB64 || !signedPreKeyPublicB64 || !signatureB64) {
+            throw new Error('Target device signed prekey bundle is incomplete');
+        }
+        assertWebCryptoAvailable();
+        const signingKey = await crypto.subtle.importKey(
+            'spki',
+            b64ToArrayBuffer(signingPublicKeyB64),
+            { name: 'ECDSA', namedCurve: 'P-256' },
+            false,
+            ['verify']
+        );
+        const verified = await crypto.subtle.verify(
+            { name: 'ECDSA', hash: { name: 'SHA-256' } },
+            signingKey,
+            b64ToBytes(signatureB64),
+            b64ToBytes(signedPreKeyPublicB64)
+        );
+        if (!verified) {
+            throw new Error('Invalid signed prekey signature');
+        }
+    }
+
+    // ─── Helper: serialize/deserialize DH ratchet keypair ────────────────────
+
+    async function exportDHKeyPair(keyPair) {
+        return {
+            publicKey: await exportRawPublicKey(keyPair.publicKey),
+            privateKeyPkcs8: await exportPkcs8PrivateKey(keyPair.privateKey)
+        };
+    }
+
+    // ─── X3DH + Double Ratchet session establishment (initiator) ─────────────
+
+    async function createInitiatorSession(localBundle, targetDevice) {
+        await verifySignedPreKeySignature(
+            targetDevice.signingPublicKey,
+            targetDevice.signedPreKey?.publicKey,
+            targetDevice.signedPreKey?.signature
+        );
+
         const identityPrivate       = await importPkcs8PrivateKey(localBundle.identity.privateKeyPkcs8);
         const ephemeral             = await generateX25519KeyPair();
         const ephemeralPublicKey    = await exportRawPublicKey(ephemeral.publicKey);
         const remoteIdentityPub     = await importRawPublicKey(targetDevice.identityPublicKey);
         const remoteSignedPreKeyPub = await importRawPublicKey(targetDevice.signedPreKey.publicKey);
 
+        // X3DH DH calculations
         const dh1 = await derive32(identityPrivate, remoteSignedPreKeyPub);
         const dh2 = await derive32(ephemeral.privateKey, remoteIdentityPub);
         const dh3 = await derive32(ephemeral.privateKey, remoteSignedPreKeyPub);
@@ -380,27 +460,42 @@
             combined.set(dh1, 0); combined.set(dh2, dh1.length); combined.set(dh3, dh1.length + dh2.length);
         }
 
-        const keys = await deriveRootAndChainKey(combined);
+        const initial = await deriveInitialRootAndChainKey(combined);
+        const SK = initial.rootKey;
+
+        // Double Ratchet initialization (initiator / Alice role):
+        // Generate first DH ratchet keypair, use recipient's signed prekey as DHr.
+        const DHs = await generateX25519KeyPair();
+        const DHsExported = await exportDHKeyPair(DHs);
+        const DHr = targetDevice.signedPreKey.publicKey;
+
+        const remoteSignedPub = await importRawPublicKey(DHr);
+        const dhResult = await derive32(DHs.privateKey, remoteSignedPub);
+        const { rootKey, chainKey: CKs } = await kdfRK(SK, dhResult);
+
         const session = {
             localDeviceId: localBundle.deviceId,
             remoteDeviceId: targetDevice.deviceId,
-            rootKey: bytesToB64(keys.rootKey),
-            sendingChainStartKey: bytesToB64(keys.chainKey),
-            sendingChainKey: bytesToB64(keys.chainKey),
-            sendingIndex: 0,
-            receivingChainStartKey: bytesToB64(keys.rootKey),
-            receivingChainKey: null,
-            receivingIndex: 0,
+            RK: bytesToB64(rootKey),
+            DHs: DHsExported,
+            DHr: DHr,
+            CKs: bytesToB64(CKs),
+            CKr: null,
+            Ns: 0,
+            Nr: 0,
+            PN: 0,
+            MKSKIPPED: {},
             senderIdentityPublicKey: localBundle.identity.publicKey,
             _ephemeralPublicKey: ephemeralPublicKey,
             establishedAt: Date.now(),
-            version: 3
+            version: 4
         };
+
         storeSession(localBundle.deviceId, targetDevice.deviceId, session);
         return { session, ephemeralPublicKey };
     }
 
-    // ─── X3DH session establishment (recipient) ──────────────────────────────
+    // ─── X3DH + Double Ratchet session establishment (recipient) ─────────────
 
     async function bootstrapRecipientSession(localBundle, envelope) {
         const identityPrivate      = await importPkcs8PrivateKey(localBundle.identity.privateKeyPkcs8);
@@ -408,6 +503,7 @@
         const senderIdentityPub    = await importRawPublicKey(envelope.senderIdentityPublicKey);
         const ephemeralPub         = await importRawPublicKey(envelope.ephemeralPublicKey);
 
+        // X3DH DH calculations (recipient / Bob role)
         const dh1 = await derive32(signedPreKeyPrivate, senderIdentityPub);
         const dh2 = await derive32(identityPrivate, ephemeralPub);
         const dh3 = await derive32(signedPreKeyPrivate, ephemeralPub);
@@ -426,82 +522,154 @@
             combined.set(dh1, 0); combined.set(dh2, dh1.length); combined.set(dh3, dh1.length + dh2.length);
         }
 
-        const keys = await deriveRootAndChainKey(combined);
+        const initial = await deriveInitialRootAndChainKey(combined);
+        const SK = initial.rootKey;
 
-        storeSession(localBundle.deviceId, envelope.senderDeviceId, {
+        // Double Ratchet initialization (recipient / Bob role):
+        // DHs = signed prekey pair; DHr is unknown until first message arrives.
+        // The first decryptWithDoubleRatchet call will perform the DH ratchet step.
+        const session = {
             localDeviceId: localBundle.deviceId,
             remoteDeviceId: envelope.senderDeviceId,
-            rootKey: bytesToB64(keys.rootKey),
-            sendingChainStartKey: bytesToB64(keys.rootKey),
-            sendingChainKey: null,
-            sendingIndex: 0,
-            receivingChainStartKey: bytesToB64(keys.chainKey),
-            receivingChainKey: bytesToB64(keys.chainKey),
-            receivingIndex: 0,
+            RK: bytesToB64(SK),
+            DHs: {
+                publicKey: localBundle.signedPreKey.publicKey,
+                privateKeyPkcs8: localBundle.signedPreKey.privateKeyPkcs8
+            },
+            DHr: null,
+            CKs: null,
+            CKr: null,
+            Ns: 0,
+            Nr: 0,
+            PN: 0,
+            MKSKIPPED: {},
             senderIdentityPublicKey: envelope.senderIdentityPublicKey,
             establishedAt: Date.now(),
-            version: 3
-        });
+            version: 4
+        };
 
-        return keys;
+        storeSession(localBundle.deviceId, envelope.senderDeviceId, session);
+        return session;
     }
 
-    // ─── Ratchet encrypt / decrypt ────────────────────────────────────────────
+    // ─── Double Ratchet core ─────────────────────────────────────────────────
 
-    async function encryptWithRatchet(session, plainText) {
-        let chainKeyBytes;
-        if (!session.sendingChainStartKey) {
-            session.sendingChainStartKey = session.sendingChainKey || session.rootKey;
-        }
-        if (!session.sendingChainKey) {
-            chainKeyBytes = b64ToBytes(session.sendingChainStartKey);
-            session.sendingChainKey = session.sendingChainStartKey;
-        } else {
-            chainKeyBytes = b64ToBytes(session.sendingChainKey);
-        }
-        const { messageKey, nextChainKey } = await ratchetStep(chainKeyBytes);
-        session.sendingChainKey = bytesToB64(nextChainKey);
-        session.sendingIndex = (session.sendingIndex || 0) + 1;
-        const encrypted = await aesEncryptWithKey(plainText, messageKey);
-        return { encrypted, messageIndex: session.sendingIndex - 1 };
+    function skippedKeyId(dhPub, n) {
+        return dhPub + ':' + n;
     }
 
-    async function decryptWithRatchet(session, envelope) {
-        const targetIndex = envelope.messageIndex ?? 0;
-        let chainKeyBytes;
+    async function trySkippedMessageKeys(session, envelope) {
+        const kid = skippedKeyId(envelope.ratchetPublicKey, envelope.messageIndex ?? 0);
+        const mkRawB64 = session.MKSKIPPED[kid];
+        if (!mkRawB64) return null;
+        delete session.MKSKIPPED[kid];
+        const mk = await importMessageKey(b64ToBytes(mkRawB64));
+        return aesDecryptWithKey(envelope.ciphertext, envelope.nonce, mk);
+    }
 
-        if (!session.receivingChainStartKey) {
-            session.receivingChainStartKey = session.receivingChainKey || session.rootKey;
+    async function skipMessageKeys(session, until) {
+        if (session.CKr == null) return;
+        if ((until - (session.Nr || 0)) > MAX_SKIP) {
+            throw new Error('Too many skipped messages: ' + (until - (session.Nr || 0)));
         }
-        if (!session.receivingChainKey) {
-            chainKeyBytes = b64ToBytes(session.receivingChainStartKey);
-            session.receivingChainKey = session.receivingChainStartKey;
-            session.receivingIndex = 0;
-        } else {
-            chainKeyBytes = b64ToBytes(session.receivingChainKey);
+        let ckBytes = b64ToBytes(session.CKr);
+        let nr = session.Nr || 0;
+        while (nr < until) {
+            const { messageKeyRaw, nextChainKey } = await ratchetStep(ckBytes);
+            session.MKSKIPPED[skippedKeyId(session.DHr, nr)] = bytesToB64(messageKeyRaw);
+            ckBytes = nextChainKey;
+            nr++;
+        }
+        session.CKr = bytesToB64(ckBytes);
+        session.Nr = nr;
+        pruneSkippedKeys(session);
+    }
+
+    function pruneSkippedKeys(session) {
+        const keys = Object.keys(session.MKSKIPPED);
+        if (keys.length > MAX_STORED_SKIPPED_KEYS) {
+            const sorted = keys.sort();
+            for (let i = 0; i < (keys.length - MAX_STORED_SKIPPED_KEYS); i++) {
+                delete session.MKSKIPPED[sorted[i]];
+            }
+        }
+    }
+
+    async function dhRatchetStep(session, newDHrPub) {
+        session.PN = session.Ns;
+        session.Ns = 0;
+        session.Nr = 0;
+        session.DHr = newDHrPub;
+
+        // Derive new receiving chain
+        const dhsPrivate = await importPkcs8PrivateKey(session.DHs.privateKeyPkcs8);
+        const dhrPublic = await importRawPublicKey(session.DHr);
+        const dhResult1 = await derive32(dhsPrivate, dhrPublic);
+        const kdf1 = await kdfRK(b64ToBytes(session.RK), dhResult1);
+        session.RK = bytesToB64(kdf1.rootKey);
+        session.CKr = bytesToB64(kdf1.chainKey);
+
+        // Generate new sending keypair and derive new sending chain
+        const newDHs = await generateX25519KeyPair();
+        session.DHs = await exportDHKeyPair(newDHs);
+        const dhResult2 = await derive32(newDHs.privateKey, dhrPublic);
+        const kdf2 = await kdfRK(b64ToBytes(session.RK), dhResult2);
+        session.RK = bytesToB64(kdf2.rootKey);
+        session.CKs = bytesToB64(kdf2.chainKey);
+    }
+
+    async function encryptWithDoubleRatchet(session, plainText) {
+        if (!session.CKs) {
+            throw new Error('Sending chain not initialized');
         }
 
-        let currentIndex = session.receivingIndex || 0;
+        const ckBytes = b64ToBytes(session.CKs);
+        const { messageKeyRaw, nextChainKey } = await ratchetStep(ckBytes);
+        session.CKs = bytesToB64(nextChainKey);
+        const messageIndex = session.Ns;
+        session.Ns = (session.Ns || 0) + 1;
 
-        if (targetIndex < currentIndex) {
-            chainKeyBytes = b64ToBytes(session.receivingChainStartKey);
-            currentIndex = 0;
+        const mk = await importMessageKey(messageKeyRaw);
+        const encrypted = await aesEncryptWithKey(plainText, mk);
+
+        return {
+            encrypted,
+            messageIndex,
+            ratchetPublicKey: session.DHs.publicKey,
+            previousChainLength: session.PN || 0
+        };
+    }
+
+    async function decryptWithDoubleRatchet(session, envelope) {
+        session.MKSKIPPED = session.MKSKIPPED || {};
+        const ratchetPub = envelope.ratchetPublicKey;
+        const msgIdx = envelope.messageIndex ?? 0;
+
+        // 1. Try previously stored skipped message keys
+        const skippedResult = await trySkippedMessageKeys(session, envelope);
+        if (skippedResult !== null) return skippedResult;
+
+        // 2. If new DH ratchet public key, perform DH ratchet
+        if (ratchetPub && ratchetPub !== session.DHr) {
+            await skipMessageKeys(session, envelope.previousChainLength ?? 0);
+            await dhRatchetStep(session, ratchetPub);
         }
 
-        while (currentIndex < targetIndex) {
-            const step = await ratchetStep(chainKeyBytes);
-            chainKeyBytes = step.nextChainKey;
-            currentIndex++;
+        // 3. Skip to the correct message index in the receiving chain
+        if (session.CKr == null) {
+            throw new Error('Receiving chain not initialized for device ' + (envelope.senderDeviceId || '?'));
         }
 
-        const { messageKey, nextChainKey } = await ratchetStep(chainKeyBytes);
+        await skipMessageKeys(session, msgIdx);
 
-        if (targetIndex >= (session.receivingIndex || 0)) {
-            session.receivingChainKey = bytesToB64(nextChainKey);
-            session.receivingIndex = currentIndex + 1;
-        }
+        // 4. Derive the message key for this index
+        const ckBytes = b64ToBytes(session.CKr);
+        const { messageKeyRaw, nextChainKey } = await ratchetStep(ckBytes);
+        session.CKr = bytesToB64(nextChainKey);
+        session.Nr = (session.Nr || 0) + 1;
 
-        return aesDecryptWithKey(envelope.ciphertext, envelope.nonce, messageKey);
+        const mk = await importMessageKey(messageKeyRaw);
+        return aesDecryptWithKey(envelope.ciphertext, envelope.nonce, mk);
     }
 
     // ─── Fanout (send to chat) ─────────────────────────────────────────────────
@@ -527,6 +695,8 @@
                     messageType: 'SELF_WHISPER',
                     senderIdentityPublicKey: localBundle.identity.publicKey,
                     ephemeralPublicKey: null,
+                    ratchetPublicKey: null,
+                    previousChainLength: null,
                     ciphertext: encrypted.ciphertext,
                     nonce: encrypted.nonce,
                     messageIndex: null,
@@ -540,15 +710,28 @@
             let session = getSession(localBundle.deviceId, targetDevice.deviceId);
             let ephemeralPublicKey = null;
             let isNewSession = false;
+            let resolvedSignedPreKey = targetDevice.signedPreKey || null;
+            let resolvedOneTimePreKey = null;
 
-            if (!session) {
-                const created = await createInitiatorSessionWrapped(localBundle, targetDevice);
+            if (!session || session.version !== 4) {
+                const reserved = await api(
+                    '/api/crypto/chats/' + encodeURIComponent(chatId) + '/devices/' + encodeURIComponent(targetDevice.deviceId) + '/reserve-prekey',
+                    { method: 'POST' }
+                );
+                resolvedSignedPreKey = reserved?.signedPreKey || targetDevice.signedPreKey || null;
+                resolvedOneTimePreKey = reserved?.oneTimePreKey || null;
+                const created = await createInitiatorSession(localBundle, {
+                    ...targetDevice,
+                    signedPreKey: resolvedSignedPreKey,
+                    oneTimePreKey: resolvedOneTimePreKey,
+                });
                 session = created.session;
                 ephemeralPublicKey = created.ephemeralPublicKey;
                 isNewSession = true;
             }
 
-            const { encrypted, messageIndex } = await encryptWithRatchet(session, plainText);
+            const { encrypted, messageIndex, ratchetPublicKey, previousChainLength } =
+                await encryptWithDoubleRatchet(session, plainText);
             storeSession(localBundle.deviceId, targetDevice.deviceId, session);
 
             envelopes.push({
@@ -557,11 +740,13 @@
                 messageType: isNewSession ? 'PREKEY_WHISPER' : 'WHISPER',
                 senderIdentityPublicKey: localBundle.identity.publicKey,
                 ephemeralPublicKey: isNewSession ? ephemeralPublicKey : null,
+                ratchetPublicKey,
+                previousChainLength,
                 ciphertext: encrypted.ciphertext,
                 nonce: encrypted.nonce,
                 messageIndex,
-                signedPreKeyId: isNewSession && targetDevice.signedPreKey ? targetDevice.signedPreKey.preKeyId : null,
-                oneTimePreKeyId: isNewSession && targetDevice.oneTimePreKey ? targetDevice.oneTimePreKey.preKeyId : null,
+                signedPreKeyId: isNewSession && resolvedSignedPreKey ? resolvedSignedPreKey.preKeyId : null,
+                oneTimePreKeyId: isNewSession && resolvedOneTimePreKey ? resolvedOneTimePreKey.preKeyId : null,
                 timestamp: Date.now()
             });
         }
@@ -589,7 +774,7 @@
         let session = getSession(localBundle.deviceId, envelope.senderDeviceId);
 
         if (envelope.messageType === 'PREKEY_WHISPER') {
-            log('[decrypt] Bootstrap X3DH session with', envelope.senderDeviceId);
+            log('[decrypt] Bootstrap X3DH + Double Ratchet session with', envelope.senderDeviceId);
             await bootstrapRecipientSession(localBundle, envelope);
             session = getSession(localBundle.deviceId, envelope.senderDeviceId);
         }
@@ -598,11 +783,40 @@
             throw new Error('No session for device ' + envelope.senderDeviceId);
         }
 
-        const plainText = await decryptWithRatchet(session, envelope);
+        if (session.version !== 4) {
+            throw new Error('Session version mismatch (expected 4, got ' + session.version + ') — re-establish session');
+        }
+
+        const plainText = await decryptWithDoubleRatchet(session, envelope);
         storeSession(localBundle.deviceId, envelope.senderDeviceId, session);
 
         log('[decrypt] OK messageIndex=' + envelope.messageIndex);
         return plainText;
+    }
+
+    // ─── File encryption / decryption (AES-256-GCM with random key) ────────────
+
+    async function encryptFile(fileArrayBuffer) {
+        assertWebCryptoAvailable();
+        const key = crypto.getRandomValues(new Uint8Array(32));
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+        const cryptoKey = await crypto.subtle.importKey("raw", key, "AES-GCM", false, ["encrypt"]);
+        const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, cryptoKey, fileArrayBuffer);
+        const result = new Uint8Array(iv.length + encrypted.byteLength);
+        result.set(iv, 0);
+        result.set(new Uint8Array(encrypted), iv.length);
+        return { encrypted: result, fileKey: btoa(String.fromCharCode(...key)) };
+    }
+
+    async function decryptFile(encryptedArrayBuffer, fileKeyBase64) {
+        assertWebCryptoAvailable();
+        const keyBytes = Uint8Array.from(atob(fileKeyBase64), c => c.charCodeAt(0));
+        const data = new Uint8Array(encryptedArrayBuffer);
+        const iv = data.slice(0, 12);
+        const ciphertext = data.slice(12);
+        const cryptoKey = await crypto.subtle.importKey("raw", keyBytes, "AES-GCM", false, ["decrypt"]);
+        const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, cryptoKey, ciphertext);
+        return decrypted;
     }
 
     // ─── Public API ────────────────────────────────────────────────────────────
@@ -610,9 +824,12 @@
     window.e2ee = {
         getOrCreateDeviceId,
         getLocalDeviceBundle,
+        resetLocalDeviceIdentity,
         ensureDeviceRegistered,
         buildFanoutRequest,
-        decryptEnvelope
+        decryptEnvelope,
+        encryptFile,
+        decryptFile
     };
 
 })();

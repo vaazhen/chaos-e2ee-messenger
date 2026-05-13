@@ -1,36 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { api, setToken } from "../api";
 import { initials } from "../helpers";
-
-function resizeAvatarFile(file) {
-  return new Promise((resolve, reject) => {
-    if (!file || !file.type?.startsWith("image/")) {
-      reject(new Error("\u0424\u0430\u0439\u043b \u0441\u043b\u0438\u0448\u043a\u043e\u043c \u0431\u043e\u043b\u044c\u0448\u043e\u0439. \u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0438\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u0435 \u0434\u043e 7 \u041c\u0411.")); return;
-    }
-    if (file.size > 7 * 1024 * 1024) {
-      reject(new Error("Файл слишком большой. Выберите изображение до 7 МБ.")); return;
-    }
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      try {
-        const size = 512;
-        const canvas = document.createElement("canvas");
-        canvas.width = size; canvas.height = size;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) throw new Error("Canvas \u043d\u0435\u0434\u043e\u0441\u0442\u0443\u043f\u0435\u043d");
-        const minSide = Math.min(img.width, img.height);
-        const sx = Math.floor((img.width  - minSide) / 2);
-        const sy = Math.floor((img.height - minSide) / 2);
-        ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, size, size);
-        URL.revokeObjectURL(url);
-        resolve(canvas.toDataURL("image/jpeg", 0.88));
-      } catch (e) { URL.revokeObjectURL(url); reject(e); }
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u043f\u0440\u043e\u0447\u0438\u0442\u0430\u0442\u044c \u0438\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u0435")); };
-    img.src = url;
-  });
-}
+import { compressImageToDataUrl, IMAGE_PROFILES } from "../imagePipeline";
 
 const LS_PREFIXES = ["cm_device_id", "cm_device_bundle_v2", "cm_e2ee_sessions_v4"];
 
@@ -121,8 +92,8 @@ export default function SetupProfile({ me, setupToken, onFinishSetup, onDone }) 
     if (!file) return;
     try {
       setError(null);
-      const dataUrl = await resizeAvatarFile(file);
-      setUploadedAvatarUrl(dataUrl);
+      const compressed = await compressImageToDataUrl(file, IMAGE_PROFILES.avatar);
+      setUploadedAvatarUrl(compressed.dataUrl);
     } catch (err) {
       setError(err.message);
     }

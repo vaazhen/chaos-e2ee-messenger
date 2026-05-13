@@ -1,12 +1,15 @@
 package ru.messenger.chaosmessenger.message.repository;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import ru.messenger.chaosmessenger.chat.domain.Message;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -21,10 +24,15 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
             String clientMessageId
     );
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select m from Message m where m.id = :id")
+    Optional<Message> findByIdForUpdate(@Param("id") Long id);
+
     @Query(value = """
             select distinct on (m.chat_id) *
             from messages m
             where m.chat_id in (:chatIds)
+              and m.deleted_at is null
             order by m.chat_id, m.created_at desc, m.id desc
             """, nativeQuery = true)
     List<Message> findLatestByChatIds(@Param("chatIds") List<Long> chatIds);
@@ -112,4 +120,8 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
                                 @Param("newStatus") Message.MessageStatus newStatus);
 
     long countByChatId(Long chatId);
+
+    long countByChatIdAndSenderIdAndDeletedAtIsNull(Long chatId, Long senderId);
+
+    List<Message> findByExpiresAtBeforeAndDeletedAtIsNull(LocalDateTime now);
 }

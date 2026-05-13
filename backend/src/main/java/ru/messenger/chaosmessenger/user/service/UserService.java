@@ -64,6 +64,7 @@ public class UserService {
                 user.getEmail(),
                 user.getFirstName(),
                 user.getLastName(),
+                user.getBio(),
                 user.getAvatarUrl(),
                 user.getPublicKey()
         );
@@ -86,8 +87,12 @@ public class UserService {
             user.setLastName(request.lastName().trim());
         }
 
+        if (request.bio() != null) {
+            user.setBio(trimToNull(request.bio()));
+        }
+
         if (request.avatarUrl() != null) {
-            user.setAvatarUrl(request.avatarUrl().trim());
+            user.setAvatarUrl(trimToNull(request.avatarUrl()));
         }
 
         if (request.username() != null && !request.username().isBlank()) {
@@ -120,6 +125,7 @@ public class UserService {
                 updated.email(),
                 updated.firstName(),
                 updated.lastName(),
+                updated.bio(),
                 updated.avatarUrl(),
                 token
         );
@@ -132,8 +138,17 @@ public class UserService {
                 user.getEmail(),
                 user.getFirstName(),
                 user.getLastName(),
+                user.getBio(),
                 user.getAvatarUrl()
         );
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private void notifySharedChatsAboutProfileUpdate(Long updatedUserId) {

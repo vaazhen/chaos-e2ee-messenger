@@ -78,6 +78,14 @@ describe("useMessages critical flow", () => {
         createdAt: "2026-04-28T10:01:00.000Z",
         content: "hidden",
       },
+      {
+        id: 1001,
+        chatId: 100,
+        senderId: 2,
+        createdAt: "2026-04-28T10:02:00.000Z",
+        content: "[encrypted]",
+        deleted: true,
+      },
     ]);
 
     const { result } = renderHook(() => useMessages(1));
@@ -158,6 +166,54 @@ describe("useMessages critical flow", () => {
       _out: true,
     });
     expect(result.current.msgs[100][0]._temp).not.toBe(true);
+  });
+
+  it("loadMessages decrypts voice payload and writes voice preview", async () => {
+    const { useMessages } = await import("../hooks/useMessages");
+
+    window.e2ee = {
+      decryptEnvelope: vi.fn(async () => JSON.stringify({
+        v: 1,
+        type: "voice",
+        text: "",
+        voice: {
+          dataUrl: "data:audio/webm;base64,abc",
+          mime: "audio/webm",
+          durationMs: 3200,
+          size: 42,
+        },
+      })),
+    };
+
+    mocks.api.getMessages.mockResolvedValueOnce([
+      {
+        id: 501,
+        chatId: 100,
+        senderId: 2,
+        createdAt: "2026-04-28T10:00:00.000Z",
+        content: "[encrypted]",
+        envelope: { ciphertext: "cipher", nonce: "nonce" },
+      },
+    ]);
+
+    const { result } = renderHook(() => useMessages(1));
+
+    await act(async () => {
+      await result.current.loadMessages(100);
+    });
+
+    expect(result.current.msgs[100][0]).toMatchObject({
+      id: 501,
+      _text: "",
+      _voice: {
+        dataUrl: "data:audio/webm;base64,abc",
+        durationMs: 3200,
+      },
+    });
+    expect(mocks.saveMessagePreview).toHaveBeenCalledWith(expect.objectContaining({
+      messageId: 501,
+      preview: "Voice message",
+    }));
   });
 
   it("handleIncomingEvent applies reaction events and updates myReactions for own actor id", async () => {
@@ -264,6 +320,61 @@ describe("useMessages critical flow", () => {
       _temp: false,
       status: "SENT",
       _text: "hello",
+    });
+  });
+
+  it("sendMessage encrypts voice payload and keeps optimistic voice metadata", async () => {
+    const { useMessages } = await import("../hooks/useMessages");
+
+    window.e2ee = {
+      buildFanoutRequest: vi.fn(async () => ({
+        chatId: 100,
+        senderDeviceId: "device-a",
+        envelopes: [{ targetDeviceId: "device-b", ciphertext: "cipher" }],
+      })),
+    };
+
+    mocks.call.mockResolvedValueOnce({
+      messageId: 701,
+      status: "SENT",
+      createdAt: "2026-04-28T10:00:00.000Z",
+    });
+
+    const { result } = renderHook(() => useMessages(1));
+
+    let response;
+
+    await act(async () => {
+      response = await result.current.sendMessage(100, {
+        text: "listen",
+        voiceFile: {
+          dataUrl: "data:audio/webm;base64,abc",
+          mime: "audio/webm",
+          size: 42,
+          durationMs: 3200,
+          name: "voice-message.webm",
+        },
+      });
+    });
+
+    expect(response.preview).toBe("Voice: listen");
+    const plaintext = window.e2ee.buildFanoutRequest.mock.calls[0][2];
+    expect(JSON.parse(plaintext)).toMatchObject({
+      v: 1,
+      type: "voice",
+      text: "listen",
+      voice: {
+        dataUrl: "data:audio/webm;base64,abc",
+        durationMs: 3200,
+      },
+    });
+    expect(result.current.msgs[100][0]).toMatchObject({
+      id: 701,
+      _text: "listen",
+      _voice: {
+        dataUrl: "data:audio/webm;base64,abc",
+        durationMs: 3200,
+      },
     });
   });
 
