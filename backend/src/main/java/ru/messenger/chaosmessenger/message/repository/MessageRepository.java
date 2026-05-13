@@ -9,13 +9,14 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import ru.messenger.chaosmessenger.chat.domain.Message;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
 public interface MessageRepository extends JpaRepository<Message, Long> {
-    List<Message> findByChatIdAndDeletedAtIsNullOrderByCreatedAtAsc(Long chatId);
+    List<Message> findByChatIdOrderByCreatedAtAsc(Long chatId);
 
-    Optional<Message> findTopByChatIdAndDeletedAtIsNullOrderByCreatedAtDesc(Long chatId);
+    Optional<Message> findTopByChatIdOrderByCreatedAtDesc(Long chatId);
 
     Optional<Message> findBySenderIdAndSenderDeviceIdAndClientMessageId(
             Long senderId,
@@ -36,14 +37,7 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
             """, nativeQuery = true)
     List<Message> findLatestByChatIds(@Param("chatIds") List<Long> chatIds);
 
-    @Query("""
-            select m
-            from Message m
-            where m.chatId = :chatId
-              and m.deletedAt is null
-              and (:beforeId is null or m.id < :beforeId)
-            order by m.id desc
-            """)
+    @Query("select m from Message m where m.chatId = :chatId and (:beforeId is null or m.id < :beforeId) order by m.id desc")
     List<Message> findByChatIdBefore(@Param("chatId") Long chatId,
                                       @Param("beforeId") Long beforeId,
                                       Pageable pageable);
@@ -125,5 +119,9 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
                                 @Param("currentStatus") Message.MessageStatus currentStatus,
                                 @Param("newStatus") Message.MessageStatus newStatus);
 
-    long countByChatIdAndDeletedAtIsNull(Long chatId);
+    long countByChatId(Long chatId);
+
+    long countByChatIdAndSenderIdAndDeletedAtIsNull(Long chatId, Long senderId);
+
+    List<Message> findByExpiresAtBeforeAndDeletedAtIsNull(LocalDateTime now);
 }

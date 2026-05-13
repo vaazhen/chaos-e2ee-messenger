@@ -12,8 +12,11 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.messenger.chaosmessenger.chat.domain.Message;
+import ru.messenger.chaosmessenger.chat.domain.Chat;
+import ru.messenger.chaosmessenger.chat.domain.GroupPolicy;
 import ru.messenger.chaosmessenger.chat.dto.ChatListUpdateEvent;
 import ru.messenger.chaosmessenger.chat.repository.ChatParticipantRepository;
+import ru.messenger.chaosmessenger.chat.repository.ChatRepository;
 import ru.messenger.chaosmessenger.common.TransactionUtils;
 import ru.messenger.chaosmessenger.common.exception.AuthException;
 import ru.messenger.chaosmessenger.common.exception.ChatException;
@@ -24,7 +27,9 @@ import ru.messenger.chaosmessenger.crypto.device.UserDeviceRepository;
 import ru.messenger.chaosmessenger.crypto.dto.EncryptedEditMessageRequestV2;
 import ru.messenger.chaosmessenger.crypto.dto.EncryptedMessageEnvelopeInput;
 import ru.messenger.chaosmessenger.crypto.dto.EncryptedSendMessageRequestV2;
+import ru.messenger.chaosmessenger.infra.presence.OnlineService;
 import ru.messenger.chaosmessenger.infra.presence.UnreadService;
+import ru.messenger.chaosmessenger.push.service.PushNotificationService;
 import ru.messenger.chaosmessenger.message.domain.MessageEnvelope;
 import ru.messenger.chaosmessenger.message.domain.MessageEvent;
 import ru.messenger.chaosmessenger.message.domain.MessageReaction;
@@ -56,10 +61,13 @@ public class MessageService {
     private final MessageReceiptRepository messageReceiptRepository;
     private final MessageReactionRepository messageReactionRepository;
     private final ChatParticipantRepository participantRepository;
+    private final ChatRepository chatRepository;
     private final UserIdentityService userIdentityService;
     private final UserDeviceRepository userDeviceRepository;
     private final CurrentDeviceService currentDeviceService;
     private final UnreadService unreadService;
+    private final OnlineService onlineService;
+    private final PushNotificationService pushNotificationService;
     private final SimpMessagingTemplate messagingTemplate;
     private final ObjectMapper objectMapper;
     private final MeterRegistry meterRegistry;
@@ -93,6 +101,9 @@ public class MessageService {
         message.setContent("[encrypted]");
         message.setCreatedAt(LocalDateTime.now());
         message.setStatus(Message.MessageStatus.SENT);
+        if (request.selfDestructSeconds() != null && request.selfDestructSeconds() > 0) {
+            message.setExpiresAt(LocalDateTime.now().plusSeconds(request.selfDestructSeconds()));
+        }
         try {
             message = messageRepository.save(message);
             messageRepository.flush();
@@ -112,10 +123,25 @@ public class MessageService {
 
         final Message msgFinal = message;
         final Map<String, MessageEnvelope> byDeviceFinal = byDevice;
+        final Chat chat = chatRepository.findById(request.chatId()).orElse(null);
         TransactionUtils.afterCommit(() -> {
             incrementUnreadForOthers(msgFinal.getChatId(), sender.getId());
             fanoutCreatedEvent(msgFinal, byDeviceFinal);
             notifyChatListUpdated(msgFinal.getChatId(), "message_created");
+            if (chat != null
+                    && "DIRECT".equals(chat.getType())
+                    && "PENDING".equalsIgnoreCase(String.valueOf(chat.getDirectStatus()))) {
+                ChatListUpdateEvent requestEvent = ChatListUpdateEvent.forChat(msgFinal.getChatId(), "request_message");
+                participantRepository.findDistinctUsernamesByChatId(msgFinal.getChatId()).forEach(participantUsername -> {
+                    if (!Objects.equals(participantUsername, sender.getUsername())) {
+                        messagingTemplate.convertAndSend(
+                                "/topic/users/" + participantUsername + "/requests",
+                                requestEvent
+                        );
+                    }
+                });
+            }
+            notifyOfflineUsersViaPush(msgFinal, sender);
         });
 
         return toDeviceEvent("MESSAGE_CREATED", message, byDevice.get(currentDevice.getDeviceId()), sender.getId());
@@ -174,10 +200,7 @@ public class MessageService {
         requireParticipant(chatId, user.getId());
 
         PageRequest pageable = PageRequest.of(0, Math.max(1, Math.min(limit, 200)));
-        List<Message> messages = messageRepository.findByChatIdBefore(chatId, beforeMessageId, pageable)
-                .stream()
-                .filter(message -> message.getDeletedAt() == null)
-                .collect(Collectors.toCollection(ArrayList::new));
+        List<Message> messages = messageRepository.findByChatIdBefore(chatId, beforeMessageId, pageable);
         Collections.reverse(messages);
 
         List<Long> messageIds = messages.stream().map(Message::getId).toList();
@@ -456,6 +479,46 @@ public class MessageService {
         }
 
         requireParticipant(request.chatId(), sender.getId());
+
+        // Instagram-style message requests: recipient cannot send until accepted.
+        Chat chat = chatRepository.findById(request.chatId()).orElse(null);
+        if (chat != null && "DIRECT".equals(chat.getType())) {
+            String st = String.valueOf(chat.getDirectStatus());
+            if ("PENDING".equalsIgnoreCase(st)) {
+                Long requestedBy = chat.getDirectRequestedBy();
+                if (requestedBy != null && !requestedBy.equals(sender.getId())) {
+                    throw new MessageException("Chat request not accepted");
+                }
+                if (requestedBy != null && requestedBy.equals(sender.getId())) {
+                    long senderMessages = messageRepository.countByChatIdAndSenderIdAndDeletedAtIsNull(
+                            request.chatId(),
+                            sender.getId()
+                    );
+                    if (senderMessages >= 1) {
+                        throw new MessageException("Only one message is allowed until request is accepted");
+                    }
+                }
+            }
+            if ("DECLINED".equalsIgnoreCase(st)) {
+                throw new MessageException("Chat request was declined");
+            }
+        }
+        if (chat != null && "GROUP".equals(chat.getType())) {
+            var participant = participantRepository.findByChatIdAndUserId(request.chatId(), sender.getId())
+                    .orElseThrow(() -> new ChatException("You are not a participant of this chat"));
+            if (participant.isBanned()) {
+                throw new MessageException("You are banned in this group");
+            }
+            if (participant.isMutedNow()) {
+                throw new MessageException("You are muted in this group");
+            }
+            GroupPolicy policy = GroupPolicy.fromString(chat.getWhoCanWrite(), GroupPolicy.ALL);
+            if (policy != GroupPolicy.ALL && policy != GroupPolicy.ANYONE) {
+                if (!participant.groupRole().atLeast(policy.minRole())) {
+                    throw new MessageException("You cannot write to this group");
+                }
+            }
+        }
     }
 
     private DeviceMessageEventResponse buildIdempotentSendResponse(
@@ -699,7 +762,8 @@ public class MessageService {
                 message.getStatus().name(),
                 envelope == null ? null : toEnvelopeDto(envelope),
                 reactions,
-                myReactions
+                myReactions,
+                message.getExpiresAt()
         );
     }
 
@@ -726,7 +790,8 @@ public class MessageService {
                 message.getStatus().name(),
                 envelope == null ? null : toEnvelopeDto(envelope),
                 reactions,
-                myReactions
+                myReactions,
+                message.getExpiresAt()
         );
     }
 
@@ -834,6 +899,17 @@ public class MessageService {
                 .stream()
                 .distinct()
                 .toList();
+    }
+
+    private void notifyOfflineUsersViaPush(Message message, User sender) {
+        participantRepository.findDistinctUsernamesByChatId(message.getChatId()).forEach(username -> {
+            if (Objects.equals(username, sender.getUsername())) return;
+            if (!onlineService.isOnline(username)) {
+                userIdentityService.resolve(username).ifPresent(user ->
+                        pushNotificationService.sendPushToUser(user.getId(), "New message", "You have a new encrypted message")
+                );
+            }
+        });
     }
 
     private void incrementUnreadForOthers(Long chatId, Long senderId) {
