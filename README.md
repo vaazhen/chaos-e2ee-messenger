@@ -80,7 +80,7 @@ Not because the server hides the text, but because it does not have plaintext to
 > The client encrypts and decrypts. The backend authenticates, stores encrypted envelopes and routes them to devices.
 
 <p align="center">
-  <img src="docs/assets/screenshots/architecture.png" alt="Architecture: Browser · Spring Boot Backend · Data & Observability" width="100%"/>
+  <img src="docs/assets/screenshots/Architecture.png" alt="Architecture: Browser · Spring Boot Backend · Data & Observability" width="100%"/>
 </p>
 
 | Layer | Responsibility |
