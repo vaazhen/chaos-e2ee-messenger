@@ -62,7 +62,7 @@ export default function useWebRTC({ publish, onCallEnded }) {
     pc.onicecandidate = (e) => {
       if (e.candidate && publish && currentTargetRef.current) {
         publish('/app/call.ice-candidate', {
-          targetDeviceId: currentTargetRef.current,
+          targetUsername: currentTargetRef.current,
           chatId: currentChatIdRef.current,
           candidate: e.candidate.candidate,
           mid: e.candidate.sdpMid,
@@ -92,14 +92,14 @@ export default function useWebRTC({ publish, onCallEnded }) {
     return pc;
   }, [publish, cleanupCall, onCallEnded]);
 
-  const startCall = useCallback(async (chatId, targetDeviceId, video = false) => {
+  const startCall = useCallback(async (chatId, targetUsername, video = false) => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video, audio: true });
       localStreamRef.current = stream;
       if (localVideoRef.current) localVideoRef.current.srcObject = stream;
 
       currentChatIdRef.current = chatId;
-      currentTargetRef.current = targetDeviceId;
+      currentTargetRef.current = targetUsername;
       setIsVideo(video);
       setCallState('connecting');
 
@@ -109,7 +109,7 @@ export default function useWebRTC({ publish, onCallEnded }) {
 
       if (publish) {
         publish('/app/call.offer', {
-          targetDeviceId,
+          targetUsername,
           chatId,
           sdp: offer.sdp,
         });
@@ -123,14 +123,14 @@ export default function useWebRTC({ publish, onCallEnded }) {
   const answerCall = useCallback(async () => {
     const offerMsg = currentOfferRef.current;
     if (!offerMsg) return;
-    const { sdp: offer, chatId, fromDeviceId } = offerMsg;
+    const { sdp: offer, chatId, fromUsername } = offerMsg;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: isVideo, audio: true });
       localStreamRef.current = stream;
       if (localVideoRef.current) localVideoRef.current.srcObject = stream;
 
       currentChatIdRef.current = chatId;
-      currentTargetRef.current = fromDeviceId;
+      currentTargetRef.current = fromUsername;
 
       const pc = await createPeerConnection(stream, false);
       await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: offer }));
@@ -142,7 +142,7 @@ export default function useWebRTC({ publish, onCallEnded }) {
 
       if (publish) {
         publish('/app/call.answer', {
-          targetDeviceId: fromDeviceId,
+          targetUsername: fromUsername,
           chatId,
           sdp: answer.sdp,
         });
@@ -206,7 +206,7 @@ export default function useWebRTC({ publish, onCallEnded }) {
   const endCall = useCallback(() => {
     if (publish && currentTargetRef.current) {
       publish('/app/call.end', {
-        targetDeviceId: currentTargetRef.current,
+        targetUsername: currentTargetRef.current,
         chatId: currentChatIdRef.current,
       });
     }

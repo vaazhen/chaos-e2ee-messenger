@@ -81,15 +81,13 @@ export default function useWebSocket({
       });
     }
 
-    if (did) {
-      const callTopic = `/topic/devices/${did}/calls`;
-      subsRef.current["calls"] = client.subscribe(callTopic, (msg) => {
-        try {
-          const data = JSON.parse(msg.body || "{}");
-          handlersRef.current.onCallSignal?.(data);
-        } catch (_) {}
-      });
-    }
+    const userCallTopic = `/topic/users/${username}/calls`;
+    subsRef.current["calls"] = client.subscribe(userCallTopic, (msg) => {
+      try {
+        const data = JSON.parse(msg.body || "{}");
+        handlersRef.current.onCallSignal?.(data);
+      } catch (_) {}
+    });
 
     subsRef.current["chats"] = client.subscribe(
       `/topic/users/${username}/chats`,
