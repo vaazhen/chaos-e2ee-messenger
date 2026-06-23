@@ -194,10 +194,15 @@
         if (!localBundle?.identity?.privateKeyPkcs8) {
             throw new Error('Local private identity key is missing');
         }
-        const raw = b64ToBytes(localBundle.identity.privateKeyPkcs8);
+        const identityPrivate = await importPkcs8PrivateKey(localBundle.identity.privateKeyPkcs8);
+        const identityPublic = await importRawPublicKey(localBundle.identity.publicKey);
+        const seed = await crypto.subtle.deriveBits(
+            { name: 'X25519', public: identityPublic },
+            identityPrivate, 256
+        );
         const saltInput = new TextEncoder().encode(localBundle.deviceId || 'unknown-device');
         const salt = new Uint8Array(await crypto.subtle.digest('SHA-256', saltInput));
-        const hkdfKey = await crypto.subtle.importKey('raw', raw, { name: 'HKDF' }, false, ['deriveBits']);
+        const hkdfKey = await crypto.subtle.importKey('raw', seed, { name: 'HKDF' }, false, ['deriveBits']);
         const bits = await crypto.subtle.deriveBits(
             { name: 'HKDF', hash: 'SHA-256', salt, info: new TextEncoder().encode('ChaosMessengerSelf:v2') },
             hkdfKey, 256
@@ -244,8 +249,12 @@
     }
 
     function loadJson(key) {
-        const raw = localStorage.getItem(key);
-        return raw ? JSON.parse(raw) : null;
+        try {
+            const raw = localStorage.getItem(key);
+            return raw ? JSON.parse(raw) : null;
+        } catch {
+            return null;
+        }
     }
 
     function saveJson(key, value) {
@@ -588,7 +597,11 @@
     function pruneSkippedKeys(session) {
         const keys = Object.keys(session.MKSKIPPED);
         if (keys.length > MAX_STORED_SKIPPED_KEYS) {
-            const sorted = keys.sort();
+            const sorted = keys.sort((a, b) => {
+                const idxA = parseInt(a.split(':')[1] || '0', 10);
+                const idxB = parseInt(b.split(':')[1] || '0', 10);
+                return idxA - idxB;
+            });
             for (let i = 0; i < (keys.length - MAX_STORED_SKIPPED_KEYS); i++) {
                 delete session.MKSKIPPED[sorted[i]];
             }
@@ -625,12 +638,13 @@
 
         const ckBytes = b64ToBytes(session.CKs);
         const { messageKeyRaw, nextChainKey } = await ratchetStep(ckBytes);
-        session.CKs = bytesToB64(nextChainKey);
         const messageIndex = session.Ns;
-        session.Ns = (session.Ns || 0) + 1;
 
         const mk = await importMessageKey(messageKeyRaw);
         const encrypted = await aesEncryptWithKey(plainText, mk);
+
+        session.CKs = bytesToB64(nextChainKey);
+        session.Ns = (session.Ns || 0) + 1;
 
         return {
             encrypted,
@@ -662,14 +676,16 @@
 
         await skipMessageKeys(session, msgIdx);
 
-        // 4. Derive the message key for this index
+        // 4. Derive the message key for this index (check skipped keys first)
         const ckBytes = b64ToBytes(session.CKr);
         const { messageKeyRaw, nextChainKey } = await ratchetStep(ckBytes);
-        session.CKr = bytesToB64(nextChainKey);
-        session.Nr = (session.Nr || 0) + 1;
 
         const mk = await importMessageKey(messageKeyRaw);
-        return aesDecryptWithKey(envelope.ciphertext, envelope.nonce, mk);
+        const plainText = await aesDecryptWithKey(envelope.ciphertext, envelope.nonce, mk);
+
+        session.CKr = bytesToB64(nextChainKey);
+        session.Nr = (session.Nr || 0) + 1;
+        return plainText;
     }
 
     // ─── Fanout (send to chat) ─────────────────────────────────────────────────
