@@ -76,13 +76,6 @@ public class MessageService {
 
     private Set<String> allowedEmojis = Set.of("👍", "❤️", "😂", "😮", "😢", "🔥");
 
-    @Value("${chaos.reactions.allowed-emojis:#{null}}")
-    private void setAllowedEmojisFromProperty(String raw) {
-        if (raw != null && !raw.isBlank()) {
-            this.allowedEmojis = Set.of(raw.split(","));
-        }
-    }
-
     @Transactional
     public DeviceMessageEventResponse sendEncryptedMessageV2(String username, EncryptedSendMessageRequestV2 request) {
         User sender = requireUser(username);
