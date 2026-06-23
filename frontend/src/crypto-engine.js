@@ -194,12 +194,8 @@
         if (!localBundle?.identity?.privateKeyPkcs8) {
             throw new Error('Local private identity key is missing');
         }
-        const identityPrivate = await importPkcs8PrivateKey(localBundle.identity.privateKeyPkcs8);
-        const identityPublic = await importRawPublicKey(localBundle.identity.publicKey);
-        const seed = await crypto.subtle.deriveBits(
-            { name: 'X25519', public: identityPublic },
-            identityPrivate, 256
-        );
+        const raw = b64ToBytes(localBundle.identity.privateKeyPkcs8);
+        const seed = new Uint8Array(await crypto.subtle.digest('SHA-256', raw));
         const saltInput = new TextEncoder().encode(localBundle.deviceId || 'unknown-device');
         const salt = new Uint8Array(await crypto.subtle.digest('SHA-256', saltInput));
         const hkdfKey = await crypto.subtle.importKey('raw', seed, { name: 'HKDF' }, false, ['deriveBits']);
