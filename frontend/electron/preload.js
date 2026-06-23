@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, desktopCapturer } from 'electron';
 
 contextBridge.exposeInMainWorld('electronAPI', {
   getVersion: () => ipcRenderer.invoke('app:getVersion'),
@@ -17,4 +17,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onDeepLink: (callback) => {
     ipcRenderer.on('deep-link', (_, url) => callback(url));
   },
+
+  getScreenSources: async () => {
+    const sources = await desktopCapturer.getSources({ types: ['screen', 'window'] });
+    return sources.map(s => ({
+      id: s.id,
+      name: s.name,
+      thumbnail: s.thumbnail.toDataURL(),
+    }));
+  },
+
+  isElectron: true,
 });

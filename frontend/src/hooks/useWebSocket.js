@@ -11,9 +11,11 @@ export default function useWebSocket({
   chatIds = [],
   onMessage,
   onChatListUpdate,
+  onRequestsUpdate,
   onStatusUpdate,
   onTyping,
   onConnectionState,
+  onCallSignal,
   enabled,
 }) {
   const clientRef   = useRef(null);
@@ -21,11 +23,11 @@ export default function useWebSocket({
   const chatIdsRef  = useRef([]);
   const heartbeatRef = useRef(null);
   const hadConnectedRef = useRef(false);
-  const handlersRef = useRef({ onMessage, onChatListUpdate, onStatusUpdate, onTyping, onConnectionState });
+  const handlersRef = useRef({ onMessage, onChatListUpdate, onRequestsUpdate, onStatusUpdate, onTyping, onConnectionState, onCallSignal });
 
   useEffect(() => {
-    handlersRef.current = { onMessage, onChatListUpdate, onStatusUpdate, onTyping, onConnectionState };
-  }, [onMessage, onChatListUpdate, onStatusUpdate, onTyping, onConnectionState]);
+    handlersRef.current = { onMessage, onChatListUpdate, onRequestsUpdate, onStatusUpdate, onTyping, onConnectionState, onCallSignal };
+  }, [onMessage, onChatListUpdate, onRequestsUpdate, onStatusUpdate, onTyping, onConnectionState, onCallSignal]);
 
   useEffect(() => { chatIdsRef.current = chatIds; }, [chatIds]);
 
@@ -62,6 +64,7 @@ export default function useWebSocket({
     unsub("userStatus");
     unsub("myStatus");
     unsub("chats");
+    unsub("requests");
 
     const did = getOrCreateDeviceId();
     console.log("[WS] presence subs deviceId=", did, "username=", username);
@@ -78,9 +81,38 @@ export default function useWebSocket({
       });
     }
 
+    if (did) {
+      const callTopic = `/topic/devices/${did}/calls`;
+      subsRef.current["calls"] = client.subscribe(callTopic, (msg) => {
+        try {
+          const data = JSON.parse(msg.body || "{}");
+          handlersRef.current.onCallSignal?.(data);
+        } catch (_) {}
+      });
+    }
+
     subsRef.current["chats"] = client.subscribe(
       `/topic/users/${username}/chats`,
-      () => handlersRef.current.onChatListUpdate?.()
+      (msg) => {
+        try {
+          const data = JSON.parse(msg?.body || "{}");
+          handlersRef.current.onChatListUpdate?.(data);
+        } catch (_) {
+          handlersRef.current.onChatListUpdate?.();
+        }
+      }
+    );
+
+    subsRef.current["requests"] = client.subscribe(
+      `/topic/users/${username}/requests`,
+      (msg) => {
+        try {
+          const data = JSON.parse(msg?.body || "{}");
+          handlersRef.current.onRequestsUpdate?.(data);
+        } catch (_) {
+          handlersRef.current.onRequestsUpdate?.();
+        }
+      }
     );
 
     client.publish({ destination: "/app/user.online", body: "{}" });
@@ -198,6 +230,9 @@ export default function useWebSocket({
         destination: "/app/typing",
         body: JSON.stringify({ chatId }),
       });
+    },
+    publish: (dest, body) => {
+      clientRef.current?.publish({ destination: dest, body: typeof body === "string" ? body : JSON.stringify(body) });
     },
   };
 }
