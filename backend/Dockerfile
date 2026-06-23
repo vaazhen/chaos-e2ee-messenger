@@ -3,7 +3,7 @@ WORKDIR /build
 COPY pom.xml .
 RUN mvn -B dependency:go-offline -q 2>/dev/null || true
 COPY src ./src
-RUN mvn -B -DskipTests -Dcheckstyle.skip=true package
+RUN mvn -B -Dmaven.test.skip=true -Dcheckstyle.skip=true package
 
 FROM eclipse-temurin:17-jre
 RUN addgroup --system --gid 1001 chaos && \
