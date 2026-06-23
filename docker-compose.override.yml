@@ -1,13 +1,11 @@
 services:
-  # ── Disable Caddy (no domain — frontend nginx proxies directly) ──
+  # ── Caddy with self-signed HTTPS for WebCrypto (no domain needed) ──
   caddy:
-    profiles:
-      - disabled
-
-  # ── Expose frontend on port 80 (http://IP) ──
-  frontend:
     ports:
       - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: 168.222.141.25
 
   # ── Grafana for dashboards (http://IP:3000) ──
   grafana:
