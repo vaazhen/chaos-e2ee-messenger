@@ -5,6 +5,7 @@
 <br/>
 
 [![CI](https://github.com/vaazhen/chaos-e2ee-messenger/actions/workflows/ci.yml/badge.svg)](https://github.com/vaazhen/chaos-e2ee-messenger/actions/workflows/ci.yml)
+[![Electron](https://img.shields.io/badge/Electron-33-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
 [![Docker](https://img.shields.io/badge/docker-ready-blue?logo=docker)](https://www.docker.com/)
 [![Kubernetes](https://img.shields.io/badge/k8s-manifests-326CE5?logo=kubernetes&logoColor=white)](k8s/)
 [![Java](https://img.shields.io/badge/Java-17-orange?logo=openjdk&logoColor=white)](https://openjdk.org/)
@@ -45,7 +46,7 @@
 { "lastMessage": "[encrypted]" }
 ```
 
-**Статус:** production-ready MVP. Основной E2EE-протокол, realtime доставка, групповые чаты, вложения и самоуничтожающиеся сообщения полностью реализованы. CI/CD, Docker Compose и Kubernetes манифесты в комплекте.
+**Статус:** production-ready MVP. Основной E2EE-протокол, realtime доставка, групповые чаты, вложения и самоуничтожающиеся сообщения полностью реализованы. CI/CD, Docker Compose, Kubernetes манифесты и **десктоп-приложение (Electron)** в комплекте.
 
 ---
 
@@ -73,6 +74,39 @@
 
 ---
 
+## Десктоп-приложение (Electron)
+
+Electron-сборка оборачивает React-фронтенд в нативное окно Chromium:
+
+- **Системный трей** — сворачивание в трей, фоновые уведомления
+- **Нативные уведомления** — OS-native алерты о сообщениях
+- **Файловые диалоги** — сохранение/открытие зашифрованных вложений
+- **Single instance** — предотвращает повторный запуск
+- **Состояние окна** — запоминает позицию, размер, maximized
+- **Кроссплатформенность** — Windows (NSIS), macOS (DMG), Linux (AppImage)
+
+### Сборка десктоп-приложения
+
+```bash
+cd frontend
+
+# Установка зависимостей (первый раз)
+npm install
+
+# Разработка (hot reload в Electron окне)
+npm run electron:dev
+
+# Production сборка для Windows
+npm run electron:build:win
+
+# Production сборка для текущей платформы
+npm run electron:build
+```
+
+Установщик будет в `frontend/release/`.
+
+---
+
 ## Возможности
 
 | Категория | Возможности |
@@ -84,6 +118,7 @@
 | **Сообщения** | Отправка · редактирование · удаление · reply · реакции · статусы · печать |
 | **Вложения** | AES-256-GCM шифрование · сжатие изображений · voice messages |
 | **Self-destruct** | TTL · scheduled cleanup · таймер в UI |
+| **Десктоп** | Electron приложение · системный трей · нативные уведомления · файловые диалоги · single instance lock |
 | **Realtime** | SockJS / WebSocket / STOMP · device topics · presence heartbeats |
 | **Мониторинг** | Spring Actuator · Prometheus · Grafana (готовый dashboard) |
 | **Деплой** | Docker Compose · Kubernetes manifests · GitHub Actions CI/CD |
@@ -232,8 +267,11 @@ chaos-messenger_e2ee/
 │   ├── src/            # 33 Flyway миграции, crypto, message, chat, auth
 │   ├── Dockerfile      # Multi-stage JRE build
 │   └── docker-compose*.yml
-├── frontend/           # React 18 + Vite
+├── frontend/           # React 18 + Vite + Electron
 │   ├── src/            # crypto-engine.js (Double Ratchet), hooks, components
+│   ├── electron/       # Electron main process, preload
+│   │   ├── main.js     # Window, tray, IPC, auto-update
+│   │   └── preload.js  # Secure context bridge
 │   ├── Dockerfile      # Multi-stage nginx build
 │   └── nginx.conf      # Reverse proxy
 ├── k8s/                # Kubernetes манифесты (kustomize)
@@ -252,6 +290,7 @@ chaos-messenger_e2ee/
 | **Per-device конверты** | Изоляция потерь сообщений на уровне устройств |
 | **STOMP вместо raw WebSocket** | Pub/sub топики, фрейм-роутинг, SockJS fallback |
 | **PostgreSQL вместо NoSQL** | Foreign keys, миграции, JSON реакции, транзакции |
+| **Electron вместо Tauri** | WebCrypto гарантирован, zero Rust, проверенная кроссплатформенность |
 | **In-memory broker** | Подходит для MVP; масштабирование через external broker |
 
 ---

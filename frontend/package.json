@@ -1,8 +1,12 @@
 {
-  "name": "chaos-messenger-ui",
+  "name": "chaos-messenger",
   "private": true,
   "version": "1.0.0",
+  "description": "Chaos Messenger — E2EE messenger desktop app",
+  "author": "Chaos Messenger Team",
+  "license": "Apache-2.0",
   "type": "module",
+  "main": "electron/main.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -15,7 +19,11 @@
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:real": "playwright test -c playwright.real.config.js",
     "test:e2e:real:headed": "playwright test -c playwright.real.config.js --headed",
-    "test:e2e:real:ui": "playwright test -c playwright.real.config.js --ui"
+    "test:e2e:real:ui": "playwright test -c playwright.real.config.js --ui",
+    "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "electron:build": "vite build && electron-builder",
+    "electron:build:win": "vite build && electron-builder --win",
+    "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
     "@stomp/stompjs": "^7.0.0",
@@ -33,8 +41,84 @@
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.2.1",
     "@vitest/coverage-v8": "^1.6.0",
+    "concurrently": "^9.2.3",
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8",
     "jsdom": "^24.0.0",
     "vite": "^5.0.8",
-    "vitest": "^1.6.0"
+    "vitest": "^1.6.0",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.chaosmessenger.app",
+    "productName": "Chaos Messenger",
+    "copyright": "Copyright © 2026 Chaos Messenger",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "!electron/tray-icon.png",
+      "build/icon.png"
+    ],
+    "extraResources": [
+      {
+        "from": "build/",
+        "to": "build/",
+        "filter": [
+          "icon.png"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "artifactName": "${productName}-Setup-${version}-win-x64.${ext}",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Chaos Messenger",
+      "installerIcon": "build/icon.png",
+      "uninstallerIcon": "build/icon.png"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "category": "Network"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "category": "public.app-category.social-networking"
+    }
   }
 }
