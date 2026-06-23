@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration;
+import org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
@@ -29,6 +31,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.flyway.enabled=false",
         "spring.jpa.hibernate.ddl-auto=none",
         "spring.testcontainers.service-connection.auto-detection=false"
+    },
+    excludeAutoConfiguration = {
+        SecurityAutoConfiguration.class,
+        UserDetailsServiceAutoConfiguration.class
     }
 )
 @Import(JwtService.class)
