@@ -1,12 +1,35 @@
-# Caddy reverse proxy for Chaos Messenger
-# Replace DOMAIN_PLACEHOLDER with your actual domain before deploying
-# See infra/README.md for instructions
+# Chaos Messenger — Caddy reverse proxy
+#
+# Usage in docker-compose.yml:
+#   environment:
+#     DOMAIN: example.com
+#     ADMIN_EMAIL: admin@example.com
+#
+# For local dev without a domain:
+#   environment:
+#     DOMAIN: localhost
+#
+# Caddy will:
+#   - Automatically provision Let's Encrypt SSL for real domains
+#   - Fall back to plain HTTP for localhost
 
-DOMAIN_PLACEHOLDER {
+{$DOMAIN:localhost} {
+    # Rate limit (optional: uncomment to enable)
+    # rate_limit {
+    #     zone dynamic {
+    #         key {remote_host}
+    #         events 100
+    #         window 1m
+    #     }
+    # }
+
     reverse_proxy frontend:80
 
     log {
-        output file /data/caddy/access.log
+        output file /data/caddy/access.log {
+            roll_size 50mb
+            roll_keep 5
+        }
         format json
     }
 }

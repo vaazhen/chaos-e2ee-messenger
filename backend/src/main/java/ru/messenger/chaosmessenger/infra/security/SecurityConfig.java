@@ -28,6 +28,9 @@ public class SecurityConfig {
     @Value("${chaos.security.public-prometheus-enabled:false}")
     private boolean publicPrometheusEnabled;
 
+    @Value("${chaos.demo.enabled:false}")
+    private boolean demoEnabled;
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
@@ -43,6 +46,7 @@ public class SecurityConfig {
                         .requestMatchers(publicEndpoints()).permitAll()
                         .requestMatchers(publicDocsEnabled ? docsEndpoints() : new String[0]).permitAll()
                         .requestMatchers(publicPrometheusEnabled ? prometheusEndpoint() : new String[0]).permitAll()
+                        .requestMatchers(demoEnabled ? "/api/demo/**" : "/nothing-match-404").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .anyRequest().authenticated()
                 )
