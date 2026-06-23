@@ -10,7 +10,7 @@ RUN addgroup --system --gid 1001 chaos && \
     adduser --system --uid 1001 --ingroup chaos chaos
 WORKDIR /app
 COPY --from=build /build/target/app.jar app.jar
-RUN chown chaos:chaos /app/app.jar
+RUN mkdir -p /app/logs && chown -R chaos:chaos /app
 USER chaos
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
