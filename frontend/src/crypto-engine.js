@@ -56,8 +56,7 @@
     }
 
     function b64ToArrayBuffer(base64) {
-        const bytes = b64ToBytes(base64);
-        return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+        return b64ToBytes(base64);
     }
 
     // ─── JWT username (used only for registrationPromise scoping) ─────────────
