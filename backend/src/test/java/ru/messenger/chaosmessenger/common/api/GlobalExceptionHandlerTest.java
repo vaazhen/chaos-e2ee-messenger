@@ -17,6 +17,10 @@ import ru.messenger.chaosmessenger.common.exception.CryptoException;
 import ru.messenger.chaosmessenger.common.exception.MessageException;
 import ru.messenger.chaosmessenger.common.exception.RateLimitException;
 
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.http.HttpMediaTypeNotSupportedException;
+import org.springframework.beans.TypeMismatchException;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Set;
@@ -147,6 +151,46 @@ class GlobalExceptionHandlerTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         assertThat(Objects.requireNonNull(response.getBody()).message()).isEqualTo("Not Found");
+    }
+
+    @Test
+    void handleMessageNotReadableReturns400() {
+        var response = handler.handleMessageNotReadable(
+                new HttpMessageNotReadableException("malformed json")
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(Objects.requireNonNull(response.getBody()).error()).isEqualTo("BAD_REQUEST");
+        assertThat(response.getBody().message()).isEqualTo("Malformed request body");
+    }
+
+    @Test
+    void handleMissingParamReturns400() {
+        var response = handler.handleMissingParam(
+                new MissingServletRequestParameterException("chatId", "Long")
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(Objects.requireNonNull(response.getBody()).message())
+                .contains("chatId");
+    }
+
+    @Test
+    void handleMediaTypeNotSupportedReturns415() {
+        var response = handler.handleMediaTypeNotSupported(
+                new HttpMediaTypeNotSupportedException("text/plain not supported")
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNSUPPORTED_MEDIA_TYPE);
+    }
+
+    @Test
+    void handleTypeMismatchReturns400() {
+        var response = handler.handleTypeMismatch(
+                new TypeMismatchException("abc", Long.class, null)
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
 
     @Test
