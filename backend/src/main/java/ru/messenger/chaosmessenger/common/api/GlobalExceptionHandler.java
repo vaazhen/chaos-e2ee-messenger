@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import jakarta.validation.ConstraintViolationException;
 import java.util.stream.Collectors;
 import ru.messenger.chaosmessenger.common.dto.ApiErrorResponse;
@@ -161,6 +162,17 @@ public class GlobalExceptionHandler {
                 .body(new ApiErrorResponse(HttpStatus.BAD_REQUEST.value(), "VALIDATION_ERROR", message, LocalDateTime.now()));
     }
 
+
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ResponseEntity<ApiErrorResponse> handleMissingHeader(MissingRequestHeaderException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(new ApiErrorResponse(
+                        HttpStatus.BAD_REQUEST.value(),
+                        "BAD_REQUEST",
+                        ex.getMessage(),
+                        LocalDateTime.now()
+                ));
+    }
 
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<ApiErrorResponse> handleResponseStatus(ResponseStatusException ex) {

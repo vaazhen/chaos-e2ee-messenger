@@ -9,7 +9,7 @@ import org.springframework.boot.autoconfigure.security.servlet.UserDetailsServic
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.web.servlet.MockMvc;
 import ru.messenger.chaosmessenger.infra.security.JwtService;
 import ru.messenger.chaosmessenger.backup.api.BackupController;
@@ -22,7 +22,6 @@ import ru.messenger.chaosmessenger.user.service.UserIdentityService;
 
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
-import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(
@@ -51,10 +50,10 @@ class BackupControllerTest {
     @Autowired
     private JwtService jwtService;
 
-    @MockitoBean
+    @MockBean
     private BackupService backupService;
 
-    @MockitoBean
+    @MockBean
     private UserIdentityService userIdentityService;
 
     private String token;
@@ -73,7 +72,6 @@ class BackupControllerTest {
 
         mockMvc.perform(get("/api/backup/info")
                         .header("Authorization", "Bearer " + token))
-                .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.hasBackup").value(true))
                 .andExpect(jsonPath("$.latestVersion").value(2))
@@ -116,7 +114,6 @@ class BackupControllerTest {
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
-                .andDo(print())
                 .andExpect(status().isOk());
 
         verify(backupService).importBackup(eq(1L), any(BackupImportRequest.class));
