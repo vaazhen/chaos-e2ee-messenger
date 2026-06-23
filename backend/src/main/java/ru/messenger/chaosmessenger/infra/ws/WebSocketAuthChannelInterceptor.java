@@ -7,6 +7,7 @@ import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
+import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.stereotype.Component;
 import ru.messenger.chaosmessenger.chat.repository.ChatParticipantRepository;
 import ru.messenger.chaosmessenger.crypto.device.UserDevice;
@@ -50,6 +51,15 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
             sessionUserMap.remove(sessionId);
             sessionDeviceMap.remove(sessionId);
             log.info("WebSocket DISCONNECT sessionId={}", sessionId);
+            return message;
+        }
+
+        if (accessor.getUser() == null) {
+            String username = sessionUserMap.get(accessor.getSessionId());
+            if (username != null) {
+                accessor.setUser(() -> username);
+                return MessageBuilder.createMessage(message.getPayload(), accessor.getMessageHeaders());
+            }
         }
 
         return message;
@@ -98,7 +108,7 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
             accessor.getSessionAttributes().put("deviceId", deviceId);
 
             log.info("WebSocket CONNECT user={} deviceId={} sessionId={}", username, deviceId, sessionId);
-            return message;
+            return MessageBuilder.createMessage(message.getPayload(), accessor.getMessageHeaders());
         } catch (Exception e) {
             log.warn("WebSocket CONNECT denied: {}", e.getMessage());
             return null;
@@ -140,7 +150,8 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
                     && userDeviceRepository.findByUserUsernameAndDeviceIdAndActiveTrue(username, deviceId).isPresent();
         }
 
-        if (dest.startsWith("/topic/users/") && dest.endsWith("/chats")) {
+        if (dest.startsWith("/topic/users/")
+                && (dest.endsWith("/chats") || dest.endsWith("/requests") || dest.endsWith("/calls"))) {
             String destinationUsername = pathSegment(dest, 3);
             return username.equals(destinationUsername);
         }

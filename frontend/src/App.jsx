@@ -19,7 +19,10 @@ import NewChatModal from "./components/NewChatModal";
 import Ava          from "./components/Ava";
 import UserProfileModal from "./components/UserProfileModal";
 import GroupAdminModal from "./components/GroupAdminModal";
+import useWebRTC from "./hooks/useWebRTC";
+import CallOverlay from "./components/CallOverlay";
 import { api } from "./api";
+import { computeSafetyNumber, formatSafetyNumber, areSafetyNumbersEqual } from "./safety-number";
 
 import { getTime, messageMatchesQuery } from "./helpers";
 import { clearPreviewCacheForUser } from "./previewCache";
@@ -129,7 +132,8 @@ export default function ChaosMessenger() {
   const [replyTo,        setReplyTo]        = useState(null);
   const [ctx,            setCtx]            = useState(null);
   
-  const [ctxClosing,     setCtxClosing]     = useState(false);const [showSettings,   setShowSettings]   = useState(false);
+  const [ctxClosing,     setCtxClosing]     = useState(false);
+  const [showSettings,   setShowSettings]   = useState(false);
   const [showNewChat,    setShowNewChat]    = useState(false);
   const [newChatInitialTab, setNewChatInitialTab] = useState("direct");
   const [typingUsers,    setTypingUsers]    = useState({});
@@ -152,10 +156,11 @@ export default function ChaosMessenger() {
   const chatInfoRef = useRef(null);
   const chatInfoBtnRef = useRef(null);
   const groupAdminBtnRef = useRef(null);
-const [deleteTarget,   setDeleteTarget]   = useState(null);
-  const [editTarget,     setEditTarget]     = useState(null);
-  const [editText,       setEditText]       = useState("");
-  const [editLoading,    setEditLoading]    = useState(false);
+const [deleteTarget, setDeleteTarget] = useState(null);
+const [editTarget, setEditTarget] = useState(null);
+const [editText, setEditText] = useState("");
+const [editLoading, setEditLoading] = useState(false);
+const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null, display: null, error: null });
   const resetMessageSearch = useCallback(() => {
     setMessageSearch("");
     setMatchIndex(0);
@@ -534,6 +539,15 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
     }
   }, [chatStore.activeId]); // eslint-disable-line
 
+  const wsCallSignalRef = useRef(null);
+
+  const call = useWebRTC({
+    publish: (dest, body) => ws?.publish(dest, body),
+    onCallEnded: () => {},
+  });
+
+  wsCallSignalRef.current = call.handleSignalingMessage;
+
   const ws = useWebSocket({
     me:       auth.me,
     activeId: chatStore.activeId,
@@ -549,10 +563,8 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
           chatStore.updateChatPreview(chatId, result.text, result.isOut, event.createdAt, !result.isOut && !isActive);
         }
         if (!result.isOut && isActive) {
-          import("./api").then(({ api }) => {
-            api.markRead(chatId).catch(() => {});
-            api.markDelivered(chatId).catch(() => {});
-          });
+          api.markRead(chatId).catch(() => {});
+          api.markDelivered(chatId).catch(() => {});
         }
       }
       if (requestChatIds.has(String(chatId))) {
@@ -643,6 +655,7 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
         msgStore.loadMessages(chatStore.activeId);
       }
     },
+    onCallSignal: (msg) => wsCallSignalRef.current?.(msg),
   });
 
   const onVerifyOtpSuccess = async (meData, isNew) => {
@@ -860,7 +873,7 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
           onOpenНастройки={() => setShowSettings(true)}
           onMarkAllRead={() => {
             chatStore.chats.forEach(c => {
-              import("./api").then(({ api }) => api.markRead(c.id).catch(() => {}));
+              api.markRead(c.id).catch(() => {});
             });
             chatStore.setChats(prev => prev.map(c => ({ ...c, unread: 0 })));
           }}
@@ -971,6 +984,23 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
                       </svg>
                     </button>
                   )}
+                  <button
+                    type="button"
+                    className="chat-head-btn chat-head-btn--call"
+                    title={l("Звонок", "Call")}
+                    onClick={() => {
+                      const otherUser = activeChat?.username;
+                      if (otherUser) {
+                        call.startCall(chatStore.activeId, otherUser, false);
+                      }
+                    }}
+                    disabled={call.callState !== 'idle'}
+                  >
+                    <svg className="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M22 2L11 13" />
+                      <path d="M22 2L15 22l-4-9-9-4z" />
+                    </svg>
+                  </button>
                   <button
                     ref={chatInfoBtnRef}
                     className={`chat-head-btn chat-head-btn--info${chatInfoOpen ? " active" : ""}`}
@@ -1238,23 +1268,106 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
           requests={chatStore.requests.map(c => ({ ...c, name: displayNameForChat(c, auth.me?.id) }))}
           loadingRequests={chatStore.loadingRequests}
           onAcceptRequest={async (chatId) => {
-            try {
-              await import("./api").then(({ api }) => api.acceptRequest(chatId));
-            } catch (_) {}
+            try { await api.acceptRequest(chatId); } catch (_) {}
             await chatStore.loadRequests(auth.me?.id);
             await chatStore.loadChats(auth.me?.id);
             setShowNewChat(false);
             chatStore.selectChat(chatId);
           }}
           onDeclineRequest={async (chatId) => {
-            try {
-              await import("./api").then(({ api }) => api.declineRequest(chatId));
-            } catch (_) {}
+            try { await api.declineRequest(chatId); } catch (_) {}
             chatStore.loadRequests(auth.me?.id);
             chatStore.loadChats(auth.me?.id);
           }}
         />
       )}
+
+      {safetyModal.open && safetyModal.fingerprint && (
+        <div className="safety-modal-overlay" onClick={() => setSafetyModal({ open: false, fingerprint: null, display: null, error: null })}>
+          <div className="safety-modal" onClick={e => e.stopPropagation()}>
+            <div className="safety-modal-head">
+              <b>{l("Safety Number", "Safety Number")}</b>
+              <button type="button" className="safety-modal-close" onClick={() => setSafetyModal({ open: false, fingerprint: null, display: null, error: null })}>×</button>
+            </div>
+
+            <div className="safety-modal-body">
+              <div className="safety-section">
+                <div className="safety-label">{l("Цифровой отпечаток", "Numeric fingerprint")}</div>
+                <div className="safety-value safety-numeric">{safetyModal.display?.numeric || ""}</div>
+              </div>
+
+              <div className="safety-section">
+                <div className="safety-label">{l("Шестнадцатеричный", "Hex")}</div>
+                <div className="safety-value safety-hex">{safetyModal.display?.hex || ""}</div>
+              </div>
+
+              <div className="safety-section">
+                <div className="safety-label">{l("Словесный отпечаток", "Word fingerprint")}</div>
+                <pre className="safety-value safety-words">{safetyModal.fingerprint.fingerprint || ""}</pre>
+              </div>
+
+              <div className="safety-note">
+                {l("Сравните этот код с кодом на устройстве собеседника. Если коды совпадают — соединение безопасно.", "Compare this code with the one on your contact's device. If they match, the connection is secure.")}
+              </div>
+            </div>
+
+            <div className="safety-modal-actions">
+              <button
+                type="button"
+                className="btn-sec"
+                onClick={() => {
+                  const text = `Chaos Messenger Safety Number:\n\nNumeric: ${safetyModal.display?.numeric}\nHex: ${safetyModal.display?.hex}\nWords:\n${safetyModal.fingerprint.fingerprint}`;
+                  navigator.clipboard?.writeText(text).catch(() => {});
+                }}
+              >
+                {l("Копировать", "Copy")}
+              </button>
+              <button type="button" className="btn-pri" onClick={() => setSafetyModal({ open: false, fingerprint: null, display: null, error: null })}>
+                {l("Закрыть", "Close")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {safetyModal.open && safetyModal.error && !safetyModal.fingerprint && (
+        <div className="safety-modal-overlay" onClick={() => setSafetyModal({ open: false, fingerprint: null, display: null, error: null })}>
+          <div className="safety-modal" onClick={e => e.stopPropagation()}>
+            <div className="safety-modal-head">
+              <b>{l("Safety Number", "Safety Number")}</b>
+              <button type="button" className="safety-modal-close" onClick={() => setSafetyModal({ open: false, fingerprint: null, display: null, error: null })}>×</button>
+            </div>
+            <div className="safety-modal-body">
+              <div className="safety-error-state">
+                {l("Не удалось вычислить Safety Number", "Could not compute Safety Number")}
+                <small>{safetyModal.error}</small>
+              </div>
+            </div>
+            <div className="safety-modal-actions">
+              <button type="button" className="btn-pri" onClick={() => setSafetyModal({ open: false, fingerprint: null, display: null, error: null })}>
+                {l("Закрыть", "Close")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <CallOverlay
+        callState={call.callState}
+        remoteUsername={call.remoteUsername}
+        isVideo={call.isVideo}
+        isMuted={call.isMuted}
+        isScreenSharing={call.isScreenSharing}
+        localVideoRef={call.localVideoRef}
+        remoteVideoRef={call.remoteVideoRef}
+        onAnswer={call.answerCall}
+        onDecline={call.endCall}
+        onEnd={call.endCall}
+        onToggleMute={call.toggleMute}
+        onToggleVideo={call.toggleVideo}
+        onToggleScreenShare={call.toggleScreenShare}
+        lang={lang}
+      />
     </div>
   );
 }
@@ -1326,6 +1439,31 @@ function ChatInfoPanel({ chat, chatBg, onChangeBg, onClose, onOpenSearch, lang, 
             "The server stores only encrypted envelopes. Messages are decrypted on device."
           )}
         </div>
+
+        <button
+          type="button"
+          className="tool-row"
+          onClick={async () => {
+            try {
+              const devices = await api.resolveDevicesForSafetyNumber(chat.id);
+              const ownIdentityKey = window.e2ee?.getIdentityPublicKey();
+              if (!ownIdentityKey) throw new Error("No identity key");
+
+              const theirDevice = devices?.devices?.find(d => d.userId !== auth.me?.id) || devices?.devices?.[0];
+              if (!theirDevice?.identityPublicKey) throw new Error("No identity key for this chat");
+
+              const fingerprint = await computeSafetyNumber(ownIdentityKey, theirDevice.identityPublicKey);
+              const display = formatSafetyNumber(fingerprint);
+              setSafetyModal({ open: true, fingerprint, display, error: null });
+            } catch (e) {
+              setSafetyModal({ open: true, fingerprint: null, display: null, error: e.message });
+            }
+          }}
+        >
+          <span className="tool-icon" aria-hidden="true">🔐</span>
+          <b>{l("Проверить Safety Number", "Verify Safety Number")}</b>
+          <i>›</i>
+        </button>
       </div>
 
       <button type="button" className="tool-row disabled" disabled>

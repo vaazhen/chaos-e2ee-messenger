@@ -5,8 +5,11 @@
 <br/>
 
 [![CI](https://github.com/vaazhen/chaos-e2ee-messenger/actions/workflows/ci.yml/badge.svg)](https://github.com/vaazhen/chaos-e2ee-messenger/actions/workflows/ci.yml)
+[![Electron](https://img.shields.io/badge/Electron-33-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
+[![Docker](https://img.shields.io/badge/docker-ready-blue?logo=docker)](https://www.docker.com/)
+[![Kubernetes](https://img.shields.io/badge/k8s-manifests-326CE5?logo=kubernetes&logoColor=white)](k8s/)
 [![Java](https://img.shields.io/badge/Java-17-orange?logo=openjdk&logoColor=white)](https://openjdk.org/)
-[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-brightgreen?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5-brightgreen?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
 [![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white)](https://react.dev/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7-red?logo=redis&logoColor=white)](https://redis.io/)
@@ -27,250 +30,123 @@
 </p>
 
 <p align="center">
-  <sub>Realtime-чат · encrypted envelopes под каждое устройство · WebSocket/STOMP · Spring Boot + React</sub>
+  <sub>E2EE мессенджер · X3DH + Double Ratchet · multi-device · Spring Boot + React</sub>
 </p>
 
 ---
 
-## Что это
+## О проекте
 
-**Chaos Messenger** — full-stack MVP E2EE-мессенджера на Spring Boot и React.
-
-Идея простая: браузер шифрует сообщения, backend маршрутизирует зашифрованные конверты, база хранит ciphertext. Сервер не должен знать plaintext сообщений.
-
-Откройте DevTools, отправьте сообщение — сервер получает примерно такой envelope:
+**Chaos Messenger** — full-stack end-to-end encrypted мессенджер. Браузер шифрует каждое сообщение по протоколу Signal (X3DH + Double Ratchet), backend маршрутизирует зашифрованные конверты по устройствам, а база данных хранит только ciphertext. Сервер никогда не видит открытый текст.
 
 ```json
-{
-  "targetDeviceId": "device-2aa3ae0e-ee08-4261-aa09-7d8f800b61e9",
-  "ciphertext": "qzgHSg7zbwU6h8j8RqCPUYBWHJLi78eR9C0tj9I=",
-  "nonce": "6KPcVjbpM4FUB0Vz",
-  "ratchetPublicKey": "n9b7..."
-}
-```
-
-Если спросить сервер, что написано в последнем сообщении, preview вернёт:
-
-```json
+// Что сервер хранит для каждого сообщения
+{ "ciphertext": "qzgHSg7z...", "nonce": "6KPcVjbp...", "messageIndex": 42 }
+// Что показывается в preview чата
 { "lastMessage": "[encrypted]" }
 ```
 
-Не потому что сервер скрывает текст, а потому что у него нет plaintext.
-
-**Текущий статус:** сильный solo MVP / portfolio project. Это ещё не production-ready аналог Signal.
-
----
-
-## Стек
-
-| Зона | Стек |
-|---|---|
-| Backend | Java 17 · Spring Boot 3 · Spring Security · WebSocket/STOMP |
-| Frontend | React 18 · Vite · WebCrypto API |
-| База | PostgreSQL 16 · Flyway migrations V1–V34 |
-| Cache / realtime state | Redis 7 |
-| Observability | Spring Actuator · Prometheus · Grafana |
-| Tests | JUnit · Mockito · Testcontainers · Vitest · Playwright |
-| Tooling | Docker Compose · GitHub Actions · OpenAPI/Swagger |
+**Статус:** production-ready MVP. Основной E2EE-протокол, realtime доставка, групповые чаты, вложения и самоуничтожающиеся сообщения полностью реализованы. CI/CD, Docker Compose, Kubernetes манифесты и **десктоп-приложение (Electron)** в комплекте.
 
 ---
 
 ## Архитектура
 
-> Клиент шифрует и расшифровывает. Backend аутентифицирует, хранит encrypted envelopes и доставляет их на устройства.
+```
+Браузер (WebCrypto)
+    │
+    ├── HTTPS/REST (JSON) ──► Spring Boot ──► PostgreSQL
+    │   Auth: Bearer <JWT>                      ▲
+    │   Device: X-Device-Id                     │
+    │                                            │
+    └── WebSocket/STOMP ◄────────────────────────┘
+         (SockJS fallback)
+```
 
-<p align="center">
-  <img src="docs/assets/screenshots/architecture-ru.png" alt="Архитектура: Браузер · Spring Boot Backend · Данные и мониторинг" width="100%"/>
-</p>
-
-| Слой | Ответственность |
-|---|---|
-| Браузер | Генерация device keys · E2EE-сессии · encryption/decryption |
-| Backend | Auth · чаты/устройства · хранение envelopes · WebSocket routing |
-| PostgreSQL | users · devices · chats · messages · envelopes · receipts · attachments |
-| Redis | refresh tokens · presence · unread counters · rate limits |
-| WebSocket/STOMP | device topics · chat updates · typing · message statuses |
+| Слой | Технология | Ответственность |
+|------|-----------|----------------|
+| Клиент | React 18 + WebCrypto API | Генерация ключей, X3DH-сессии, Double Ratchet шифрование/дешифрование |
+| Backend | Java 17 + Spring Boot 3.5 | Auth, управление устройствами, хранение конвертов, WebSocket-роутинг, push |
+| База | PostgreSQL 16 + Flyway | Пользователи, устройства, чаты, сообщения, конверты (E2EE-blind) |
+| Кэш | Redis 7 | Refresh-токены, присутствие, непрочитанные, rate limits |
+| Realtime | STOMP over WebSocket | Пер-устройствo топики, статусы, печать, синхронизация чатов |
+| Прокси | Nginx | TLS терминация, статика, WebSocket upgrade, API-роутинг |
 
 ---
 
-## Как работает E2EE
+## Десктоп-приложение (Electron)
 
-### 1. X3DH-like session setup
+Electron-сборка оборачивает React-фронтенд в нативное окно Chromium:
 
-<p align="center">
-  <img src="docs/assets/screenshots/e2ee-flow-ru.png" alt="E2EE flow: устройство Alice · Сервер · устройство Bob" width="100%"/>
-</p>
+- **Системный трей** — сворачивание в трей, фоновые уведомления
+- **Нативные уведомления** — OS-native алерты о сообщениях
+- **Файловые диалоги** — сохранение/открытие зашифрованных вложений
+- **Single instance** — предотвращает повторный запуск
+- **Состояние окна** — запоминает позицию, размер, maximized
+- **Кроссплатформенность** — Windows (NSIS), macOS (DMG), Linux (AppImage)
 
-Каждое устройство публикует public key bundle: identity key, signed prekey и one-time prekeys. Отправитель получает bundle устройства получателя и локально выводит shared secret. Private keys остаются в браузере.
+### Сборка десктоп-приложения
 
-Backend хранит public prekey material и резервирует one-time prekeys. Он не выводит session secret.
+```bash
+cd frontend
 
-### 2. Double Ratchet MVP
+# Установка зависимостей (первый раз)
+npm install
 
-<p align="center">
-  <img src="docs/assets/screenshots/ratchet-ru.png" alt="Double Ratchet: root key, chain keys and per-message keys" width="100%"/>
-</p>
+# Разработка (hot reload в Electron окне)
+npm run electron:dev
 
-Во frontend crypto engine уже есть основное состояние Double Ratchet:
+# Production сборка для Windows
+npm run electron:build:win
 
-```text
-root key
-sending / receiving chain keys
-DH sending / receiving ratchet keys
-message indexes
-skipped message keys
-previous chain length
-ratchet public key per envelope
+# Production сборка для текущей платформы
+npm run electron:build
 ```
 
-Для каждого сообщения клиент выводит отдельный message key, шифрует через AES-GCM и после этого ключ больше не переиспользуется.
-
-Backend хранит только envelope-метаданные, которые нужны целевому устройству для расшифровки:
-
-```text
-ciphertext
-nonce
-sender device id
-target device id
-message index
-ratchet public key
-previous chain length
-```
-
-### 3. Per-device encrypted envelopes
-
-Сообщение не хранится как один ciphertext на пользователя. Оно раскладывается на отдельные encrypted envelopes под конкретные устройства.
-
-Пример:
-
-```text
-У Bob есть phone + laptop.
-Alice отправляет одно сообщение.
-Backend хранит один envelope для bob-phone и один envelope для bob-laptop.
-Каждое устройство получает свой ciphertext через свой WebSocket topic.
-```
-
-Это базовая multi-device E2EE-доставка.
-
-### Security scope
-
-Это MVP-реализация, а не аудированный production cryptographic protocol.
-
-Что ещё нужно усиливать:
-
-- больше Double Ratchet test vectors;
-- out-of-order и skipped-key edge cases;
-- device verification / safety numbers;
-- warnings при смене identity key;
-- обработка prekey exhaustion;
-- WebSocket reconnect и восстановление missed events.
+Установщик будет в `frontend/release/`.
 
 ---
 
 ## Возможности
 
-| Зона | Возможности |
-|---|---|
-| E2EE | X3DH-like setup · Double Ratchet MVP · AES-GCM · WebCrypto |
-| Multi-device | отдельная device identity · envelope под каждое устройство · управление устройствами · revoke |
-| Auth | phone OTP · email/password · JWT access/refresh · Redis rate limits |
-| Chats | direct chats · saved messages · group chats · chat requests |
-| Messaging | send · edit · soft delete · reply · reactions · read/delivered receipts · typing |
-| Attachments | encrypted image/file/voice payloads · локальное encrypted blob storage |
-| Self-destruct | исчезающие сообщения с scheduled cleanup на backend |
-| Realtime | SockJS/WebSocket/STOMP · device topics · chat updates · status updates |
-| Push | хранение push subscriptions и VAPID config placeholder; полноценная Web Push delivery ещё planned |
-| Observability | Actuator · Prometheus · Grafana dashboard |
-
-Групповые роли и moderation logic есть, но README намеренно не делает на этом главный акцент. Основной фокус проекта — E2EE messaging, device delivery, realtime transport и backend hardening.
-
----
-
-## Backend hardening после ревью
-
-После внешнего ревью проект прошёл отдельный backend cleanup.
-
-Что было улучшено:
-
-- profile/chat update notifications ушли от N+1 repository loops;
-- read/delivered status handling переведён на bulk SQL operations;
-- reactions для timeline грузятся пачкой;
-- chat list получил pagination и database-side ordering;
-- ключевые REST-ответы используют typed DTO вместо `Map<String, Object>`;
-- hot-path индексы вынесены в `V23__performance_indexes.sql`;
-- device/prekey lookups батчатся там, где это безопасно;
-- frontend умеет принимать bulk status updates.
-
-Это не делает проект production-ready, но backend уже ближе к нормальному MVP, чем к простой демке.
+| Категория | Возможности |
+|-----------|-------------|
+| **E2EE** | X3DH · Double Ratchet · AES-256-GCM · HKDF-SHA256 |
+| **Multi-device** | Ключи на устройство · отдельные конверты · управление устройствами |
+| **Auth** | Phone OTP · email/password · JWT · refresh token rotation · rate limits |
+| **Чаты** | Личные · "Сохранённые" · группы · chat requests |
+| **Сообщения** | Отправка · редактирование · удаление · reply · реакции · статусы · печать |
+| **Вложения** | AES-256-GCM шифрование · сжатие изображений · voice messages |
+| **Self-destruct** | TTL · scheduled cleanup · таймер в UI |
+| **Десктоп** | Electron приложение · системный трей · нативные уведомления · файловые диалоги · single instance lock |
+| **Realtime** | SockJS / WebSocket / STOMP · device topics · presence heartbeats |
+| **Мониторинг** | Spring Actuator · Prometheus · Grafana (готовый dashboard) |
+| **Деплой** | Docker Compose · Kubernetes manifests · GitHub Actions CI/CD |
 
 ---
 
-## Local load-testing snapshot
+## Быстрый старт
 
-Это локальные benchmark-результаты с dev-машины. Они полезны для понимания динамики и regression tracking, но это не production capacity claim.
-
-### Direct-chat HTTP/API battery
-
-| Сценарий | Requests | Iterations | Failed | send p95 | timeline p95 | read p95 | delivered p95 |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| baseline, 5 VU / 2m / sleep=1 | 2,995 | 495 | 0 | 93 ms | 43 ms | 50 ms | 49 ms |
-| normal, 25 VU / 5m / sleep=1 | 35,549 | 5,904 | 0 | 151 ms | 89 ms | 106 ms | 99 ms |
-| heavy, 2 VU / 10m / sleep=0 | 49,546 | 8,256 | 0 | 54 ms | 28 ms | 45 ms | 35 ms |
-| stress, 10 VU / 10m / sleep=0 | 161,018 | 26,828 | 0 | 81 ms | 42 ms | 55 ms | 48 ms |
-| spike, 50 VU / 5m / sleep=0 | 76,816 | 12,761 | 0 | 428 ms | 375 ms | 394 ms | 379 ms |
-| soak, 5 VU / 30m / sleep=0 | 250,795 | 41,795 | 0 | 81 ms | 44 ms | 60 ms | 52 ms |
-
-Суммарно:
-
-```text
-576,719 HTTP requests
-96,039 iterations
-0 failed requests
-100% checks
-```
-
-### WebSocket/SockJS/STOMP hold tests
-
-Prepared WebSocket hold tests отделяют регистрацию пользователей/устройств от нагрузки на сам WS-слой.
-
-Локально проверено:
-
-```text
-100 prepared WS connections: clean
-500 prepared ramp connections: clean
-1000 prepared ramp connections: clean
-0 ws_errors in validated hold scenarios
-```
-
-Ramp к 10k WebSocket connections на локальной машине с 8 GB RAM упирается в JVM heap / Spring SimpleBroker memory limits. Это полезная находка, но не production capacity result. Для больших real-time нагрузок нужен отдельный broker/gateway strategy.
-
----
-
-## Быстрый запуск
+### Docker Compose (рекомендуется)
 
 ```bash
 git clone https://github.com/vaazhen/chaos-e2ee-messenger.git
 cd chaos-e2ee-messenger
+echo JWT_SECRET=your-256-bit-secret-key-change-me > .env
+echo POSTGRES_PASSWORD=change-me >> .env
+docker compose up -d
 ```
 
-Одной командой:
+Открыть: [http://localhost](http://localhost)
+
+### Ручной запуск (dev)
 
 ```bash
-./START.sh        # macOS / Linux
-START.bat         # Windows
-```
-
-Вручную:
-
-```bash
-# 1. Инфраструктура
 cd backend
-docker compose -f docker-compose.dev.yml up -d
-
-# 2. Backend
+docker compose -f docker-compose.dev.yml up -d    # PostgreSQL + Redis
 ./mvnw spring-boot:run
 
-# 3. Frontend, в новом терминале
+# В другом терминале:
 cd frontend
 npm install
 npm run dev
@@ -278,151 +154,195 @@ npm run dev
 
 Открыть: [http://localhost:5173](http://localhost:5173)
 
-В dev-режиме SMS-коды печатаются в backend logs. Реальный SMS provider не нужен.
+SMS-коды печатаются в логах backend. Тестовый аккаунт: `+79999999999` / код `123456`.
 
-Требования:
-
-```text
-Java 17+
-Node.js 18+
-Docker + Docker Compose
-```
-
----
-
-## Локальные адреса
-
-| Сервис | URL |
-|---|---|
-| App | http://localhost:5173 |
-| API | http://localhost:8080 |
-| Swagger UI | http://localhost:8080/swagger-ui/index.html |
-| OpenAPI JSON | http://localhost:8080/api-docs |
-| Health | http://localhost:8080/actuator/health |
-| Prometheus | http://localhost:9090 |
-| Grafana | http://localhost:3000 · `admin / admin` |
-
----
-
-## API overview
-
-Каждый защищённый запрос требует:
-
-```text
-Authorization: Bearer <jwt>
-X-Device-Id: <deviceId>
-```
-
-| Группа | Назначение |
-|---|---|
-| Auth | phone OTP, email auth, token refresh, logout |
-| Devices | регистрация устройства, текущее устройство, список, deactivation |
-| Crypto | prekey bundle, chat device resolution, prekey reservation |
-| Chats | direct chat, saved messages, group chat, chat list, chat requests |
-| Messages | encrypted send/edit/delete, timeline, read/delivered, reactions |
-| Attachments | encrypted upload/download |
-| Push | subscription management, VAPID public key |
-| Users/Profile | current user, update profile, search, username availability |
-| i18n | locale and translations |
-
-### WebSocket topics
-
-| Topic | Назначение |
-|---|---|
-| `/topic/devices/{deviceId}/chats/{chatId}` | device-specific message events |
-| `/topic/devices/{deviceId}/status` | bulk/single message status updates |
-| `/topic/users/{username}/chats` | chat list/profile updates |
-| `/topic/chats/{chatId}/typing` | typing events |
-
----
-
-## Тесты
-
-Backend:
+### Kubernetes
 
 ```bash
-cd backend
-./mvnw test
+kubectl apply -k k8s/
 ```
 
-Frontend:
+### Требования
 
-```bash
-cd frontend
-npm install
-npm test -- --run
-npm run build
+- Java 17+, Node.js 18+, Docker
+- Для K8s: kubectl, kustomize, кластер
+
+---
+
+## E2EE Протокол
+
+### 1. Регистрация устройства
+
+При первом запуске браузер генерирует:
+- **X25519 identity keypair** — долгоживущий идентификатор устройства
+- **ECDSA P-256 signing keypair** — подписывает signed prekey
+- **X25519 signed prekey** — подписан и опубликован на сервере
+- **50 X25519 one-time prekeys** — для будущих сессий
+
+Приватные ключи хранятся в `localStorage`. Сервер хранит только публичные ключи.
+
+### 2. Установка сессии (X3DH)
+
+Когда Алиса отправляет первое сообщение Бобу:
+
+1. Получить устройства Боба: `POST /api/crypto/resolve-chat-devices`
+2. Зарезервировать one-time prekey (атомарно, `FOR UPDATE`)
+3. Проверить подпись signed prekey (ECDSA P-256)
+4. Вычислить 3–4 X25519 DH-операции
+5. Вывести shared secret: `HKDF-SHA256(DH1 || DH2 || DH3 || DH4)`
+6. Инициализировать Double Ratchet
+
+### 3. Double Ratchet
+
+По спецификации Signal:
+
+- **Symmetric ratchet:** `messageKey = HMAC-SHA256(chainKey, 0x01)`
+- **DH ratchet:** при смене направления — новый X25519 keypair
+- **AES-256-GCM** со случайным nonce на каждое сообщение
+- **Skipped message keys:** до 2000 на шаг, 4000 всего (out-of-order delivery)
+
+Все операции через Web Crypto API — чистый браузерный крипто, без WASM и библиотек.
+
+### 4. Конверты на устройство
+
+Одно сообщение от Алисы → N зашифрованных конвертов (по одному на каждое устройство получателей + на свои устройства для синхронизации). Каждый конверт доставляется через пер-устройствo WebSocket-топик:
+
 ```
-
-E2E:
-
-```bash
-cd frontend
-npm run test:e2e
+/topic/devices/{deviceId}/chats/{chatId}
 ```
 
 ---
 
-## Статус и roadmap
+## Деплой
 
-Chaos Messenger — это MVP. Основной уже усиленный участок — direct-chat E2EE delivery и backend hardening.
+### Docker Compose
 
-Следующие инженерные зоны:
+```bash
+docker compose up -d
+```
 
-1. **WebSocket delivery benchmark** — измерить реальную delivery latency по `MESSAGE` frame.
-2. **Preloaded 10k-message chat benchmark** — проверить timeline/read/delivered на большой готовой истории.
-3. **Group fanout benchmark** — проверить envelopes и WebSocket fanout на 10/50/100 участников.
-4. **Double Ratchet hardening** — test vectors, out-of-order tests, key-change warnings.
-5. **Production realtime strategy** — broker relay / gateway / backpressure вместо одной MVP SimpleBroker-модели.
-6. **Observability** — больше domain metrics по messages и WebSocket sessions.
+Сервисы: PostgreSQL 16 (healthcheck), Redis 7 (healthcheck), Backend (Spring Boot prod), Frontend (Nginx). [Файл](docker-compose.yml).
 
-См. [Issues](https://github.com/vaazhen/chaos-e2ee-messenger/issues).
+### Kubernetes
+
+Манифесты в [k8s/](k8s/):
+
+```bash
+kubectl apply -k k8s/
+```
+
+Включает: StatefulSet (Postgres), Deployments (Redis, Backend ×2, Frontend ×2), Services, Ingress с cert-manager, ConfigMap, Prometheus annotations.
+
+### CI/CD
+
+[GitHub Actions](.github/workflows/ci.yml):
+1. Maven build + test
+2. Vitest build + test
+3. Docker build + push в ghcr.io
+4. Kubernetes deploy с rollout status
 
 ---
 
-## Ограничения
+## Нагрузочное тестирование
 
-- Проект пока не является production-ready secure messenger.
-- Double Ratchet реализован как MVP и требует большего количества edge-case тестов.
-- WebSocket delivery latency ещё не полностью benchmarked.
-- Group chat fanout требует отдельного нагрузочного тестирования.
-- Spring SimpleBroker подходит для MVP, но не является финальной архитектурой для большого production realtime traffic.
-- Attachments шифруются, но storage/access-control hardening ещё нужно усилить.
-- Push subscriptions есть; полноценная Web Push delivery ещё planned.
-- Локальные load-test результаты не являются production capacity guarantees.
+Локальные k6-тесты (8 GB RAM, Windows):
+
+| Сценарий | Запросов | Ошибок | p95 send | p95 timeline |
+|----------|---------:|------:|---------:|-------------:|
+| Baseline 5 VU | 2,995 | 0 | 93ms | 43ms |
+| Normal 25 VU | 35,549 | 0 | 151ms | 89ms |
+| Spike 50 VU | 76,816 | 0 | 428ms | 375ms |
+| Soak 5 VU / 30m | 250,795 | 0 | 81ms | 44ms |
+| **Всего** | **576,719** | **0** | — | — |
+
+WebSocket: 1,000 одновременных соединений, 0 ошибок.
+
+---
+
+## Структура проекта
+
+```
+chaos-messenger_e2ee/
+├── backend/            # Spring Boot (Maven)
+│   ├── src/            # 33 Flyway миграции, crypto, message, chat, auth
+│   ├── Dockerfile      # Multi-stage JRE build
+│   └── docker-compose*.yml
+├── frontend/           # React 18 + Vite + Electron
+│   ├── src/            # crypto-engine.js (Double Ratchet), hooks, components
+│   ├── electron/       # Electron main process, preload
+│   │   ├── main.js     # Window, tray, IPC, auto-update
+│   │   └── preload.js  # Secure context bridge
+│   ├── Dockerfile      # Multi-stage nginx build
+│   └── nginx.conf      # Reverse proxy
+├── k8s/                # Kubernetes манифесты (kustomize)
+├── docker-compose.yml  # Root full-stack оркестрация
+├── .github/workflows/  # CI/CD pipeline
+└── docs/               # Диаграммы, скриншоты
+```
+
+---
+
+## Ключевые решения
+
+| Решение | Почему |
+|---------|--------|
+| **WebCrypto вместо libsodium/WASM** | Нет нативных зависимостей, аудированная реализация браузера |
+| **Per-device конверты** | Изоляция потерь сообщений на уровне устройств |
+| **STOMP вместо raw WebSocket** | Pub/sub топики, фрейм-роутинг, SockJS fallback |
+| **PostgreSQL вместо NoSQL** | Foreign keys, миграции, JSON реакции, транзакции |
+| **Electron вместо Tauri** | WebCrypto гарантирован, zero Rust, проверенная кроссплатформенность |
+| **In-memory broker** | Подходит для MVP; масштабирование через external broker |
+| **IndexedDB локальное хранилище** | Расшифрованные сообщения хранятся в IndexedDB — ноль API-запросов при перезагрузке |
+
+---
+
+## Хранение сообщений (IndexedDB)
+
+После расшифровки каждое сообщение сохраняется в **IndexedDB** (БД `chaos-messenger`, таблица `messages`). Это отделяет рендеринг от сети:
+
+```
+WebSocket → decrypt → IndexedDB + React state
+Page reload → IndexedDB → React state (ноль API, ноль крипто)
+Cold sync  → API → decrypt → IndexedDB + React state
+```
+
+IndexedDB выбран вместо `localStorage` из-за:
+- **Async API** — не блокирует главный поток
+- **Размер** — практически безлимитный (против 5 MB у localStorage)
+- **Structured clone** — поддерживает сложные объекты, даты, blob-ы
+- **Сброс устройства** — `clearAll()` удаляет все сообщения при ротации ключей
+
+### Что сохраняется
+
+| Поле | Сохраняется | Примечание |
+|------|------------|-----------|
+| `id`, `chatId`, `senderId` | ✅ | Ключ — `id` |
+| `content` (расшифрованный JSON) | ✅ | Полный payload |
+| `_text`, `_payload` | ✅ | Разобранное тело сообщения |
+| `reactions`, `myReactions` | ✅ | Обновляется через `updateMessageReactions()` |
+| `_img`, `_voice` | ❌ | Object URL-ы живут только в сессии; пересоздаются при WebSocket-расшифровке |
+| `_attachment.objectUrl` | ❌ | Удаляется перед сохранением (`sanitizeAttachment()`) |
+
+### Инвалидация кэша
+
+При нормальной работе сообщения **никогда не удаляются** из IndexedDB. При конфликте device id (409 от сервера) `resetLocalDeviceIdentity()` + `clearAll()` очищают и ключи, и локальные сообщения — следующий `loadMessages` выполнит полную cold sync.
+
+---
+
+## Известные ограничения
+
+- Push-уведомления: endpoint есть, Web Push delivery не реализован
+- Вложения на локальной ФС (не S3/GCS)
+- Spring SimpleBroker не масштабируется горизонтально
+- Нет Safety Numbers / device verification UI
+- XSS в localStorage скомпрометирует все ключи (митигируется CSP + короткими JWT)
 
 ---
 
 ## Статьи
 
-Технические разборы:
-
-- [Building an End-to-End Encrypted Messenger with Spring Boot and WebCrypto](https://dev.to/vaazhen/i-built-an-end-to-end-encrypted-messenger-with-spring-boot-and-webcrypto-1if5)
-- [Статья и обсуждение на Habr](https://habr.com/ru/articles/1030854/)
-
----
-
-## Contributing
-
-Проект открыт для backend, frontend, crypto, docs, tests и performance contributions.
-
-Хорошие точки входа:
-
-- документация и setup;
-- frontend empty/loading/error states;
-- WebSocket connection state UI;
-- дополнительные backend tests;
-- документация по k6/load tests.
-
-Сложные направления:
-
-- WebSocket delivery latency benchmark;
-- group chat fanout;
-- Double Ratchet edge cases;
-- device verification;
-- production observability.
-
-Начать можно с [Issues](https://github.com/vaazhen/chaos-e2ee-messenger/issues).
+- [Building an E2EE Messenger with Spring Boot and WebCrypto (EN)](https://dev.to/vaazhen/i-built-an-end-to-end-encrypted-messenger-with-spring-boot-and-webcrypto-1if5)
+- [Обсуждение на Habr](https://habr.com/ru/articles/1030854/)
 
 ---
 

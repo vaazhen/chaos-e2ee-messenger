@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, getCurrentDeviceId } from "../api";
 import { compressImageToDataUrl, IMAGE_PROFILES } from "../imagePipeline";
+import { createEncryptedBackup, decryptBackup, restoreKeysFromBackup } from "../backup";
 
 const AVATARS = ["🦊", "🐺", "🦁", "🐯", "🐼", "🐨", "🐵", "🐸", "🐙", "🦉"];
 
@@ -126,10 +127,11 @@ export default function ProfileModal({
     firstName: me?.firstName || "",
     lastName: me?.lastName || "",
     username: me?.username || "",
+    bio: me?.bio || "",
     avatarUrl: me?.avatarUrl || "",
   }));
 
-  const [tab, setTab] = useState("profile");
+  const [tab, setTab] = useState("profile"); // profile | settings | devices | backup
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [avatarError, setAvatarError] = useState("");
@@ -141,13 +143,23 @@ export default function ProfileModal({
       firstName: me?.firstName || "",
       lastName: me?.lastName || "",
       username: me?.username || "",
+      bio: me?.bio || "",
       avatarUrl: me?.avatarUrl || "",
     });
-  }, [me?.id, me?.username, me?.firstName, me?.lastName, me?.avatarUrl]);
+  }, [me?.id, me?.username, me?.firstName, me?.lastName, me?.bio, me?.avatarUrl]);
 const [devices, setDevices] = useState([]);
   const [devicesLoading, setDevicesLoading] = useState(false);
   const [devicesError, setDevicesError] = useState("");
   const [deactivatingId, setDeactivatingId] = useState(null);
+
+  const [backupPassphrase, setBackupPassphrase] = useState("");
+  const [backupConfirmPassphrase, setBackupConfirmPassphrase] = useState("");
+  const [importPassphrase, setImportPassphrase] = useState("");
+  const [backupStatus, setBackupStatus] = useState("");
+  const [backupError, setBackupError] = useState("");
+  const [backupLoading, setBackupLoading] = useState(false);
+  const [backupInfo, setBackupInfo] = useState(null);
+  const [backupTab, setBackupTab] = useState("export"); // export | import
 
   // profile-settings-i18n-pass
   const isUnitTestRuntime =
@@ -232,6 +244,7 @@ const [devices, setDevices] = useState([]);
         firstName: form.firstName?.trim() || "",
         lastName: form.lastName?.trim() || "",
         username: me?.username || form.username,
+        bio: form.bio?.trim() || "",
         avatarUrl: form.avatarUrl?.trim() || "",
       };
 
@@ -276,43 +289,29 @@ const [devices, setDevices] = useState([]);
     }
   };
 
-  const closeOnBackdrop = (e) => {
-    if (e.target === e.currentTarget) requestClose();
-  };
-
   return (
-    <div
-      className={`profile-drawer-root${isClosing ? " closing" : ""}`}
-      onMouseDown={(e) => {
-        const target = e.target;
-        const panel = target instanceof Element ? target.closest(".profile-drawer-panel") : null;
-
-        if (!panel) {
-          requestClose();
-        }
-      }}
-    >
+    <div className={`profile-drawer-root${isClosing ? " closing" : ""}`}>
       <style>{PROFILE_DRAWER_CSS}</style>
 
-      <div className="profile-drawer-backdrop" />
+      <div className="profile-drawer-backdrop" onClick={requestClose} />
 
       <section
         className="profile-drawer-panel"
-        onMouseDown={(e) => e.stopPropagation()}
+        onClick={e => e.stopPropagation()}
       >
-        <div className="profile-drawer-grab-zone" onMouseDown={requestClose}>
+        <div className="profile-drawer-grab-zone" aria-hidden="true">
           <div className="profile-drawer-handle" />
         </div>
 
         <header className="profile-drawer-head">
-          <div>
-            <div className="profile-drawer-title">{l("Настройки", "Settings")}</div>
-            <div className="profile-drawer-subtitle">{l("Профиль, интерфейс и безопасность", "Profile, interface and security")}</div>
-          </div>
-
           <button type="button" className="profile-round-close" onClick={requestClose} title={l("Закрыть", "Close")}>
             ×
           </button>
+          <div className="profile-drawer-head-center">
+            <div className="profile-drawer-title">{l("Параметры", "Settings")}</div>
+            <div className="profile-drawer-subtitle">{l("Профиль, настройки и устройства", "Profile, preferences and devices")}</div>
+          </div>
+          <div className="profile-head-spacer" />
         </header>
 
         <div className="profile-tabs">
@@ -326,10 +325,26 @@ const [devices, setDevices] = useState([]);
 
           <button
             type="button"
+            className={tab === "settings" ? "active" : ""}
+            onClick={() => setTab("settings")}
+          >
+            {l("Настройки", "Preferences")}
+          </button>
+
+          <button
+            type="button"
             className={tab === "devices" ? "active" : ""}
             onClick={() => setTab("devices")}
           >
             {l("Устройства", "Devices")}
+          </button>
+
+          <button
+            type="button"
+            className={tab === "backup" ? "active" : ""}
+            onClick={() => setTab("backup")}
+          >
+            {l("Резерв", "Backup")}
           </button>
         </div>
 
@@ -342,10 +357,29 @@ const [devices, setDevices] = useState([]);
                 </div>
 
                 <div className="profile-main-text">
-                  <b>{`${form.firstName} ${form.lastName}`.trim() || me?.username || l("Пользователь", "User")}</b>
-                  <small>@{me?.username || form.username || "username"}</small>
+                  <b>
+                    {`${form.firstName} ${form.lastName}`.trim() ||
+                      me?.username ||
+                      l("Пользователь", "User")}
+                  </b>
+                  <small className="profile-main-handle">
+                    @{me?.username || form.username || "username"}
+                  </small>
+                  <small className="profile-main-meta">
+                    {form.bio?.trim()
+                      ? form.bio.trim()
+                      : me?.online
+                      ? l("В сети", "Online")
+                      : me?.lastSeen
+                        ? l("Был(а) в сети недавно", "Last seen recently")
+                        : l("Био ещё не заполнено", "No bio yet")}
+                  </small>
                 </div>
-              </div>              <div className="profile-section-title">{l("Фото профиля", "Profile photo")}</div>
+              </div>
+
+              <div className="profile-section-title profile-section-title--connected">
+                {l("Фото профиля", "Profile photo")}
+              </div>
 
               <div className="profile-card">
                 <div
@@ -456,28 +490,20 @@ const [devices, setDevices] = useState([]);
                     {l("Username можно изменить. После сохранения авторизация обновится автоматически.", "Username can be changed. Authorization will refresh automatically after saving.")}
                   </small>
                 </label>
-              </div>
 
-              <div className="profile-section-title">{l("Приложение", "App")}</div>
-
-              <div className="profile-card">
-                <button type="button" className="profile-row" onClick={onToggleTheme}>
-                  <span className="profile-row-icon">{theme === "dark" ? "☾" : "☀"}</span>
-                  <span className="profile-row-main">
-                    <b>{l("Оформление", "Appearance")}</b>
-                    <small>{theme === "dark" ? l("Тёмная тема", "Dark theme") : l("Светлая тема", "Light theme")}</small>
-                  </span>
-                  <i>›</i>
-                </button>
-
-                <button type="button" className="profile-row" onClick={onSwitchLang}>
-                  <span className="profile-row-icon">文</span>
-                  <span className="profile-row-main">
-                    <b>{l("Язык", "Language")}</b>
-                    <small>{effectiveLang === "ru" ? l("Русский", "Russian") : "English"}</small>
-                  </span>
-                  <i>›</i>
-                </button>
+                <label className="profile-field">
+                  <span>{l("О себе", "Bio")}</span>
+                  <textarea
+                    value={form.bio}
+                    onChange={e => setField("bio", e.target.value)}
+                    placeholder={l("Несколько слов о себе", "A few words about yourself")}
+                    maxLength={160}
+                    rows={3}
+                  />
+                  <small className="profile-field-note">
+                    {`${(form.bio || "").length}/160`}
+                  </small>
+                </label>
               </div>
 
               {error && <div className="profile-error">{error}</div>}
@@ -498,6 +524,32 @@ const [devices, setDevices] = useState([]);
               <button type="button" className="profile-logout" onClick={onLogout}>
                 {l("Выйти из аккаунта", "Log out")}
               </button>
+            </>
+          )}
+
+          {tab === "settings" && (
+            <>
+              <div className="profile-section-title profile-section-title--first">{l("Приложение", "App")}</div>
+
+              <div className="profile-card">
+                <button type="button" className="profile-row" onClick={onToggleTheme}>
+                  <span className="profile-row-icon">{theme === "dark" ? "☾" : "☀"}</span>
+                  <span className="profile-row-main">
+                    <b>{l("Оформление", "Appearance")}</b>
+                    <small>{theme === "dark" ? l("Тёмная тема", "Dark theme") : l("Светлая тема", "Light theme")}</small>
+                  </span>
+                  <i>›</i>
+                </button>
+
+                <button type="button" className="profile-row" onClick={onSwitchLang}>
+                  <span className="profile-row-icon">文</span>
+                  <span className="profile-row-main">
+                    <b>{l("Язык", "Language")}</b>
+                    <small>{effectiveLang === "ru" ? l("Русский", "Russian") : "English"}</small>
+                  </span>
+                  <i>›</i>
+                </button>
+              </div>
             </>
           )}
 
@@ -588,6 +640,168 @@ const [devices, setDevices] = useState([]);
               </div>
             </>
           )}
+
+          {tab === "backup" && (
+            <>
+              <div className="profile-device-hero">
+                <div className="profile-device-hero-icon">🔐</div>
+                <div>
+                  <b>{l("E2EE Резервное копирование", "E2EE Backup")}</b>
+                  <span>
+                    {l("Экспортируйте или импортируйте зашифрованные ключи устройства. Пароль нужен для расшифровки — не теряйте его.", "Export or import encrypted device keys. The passphrase is required for decryption — do not lose it.")}
+                  </span>
+                </div>
+              </div>
+
+              <div className="profile-security-note">
+                {l("Резервная копия содержит identity-ключи, pre-key'и и registration ID. После импорта устройство сможет расшифровывать старые сообщения.", "The backup contains identity keys, pre-keys and registration ID. After import, the device can decrypt old messages.")}
+              </div>
+
+              <div className="profile-backup-tabs" style={{display:"flex",gap:8,margin:"14px 0 10px",padding:"0 4px"}}>
+                <button
+                  type="button"
+                  className={`btn-sec`}
+                  style={{flex:1, fontWeight: backupTab === "export" ? 900 : 600, background: backupTab === "export" ? "var(--bg3)" : "transparent"}}
+                  onClick={() => setBackupTab("export")}
+                >
+                  {l("Экспорт", "Export")}
+                </button>
+                <button
+                  type="button"
+                  className={`btn-sec`}
+                  style={{flex:1, fontWeight: backupTab === "import" ? 900 : 600, background: backupTab === "import" ? "var(--bg3)" : "transparent"}}
+                  onClick={async () => {
+                    setBackupTab("import");
+                    try {
+                      const info = await api.getBackupInfo();
+                      setBackupInfo(info);
+                    } catch {}
+                  }}
+                >
+                  {l("Импорт", "Import")}
+                </button>
+              </div>
+
+              {backupError && <div className="profile-error">{backupError}</div>}
+              {backupStatus && <div className="profile-success">{backupStatus}</div>}
+
+              {backupTab === "export" && (
+                <div className="profile-card" style={{padding:18}}>
+                  <label className="profile-field">
+                    <span>{l("Пароль для шифрования", "Encryption passphrase")}</span>
+                    <input
+                      type="password"
+                      value={backupPassphrase}
+                      onChange={e => setBackupPassphrase(e.target.value)}
+                      placeholder={l("Минимум 8 символов", "At least 8 characters")}
+                    />
+                  </label>
+
+                  <label className="profile-field">
+                    <span>{l("Подтвердите пароль", "Confirm passphrase")}</span>
+                    <input
+                      type="password"
+                      value={backupConfirmPassphrase}
+                      onChange={e => setBackupConfirmPassphrase(e.target.value)}
+                      placeholder={l("Повторите пароль", "Repeat passphrase")}
+                    />
+                  </label>
+
+                  <div className="profile-bottom-actions" style={{marginTop:14}}>
+                    <button
+                      type="button"
+                      className="btn-pri"
+                      disabled={backupLoading || !backupPassphrase || backupPassphrase !== backupConfirmPassphrase || backupPassphrase.length < 8}
+                      onClick={async () => {
+                        setBackupError("");
+                        setBackupStatus("");
+                        setBackupLoading(true);
+                        try {
+                          const backup = await createEncryptedBackup(backupPassphrase);
+                          await api.importBackup(backup);
+                          setBackupStatus(l("Резервная копия сохранена на сервере", "Backup saved to server"));
+                          setBackupPassphrase("");
+                          setBackupConfirmPassphrase("");
+                        } catch (e) {
+                          setBackupError(e.message);
+                        } finally {
+                          setBackupLoading(false);
+                        }
+                      }}
+                    >
+                      {backupLoading ? l("Создание...", "Creating...") : l("Создать резервную копию", "Create backup")}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {backupTab === "import" && (
+                <>
+                  {backupInfo?.hasBackup && (
+                    <div className="profile-security-note" style={{marginTop:0}}>
+                      {l("Последняя копия от ", "Latest backup: ")}
+                      {backupInfo.createdAt
+                        ? formatDate(backupInfo.createdAt, effectiveLang)
+                        : l("неизвестно", "unknown")}
+                      {backupInfo.latestVersion != null && ` · v${backupInfo.latestVersion}`}
+                    </div>
+                  )}
+
+                  {!backupInfo?.hasBackup && (
+                    <div className="profile-empty-devices" style={{marginTop:8}}>
+                      <b>{l("Нет резервных копий", "No backups found")}</b>
+                      <span>{l("Сначала создайте экспорт на исходном устройстве.", "Create an export on the source device first.")}</span>
+                    </div>
+                  )}
+
+                  {backupInfo?.hasBackup && (
+                    <div className="profile-card" style={{padding:18}}>
+                      <label className="profile-field">
+                        <span>{l("Пароль для расшифровки", "Decryption passphrase")}</span>
+                        <input
+                          type="password"
+                          value={importPassphrase}
+                          onChange={e => setImportPassphrase(e.target.value)}
+                          placeholder={l("Введите пароль от резервной копии", "Enter backup passphrase")}
+                        />
+                      </label>
+
+                      <div className="profile-bottom-actions" style={{marginTop:14}}>
+                        <button
+                          type="button"
+                          className="btn-pri"
+                          disabled={backupLoading || !importPassphrase}
+                          onClick={async () => {
+                            setBackupError("");
+                            setBackupStatus("");
+                            setBackupLoading(true);
+                            try {
+                              const exported = await api.exportBackup(importPassphrase);
+                              const decrypted = await decryptBackup(
+                                exported.encryptedPayload,
+                                exported.salt,
+                                exported.iv,
+                                importPassphrase
+                              );
+                              await restoreKeysFromBackup(decrypted);
+                              setBackupStatus(l("Ключи восстановлены. Перезайдите, чтобы завершить восстановление.", "Keys restored. Re-login to complete recovery."));
+                              setImportPassphrase("");
+                            } catch (e) {
+                              setBackupError(e.message || l("Неверный пароль или повреждённые данные", "Wrong passphrase or corrupted data"));
+                            } finally {
+                              setBackupLoading(false);
+                            }
+                          }}
+                        >
+                          {backupLoading ? l("Восстановление...", "Restoring...") : l("Восстановить ключи", "Restore keys")}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </>
+          )}
         </div>
       </section>
     </div>
@@ -600,9 +814,10 @@ const PROFILE_DRAWER_CSS = `
   inset:0;
   z-index:270;
   display:flex;
-  align-items:flex-end;
+  align-items:flex-start;
   justify-content:center;
   pointer-events:auto;
+  padding-top:70px;
 }
 
 .profile-drawer-backdrop{
@@ -610,29 +825,29 @@ const PROFILE_DRAWER_CSS = `
   inset:0;
   background:rgba(0,0,0,.28);
   backdrop-filter:blur(1px);
+  animation:profileSheetFade .16s ease;
 }
 
 .profile-drawer-panel{
   position:relative;
-  width:min(100%,560px);
-  height:calc(100dvh - 54px);
-  max-height:900px;
+  width:min(94%,560px);
+  height:min(82dvh,760px);
   background:var(--bg0);
-  border-radius:34px 34px 0 0;
-  box-shadow:0 -24px 80px rgba(0,0,0,.24);
+  border-radius:32px;
+  box-shadow:0 24px 80px rgba(0,0,0,.22);
   display:flex;
   flex-direction:column;
   overflow:hidden;
-  animation:profileDrawerUp .22s cubic-bezier(.2,.8,.2,1);
+  animation:profileSheetIn .18s cubic-bezier(.2,.8,.2,1);
 }
 
 .profile-drawer-grab-zone{
-  height:26px;
+  height:16px;
   display:flex;
   align-items:center;
   justify-content:center;
-  cursor:pointer;
   flex-shrink:0;
+  cursor:default;
 }
 
 .profile-drawer-handle{
@@ -647,24 +862,39 @@ const PROFILE_DRAWER_CSS = `
 }
 
 .profile-drawer-head{
-  min-height:70px;
+  min-height:58px;
   display:flex;
-  align-items:center;
+  align-items:flex-start;
   justify-content:space-between;
-  padding:0 22px 14px;
+  padding:0 20px 12px;
   flex-shrink:0;
+  gap:8px;
+}
+
+.profile-drawer-head-center{
+  flex:1;
+  min-width:0;
+  text-align:center;
+  padding-top:2px;
 }
 
 .profile-drawer-title{
-  font-size:25px;
-  font-weight:950;
-  letter-spacing:-.04em;
+  font-size:22px;
+  font-weight:900;
+  letter-spacing:-.035em;
 }
 
 .profile-drawer-subtitle{
   color:var(--t2);
-  font-size:14px;
-  margin-top:2px;
+  font-size:13px;
+  margin-top:3px;
+  line-height:1.35;
+}
+
+.profile-head-spacer{
+  width:48px;
+  height:48px;
+  flex-shrink:0;
 }
 
 .profile-round-close{
@@ -685,13 +915,14 @@ const PROFILE_DRAWER_CSS = `
 
 .profile-tabs{
   margin:0 22px 14px;
-  height:44px;
+  height:42px;
   border-radius:999px;
-  padding:4px;
+  padding:3px;
   background:var(--bg3);
   display:grid;
-  grid-template-columns:1fr 1fr;
+  grid-template-columns:1fr 1fr 1fr 1fr;
   flex-shrink:0;
+  gap:2px;
 }
 
 .profile-tabs button{
@@ -700,19 +931,26 @@ const PROFILE_DRAWER_CSS = `
   background:transparent;
   color:var(--t2);
   cursor:pointer;
-  font-size:15px;
+  font-size:14px;
   font-weight:850;
+  padding:0 4px;
+  min-width:0;
 }
 
 .profile-tabs button.active{
   background:var(--bg1);
   color:var(--t1);
-  box-shadow:0 1px 7px rgba(0,0,0,.07);
+  box-shadow:0 1px 6px rgba(0,0,0,.06);
 }
 
 .profile-drawer-content{
   flex:1;
   padding:0 22px 28px;
+  min-height:0;
+}
+
+.profile-section-title--first{
+  margin-top:4px;
 }
 
 .profile-main-card,
@@ -725,17 +963,28 @@ const PROFILE_DRAWER_CSS = `
 }
 
 .profile-main-card{
-  padding:18px;
+  position:relative;
+  padding:20px 18px;
   display:flex;
   align-items:center;
   gap:16px;
+  background:linear-gradient(135deg, rgba(255,255,255,.98), rgba(246,246,244,.98));
+  border-radius:30px;
+  box-shadow:0 18px 50px rgba(15,23,42,.18);
+  border:1px solid rgba(255,255,255,.9);
+}
+
+[data-theme='dark'] .profile-main-card{
+  background:linear-gradient(135deg, rgba(21,25,34,.96), rgba(12,16,24,.96));
+  border-color:rgba(255,255,255,.06);
+  box-shadow:0 22px 70px rgba(0,0,0,.55);
 }
 
 .profile-big-avatar{
   width:70px;
   height:70px;
   border-radius:50%;
-  background:#111;
+  background:linear-gradient(135deg,#4fa3e0,#2d6fa8);
   color:#fff;
   display:flex;
   align-items:center;
@@ -746,7 +995,7 @@ const PROFILE_DRAWER_CSS = `
 }
 
 [data-theme='dark'] .profile-big-avatar{
-  background:#f3f5f8;
+  background:linear-gradient(135deg,#8ca6ff,#e5f0ff);
   color:#08090b;
 }
 
@@ -767,11 +1016,25 @@ const PROFILE_DRAWER_CSS = `
   margin-top:3px;
 }
 
+.profile-main-handle{
+  font-family:var(--font);
+}
+
+.profile-main-meta{
+  color:var(--t3);
+  font-size:13px;
+  margin-top:6px;
+}
+
 .profile-section-title{
   color:var(--t2);
   font-weight:850;
   font-size:15px;
-  margin:24px 0 10px 20px;
+  margin:22px 0 10px 20px;
+}
+
+.profile-section-title.profile-section-title--connected{
+  margin-top:18px;
 }
 
 .profile-card{
@@ -803,6 +1066,19 @@ const PROFILE_DRAWER_CSS = `
   background:transparent;
   color:var(--t1);
   font-size:18px;
+}
+
+.profile-field textarea{
+  width:100%;
+  border:none;
+  outline:none;
+  background:transparent;
+  color:var(--t1);
+  font-size:16px;
+  resize:vertical;
+  min-height:72px;
+  font-family:inherit;
+  line-height:1.4;
 }
 
 .profile-field-flat{
@@ -862,6 +1138,16 @@ const PROFILE_DRAWER_CSS = `
   padding:12px 14px;
   color:var(--red);
   background:rgba(229,72,77,.12);
+  font-size:14px;
+  line-height:1.4;
+}
+
+.profile-success{
+  margin-top:14px;
+  border-radius:20px;
+  padding:12px 14px;
+  color:var(--green);
+  background:rgba(34,197,94,.12);
   font-size:14px;
   line-height:1.4;
 }
@@ -1060,15 +1346,27 @@ const PROFILE_DRAWER_CSS = `
   margin-bottom:6px;
 }
 
-@keyframes profileDrawerUp{
+@keyframes profileSheetIn{
   from{
-    transform:translateY(100%);
-    opacity:.94;
+    transform:translateY(8px) scale(.99);
+    opacity:0;
   }
   to{
-    transform:translateY(0);
+    transform:translateY(0) scale(1);
     opacity:1;
   }
+}
+@keyframes profileSheetOut{
+  from{transform:translateY(0) scale(1);opacity:1}
+  to{transform:translateY(8px) scale(.99);opacity:0}
+}
+@keyframes profileSheetFade{
+  from{opacity:0}
+  to{opacity:1}
+}
+@keyframes profileSheetFadeOut{
+  from{opacity:1}
+  to{opacity:0}
 }
 
 
@@ -1121,10 +1419,18 @@ const PROFILE_DRAWER_CSS = `
   color:var(--t2);
   cursor:default;
 }
+@media (min-width: 900px){
+  .profile-drawer-panel{
+    height:min(84dvh,780px);
+    border-radius:34px;
+  }
+}
+
 @media (max-width: 520px){
   .profile-drawer-panel{
-    height:calc(100dvh - 44px);
-    border-radius:30px 30px 0 0;
+    width:calc(100% - 24px);
+    height:min(84dvh,760px);
+    border-radius:28px;
   }
 
   .profile-drawer-head,
@@ -1148,30 +1454,12 @@ const PROFILE_DRAWER_CSS = `
   }
 }
 
-
-/* profile-settings-close-pass */
 .profile-drawer-root.closing .profile-drawer-backdrop{
-  animation:profileBackdropOut .18s ease forwards;
+  animation:profileSheetFadeOut .14s ease forwards;
 }
 
 .profile-drawer-root.closing .profile-drawer-panel{
-  animation:profileDrawerDown .18s cubic-bezier(.2,.8,.2,1) forwards;
+  animation:profileSheetOut .14s ease forwards;
   pointer-events:none;
-}
-
-@keyframes profileDrawerDown{
-  from{
-    transform:translateY(0);
-    opacity:1;
-  }
-  to{
-    transform:translateY(22px);
-    opacity:0;
-  }
-}
-
-@keyframes profileBackdropOut{
-  from{opacity:1}
-  to{opacity:0}
 }
 `;

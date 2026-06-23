@@ -146,3 +146,173 @@ describe("crypto-engine frontend safety checks", () => {
     await expect(window.e2ee.decryptEnvelope(selfEnvelope)).resolves.toBe("private self secret");
   });
 });
+
+describe("Double Ratchet full protocol cycle", () => {
+  let Alice, Bob;
+
+  async function genDevice(deviceId) {
+    const identityKey = await crypto.subtle.generateKey({ name: 'X25519' }, true, ['deriveBits']);
+    const signedPreKey = await crypto.subtle.generateKey({ name: 'X25519' }, true, ['deriveBits']);
+    const signingKey = await crypto.subtle.generateKey(
+      { name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']
+    );
+
+    const identityPub = new Uint8Array(await crypto.subtle.exportKey('raw', identityKey.publicKey));
+    const identityPriv = new Uint8Array(await crypto.subtle.exportKey('pkcs8', identityKey.privateKey));
+    const signedPreKeyPub = new Uint8Array(await crypto.subtle.exportKey('raw', signedPreKey.publicKey));
+    const signedPreKeyPriv = new Uint8Array(await crypto.subtle.exportKey('pkcs8', signedPreKey.privateKey));
+    const signingPub = new Uint8Array(await crypto.subtle.exportKey('spki', signingKey.publicKey));
+    const signingPriv = new Uint8Array(await crypto.subtle.exportKey('pkcs8', signingKey.privateKey));
+    const signedPreKeySig = new Uint8Array(await crypto.subtle.sign(
+      { name: 'ECDSA', hash: 'SHA-256' }, signingKey.privateKey, signedPreKeyPub
+    ));
+
+    return {
+      deviceId,
+      registrationId: 1,
+      identity: { publicKey: bytesToB64(identityPub), privateKeyPkcs8: bytesToB64(identityPriv) },
+      signingKey: { publicKeySpki: bytesToB64(signingPub), privateKeyPkcs8: bytesToB64(signingPriv) },
+      signedPreKey: { preKeyId: 1, publicKey: bytesToB64(signedPreKeyPub), privateKeyPkcs8: bytesToB64(signedPreKeyPriv), signature: bytesToB64(signedPreKeySig) },
+      oneTimePreKeys: [],
+    };
+  }
+
+  function makeApi(targetBundle) {
+    return vi.fn(async (path) => {
+      if (path.includes("resolve-chat-devices")) {
+        return { targetDevices: [{ userId: 42, deviceId: targetBundle.deviceId, identityPublicKey: targetBundle.identity.publicKey, signingPublicKey: targetBundle.signingKey.publicKeySpki, signedPreKey: targetBundle.signedPreKey, oneTimePreKey: null }] };
+      }
+      if (path.includes("reserve-prekey")) {
+        return { signedPreKey: null, oneTimePreKey: null };
+      }
+      return {};
+    });
+  }
+
+  function setBundle(bundle) {
+    localStorage.setItem("cm_device_bundle_v2", JSON.stringify(bundle));
+  }
+
+  function getSessions() {
+    return localStorage.getItem("cm_e2ee_sessions_v5") || "{}";
+  }
+
+  function setSessions(json) {
+    localStorage.setItem("cm_e2ee_sessions_v5", json);
+  }
+
+  beforeAll(async () => {
+    Alice = await genDevice("device-alice");
+    Bob = await genDevice("device-bob");
+  }, 30000);
+
+  beforeEach(() => {
+    delete window.e2ee;
+    localStorage.clear();
+  });
+
+  it("full bidirectional X3DH + Double Ratchet cycle (Alice sends, Bob decrypts, Bob replies, Alice decrypts)", async () => {
+    await loadCryptoEngine();
+
+    // Alice → Bob via X3DH (PREKEY_WHISPER)
+    setBundle(Alice);
+    setSessions("{}");
+    const fanout = await window.e2ee.buildFanoutRequest(makeApi(Bob), 100, "hello from alice");
+    expect(fanout.envelopes).toHaveLength(1);
+    const env1 = fanout.envelopes[0];
+    expect(env1.messageType).toBe("PREKEY_WHISPER");
+    expect(env1.ciphertext).toBeTruthy();
+    const aliceSessions = getSessions();
+
+    // Bob decrypts (X3DH recipient, establishes session)
+    setBundle(Bob);
+    setSessions("{}");
+    const pt1 = await window.e2ee.decryptEnvelope({ ...env1, senderDeviceId: Alice.deviceId });
+    expect(pt1).toBe("hello from alice");
+    const bobSessions = getSessions();
+
+    // Bob replies via existing session (WHISPER, triggers DH ratchet on both sides)
+    localStorage.setItem("cm_token", `header.${b64urlJson({ sub: "bob" })}.signature`);
+    setBundle(Bob);
+    setSessions(bobSessions);
+    const fanout2 = await window.e2ee.buildFanoutRequest(makeApi(Alice), 100, "hello from bob");
+    expect(fanout2.envelopes).toHaveLength(1);
+    const env2 = fanout2.envelopes[0];
+    expect(env2.messageType).toBe("WHISPER");
+    expect(env2.ratchetPublicKey).not.toBe(env1.ratchetPublicKey);
+
+    // Alice decrypts (DH ratchet on receiving side)
+    setBundle(Alice);
+    setSessions(aliceSessions);
+    const pt2 = await window.e2ee.decryptEnvelope({ ...env2, senderDeviceId: Bob.deviceId });
+    expect(pt2).toBe("hello from bob");
+  }, 30000);
+
+  it("multiple sequential messages advance sending chain", async () => {
+    await loadCryptoEngine();
+
+    setBundle(Alice);
+    setSessions("{}");
+    const N = 5;
+    const envelopes = [];
+    for (let i = 0; i < N; i++) {
+      const fanout = await window.e2ee.buildFanoutRequest(makeApi(Bob), 100, `msg-${i}`);
+      envelopes.push(fanout.envelopes[0]);
+    }
+
+    setBundle(Bob);
+    setSessions("{}");
+    for (let i = 0; i < N; i++) {
+      const pt = await window.e2ee.decryptEnvelope({ ...envelopes[i], senderDeviceId: Alice.deviceId });
+      expect(pt).toBe(`msg-${i}`);
+    }
+  }, 30000);
+
+  it("out-of-order delivery via skipped message keys", async () => {
+    await loadCryptoEngine();
+
+    setBundle(Alice);
+    setSessions("{}");
+    const envelopes = [];
+    for (let i = 0; i < 5; i++) {
+      const fanout = await window.e2ee.buildFanoutRequest(makeApi(Bob), 100, `msg-${i}`);
+      envelopes.push(fanout.envelopes[0]);
+    }
+
+    setBundle(Bob);
+    setSessions("{}");
+    // First establish session with the PREKEY_WHISPER message (index 0)
+    expect(await window.e2ee.decryptEnvelope({ ...envelopes[0], senderDeviceId: Alice.deviceId })).toBe("msg-0");
+    // Then decrypt out of order — skipped message keys handle indices 1,2,3
+    for (const idx of [4, 2, 1, 3]) {
+      const pt = await window.e2ee.decryptEnvelope({ ...envelopes[idx], senderDeviceId: Alice.deviceId });
+      expect(pt).toBe(`msg-${idx}`);
+    }
+  }, 30000);
+
+  it("rejects decryption when local bundle is missing", async () => {
+    await loadCryptoEngine();
+    await expect(window.e2ee.decryptEnvelope({
+      messageType: "WHISPER", senderDeviceId: "x", ciphertext: "x", nonce: "x",
+    })).rejects.toThrow("Local device bundle is missing");
+  });
+
+  it("self-whisper works alongside Double Ratchet", async () => {
+    await loadCryptoEngine();
+
+    setBundle(Alice);
+    const api = vi.fn(async (path) => {
+      if (path.includes("resolve-chat-devices")) {
+        return { targetDevices: [{ userId: 1, deviceId: Alice.deviceId }] };
+      }
+      return {};
+    });
+    const fanout = await window.e2ee.buildFanoutRequest(api, 100, "self note");
+    expect(fanout.envelopes).toHaveLength(1);
+    expect(fanout.envelopes[0].messageType).toBe("SELF_WHISPER");
+
+    await expect(window.e2ee.decryptEnvelope({
+      ...fanout.envelopes[0], senderDeviceId: Alice.deviceId,
+    })).resolves.toBe("self note");
+  });
+});

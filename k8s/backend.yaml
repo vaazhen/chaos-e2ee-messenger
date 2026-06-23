@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chaos-backend
+  namespace: chaos-messenger
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: chaos-backend
+  template:
+    metadata:
+      labels:
+        app: chaos-backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/actuator/prometheus"
+    spec:
+      containers:
+        - name: backend
+          image: ${REGISTRY:-ghcr.io}/${REPOSITORY:-chaos-messenger}/backend:${TAG:-latest}
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: chaos-messenger-config
+            - secretRef:
+                name: chaos-messenger-secret
+          ports:
+            - containerPort: 8080
+              name: http
+            - containerPort: 9091
+              name: management
+          volumeMounts:
+            - name: attachments
+              mountPath: /app/attachments
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 3
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "768Mi"
+              cpu: "1000m"
+      volumes:
+        - name: attachments
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: chaos-backend
+  namespace: chaos-messenger
+spec:
+  selector:
+    app: chaos-backend
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+    - name: management
+      port: 9091
+      targetPort: 9091

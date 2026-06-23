@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
+  base: process.env.ELECTRON_BUILD ? "./" : "/",
   define: {
     global: "globalThis",
   },
@@ -14,6 +15,10 @@ export default defineConfig({
   preview: {
     host: true,
     port: 4173,
+  },
+  build: {
+    outDir: "dist",
+    emptyOutDir: true,
   },
   test: {
     environment: "jsdom",

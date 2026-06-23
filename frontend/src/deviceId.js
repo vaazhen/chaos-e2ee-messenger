@@ -1,3 +1,4 @@
+import { clearAll as clearLocalStore } from "./localMessageStore";
 import { getToken, API_BASE } from "./api";
 
 function generateUUID() {
@@ -79,6 +80,7 @@ export async function ensureDeviceRegistered(deviceRegistrationToken) {
 
     console.warn("[E2EE] Device id conflict, resetting local identity and retrying registration");
     window.e2ee.resetLocalDeviceIdentity();
+    clearLocalStore().catch(() => {});
     await window.e2ee.ensureDeviceRegistered(apiFn);
   }
   const deviceId = window.e2ee.getOrCreateDeviceId();
