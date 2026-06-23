@@ -30,7 +30,10 @@ jobs:
           java-version: '17'
           cache: maven
 
-      - name: Run backend verification
+      - name: Run backend checkstyle
+        run: mvn checkstyle:check
+
+      - name: Run backend tests & verify
         run: mvn verify
 
       - name: Upload JAR artifact
@@ -59,6 +62,12 @@ jobs:
 
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
+
+      - name: Run frontend lint
+        run: npm run lint
+
+      - name: Run frontend format check
+        run: npm run format
 
       - name: Run frontend tests
         run: npm test

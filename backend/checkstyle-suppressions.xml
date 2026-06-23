@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<!DOCTYPE suppressions PUBLIC
+        "-//Checkstyle//DTD SuppressionFilter Configuration 1.2//EN"
+        "https://checkstyle.org/dtds/suppressions_1_2.dtd">
+<suppressions>
+    <!-- DTO classes often need many fields, suppress naming for them -->
+    <suppress files="[/\\]dto[/\\]" checks=".*"/>
+    <!-- Domain entities with JPA often break naming conventions -->
+    <suppress files="[/\\]domain[/\\]" checks=".*"/>
+    <!-- Generated or test-like files -->
+    <suppress files=".*Test\.java$" checks=".*"/>
+</suppressions>
