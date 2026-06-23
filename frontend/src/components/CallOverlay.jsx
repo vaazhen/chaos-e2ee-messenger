@@ -60,6 +60,14 @@ function CallOverlay({
             <div className="call-connecting-spinner" />
             <div className="call-name">{remoteUsername || l('Соединение...', 'Connecting...')}</div>
             <div className="call-status">{l('Устанавливаем защищённое соединение...', 'Establishing secure connection...')}</div>
+            <div className="call-actions">
+              <button type="button" className="call-btn call-btn-end" onClick={onEnd}>
+                <svg viewBox="0 0 24 24" width="28" height="28">
+                  <path d="M1 5l3-3 20 20-3 3z" />
+                </svg>
+                <span>{l('Отмена', 'Cancel')}</span>
+              </button>
+            </div>
           </div>
         )}
 

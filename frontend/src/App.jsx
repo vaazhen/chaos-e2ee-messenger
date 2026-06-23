@@ -544,7 +544,6 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
   const call = useWebRTC({
     publish: (dest, body) => ws?.publish(dest, body),
     onCallEnded: () => {},
-    myUsername: auth.me?.username,
   });
 
   wsCallSignalRef.current = call.handleSignalingMessage;
