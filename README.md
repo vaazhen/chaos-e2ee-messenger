@@ -5,44 +5,91 @@
 <br/>
 
 [![CI](https://github.com/vaazhen/chaos-e2ee-messenger/actions/workflows/ci.yml/badge.svg)](https://github.com/vaazhen/chaos-e2ee-messenger/actions/workflows/ci.yml)
-[![Electron](https://img.shields.io/badge/Electron-33-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
-[![Docker](https://img.shields.io/badge/docker-ready-blue?logo=docker)](https://www.docker.com/)
-[![Kubernetes](https://img.shields.io/badge/k8s-manifests-326CE5?logo=kubernetes&logoColor=white)](k8s/)
-[![Java](https://img.shields.io/badge/Java-17-orange?logo=openjdk&logoColor=white)](https://openjdk.org/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5-brightgreen?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
 [![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white)](https://react.dev/)
+[![Electron](https://img.shields.io/badge/Electron-33-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
+[![Java](https://img.shields.io/badge/Java-17-orange?logo=openjdk&logoColor=white)](https://openjdk.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7-red?logo=redis&logoColor=white)](https://redis.io/)
+[![Docker](https://img.shields.io/badge/docker-ready-blue?logo=docker)](https://www.docker.com/)
+[![Kubernetes](https://img.shields.io/badge/k8s-manifests-326CE5?logo=kubernetes&logoColor=white)](k8s/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 </div>
 
 ---
 
+<div align="center">
+  <img src="docs/assets/screenshots/header.png" alt="Chaos Messenger" width="100%"/>
+</div>
+
+<br/>
+
+<p align="center">
+  <img src="docs/assets/screenshots/hero.png" alt="Chaos Messenger — chat list, conversation, devices" width="100%"/>
+</p>
+
+<p align="center">
+  <b>Full-stack E2EE messenger · X3DH + Double Ratchet · Multi-device · Spring Boot + React</b>
+</p>
+
+---
+
 ## Overview
 
-**Chaos Messenger** is a full-stack end-to-end encrypted messenger with desktop apps. The browser encrypts every message using a Signal-inspired protocol (X3DH + Double Ratchet), the backend routes encrypted envelopes per device, and the database stores only ciphertext. The server never sees plaintext.
+**Chaos Messenger** is a production-ready end-to-end encrypted messenger. The browser encrypts every message using the Signal Protocol (X3DH + Double Ratchet), the backend routes encrypted envelopes per device, and the database stores only ciphertext. **The server never sees plaintext.**
 
 ```json
+// What the server stores for each message
 { "ciphertext": "qzgHSg7z...", "nonce": "6KPcVjbp...", "messageIndex": 42 }
+// What shows in the chat preview
 { "lastMessage": "[encrypted]" }
 ```
 
-Available as: **Web app**, **Desktop (Electron)** for Windows/macOS/Linux.
+**Available as:** Web app · Desktop (Electron) for Windows/macOS/Linux · Docker Compose · Kubernetes
 
 ---
 
 ## Architecture
 
-```
-Browser / Electron (WebCrypto)
-    │
-    ├── HTTPS/REST (JSON) ──► Spring Boot ──► PostgreSQL
-    │   Auth: Bearer <JWT>                      ▲
-    │   Device: X-Device-Id                     │
-    │                                            │
-    └── WebSocket/STOMP ◄────────────────────────┘
-         (SockJS fallback)
+```mermaid
+graph TB
+    subgraph "Client"
+        WEB[Web App<br/>React 18 + WebCrypto]
+        ELEC[Desktop App<br/>Electron 33]
+    end
+
+    subgraph "Reverse Proxy"
+        CADDY[Caddy<br/>Auto HTTPS / TLS]
+    end
+
+    subgraph "Docker Compose / K8s"
+        NGINX[Nginx<br/>Static + API Proxy]
+        BE[Spring Boot 3.5<br/>Java 17]
+        PG[(PostgreSQL 16<br/>35 Flyway Migrations)]
+        RD[(Redis 7<br/>Tokens / Rate Limits)]
+        
+        subgraph "Monitoring"
+            PR[Prometheus<br/>Metrics]
+            LK[Loki<br/>Logs]
+            GF[Grafana<br/>Dashboards]
+        end
+    end
+
+    WEB -->|HTTPS| CADDY
+    ELEC -->|HTTPS| CADDY
+    CADDY --> NGINX
+    NGINX -->|/api/ proxy_pass| BE
+    NGINX -->|/ws proxy_pass| BE
+    NGINX -->|static files| WEB
+    BE --> PG
+    BE --> RD
+    PR -->|scrape| BE
+    PR -->|scrape| PG
+    PR -->|scrape| RD
+    LK -->|collect logs| BE
+    GF --> PR
+    GF --> LK
 ```
 
 | Layer | Technology | Responsibility |
@@ -52,13 +99,15 @@ Browser / Electron (WebCrypto)
 | Backend | Java 17 + Spring Boot 3.5 | Auth, device management, envelope storage, WebSocket routing |
 | Database | PostgreSQL 16 + Flyway | Users, devices, chats, messages, envelopes, receipts (E2EE-blind) |
 | Cache | Redis 7 | Refresh tokens, presence, unread counters, rate limits |
-| Proxy | Nginx | TLS termination, static serving, WebSocket upgrade, API routing |
+| Reverse Proxy | Caddy v2 | Automatic HTTPS (Let's Encrypt), TLS termination |
+| Static Serving | Nginx | Frontend static files, API reverse proxy, WebSocket upgrade |
+| Monitoring | Prometheus + Loki + Grafana | Metrics, logs, pre-built dashboards |
 
 ---
 
 ## Desktop App (Electron)
 
-The desktop build wraps the React frontend in a native Chromium window with:
+The desktop build wraps the React frontend in a native Chromium window:
 
 - **System tray** — minimize to tray, background notifications
 - **Native notifications** — OS-native message alerts
@@ -71,8 +120,6 @@ The desktop build wraps the React frontend in a native Chromium window with:
 
 ```bash
 cd frontend
-
-# Install dependencies (first time)
 npm install
 
 # Development (hot reload in Electron window)
@@ -95,33 +142,61 @@ The installer will be in `frontend/release/`.
 |----------|----------|
 | **E2EE** | X3DH session establishment · Double Ratchet per-message keys · AES-256-GCM · HKDF-SHA256 |
 | **Multi-device** | Per-device identity keys · per-device encrypted envelopes · device management · revoke |
-| **Auth** | Phone OTP · email/password · JWT access (24h) · refresh token rotation · Redis rate limits |
-| **Chats** | Direct chats · saved messages · groups · Instagram-style requests |
+| **Auth** | Phone OTP · email/password · JWT access (24h) · refresh token rotation · rate limits |
+| **Chats** | Direct chats · saved messages · groups (RBAC) · Instagram-style requests |
 | **Messaging** | Send · edit · soft delete · reply · reactions · read/delivered receipts · typing indicators |
 | **Attachments** | AES-256-GCM encrypted files · canvas-based image compression · voice messages |
 | **Self-destruct** | Configurable TTL · scheduled cleanup · countdown UI |
 | **Realtime** | SockJS / WebSocket / STOMP · device topics · chat list sync · presence heartbeats |
+| **Calls** | WebRTC voice/video · screen sharing · STUN-based ICE |
 | **Desktop** | Electron app · system tray · native notifications · file dialogs · single instance lock |
-| **Monitoring** | Spring Actuator · Prometheus metrics · Grafana dashboard (pre-built) |
-| **Deployment** | Docker Compose · Kubernetes manifests · GitHub Actions CI/CD |
+| **Monitoring** | Spring Actuator · Prometheus metrics · Loki logs · Grafana dashboard (pre-built) |
+| **Deployment** | Docker Compose (13 services) · Kubernetes (Kustomize) · GitHub Actions CI/CD |
 
 ---
 
 ## Quick Start
 
-### Docker Compose (full stack)
+### 1. Docker Compose (full production stack)
 
 ```bash
 git clone https://github.com/vaazhen/chaos-e2ee-messenger.git
 cd chaos-e2ee-messenger
-echo JWT_SECRET=your-256-bit-secret-key-change-me > .env
-echo POSTGRES_PASSWORD=change-me >> .env
+
+# Create .env with required secrets
+cat > .env << EOF
+POSTGRES_PASSWORD=change_this_password_123
+JWT_SECRET=change_this_jwt_secret_32_chars_min
+CORS_ORIGINS=http://localhost
+DOMAIN=localhost
+GRAFANA_ADMIN_PASSWORD=change_admin_password
+EOF
+
 docker compose up -d
 ```
 
 Open: [http://localhost](http://localhost)
 
-### Manual development
+### 2. Demo mode (test accounts)
+
+Add to `.env`:
+```
+CHAOS_DEMO_ENABLED=true
+```
+
+Then restart and seed:
+```bash
+docker compose up -d
+curl -s http://localhost/api/demo/seed
+```
+
+Test accounts:
+| User | Phone | Code |
+|------|-------|------|
+| Alice | +19999999998 | 111111 |
+| Bob | +19999999999 | 000000 |
+
+### 3. Manual development
 
 ```bash
 # 1. Infrastructure (PostgreSQL + Redis)
@@ -131,7 +206,7 @@ docker compose -f docker-compose.dev.yml up -d
 # 2. Backend
 ./mvnw spring-boot:run
 
-# 3. Frontend
+# 3. Frontend (in another terminal)
 cd frontend
 npm install
 npm run dev
@@ -139,17 +214,9 @@ npm run dev
 
 Open: [http://localhost:5173](http://localhost:5173)
 
-In dev mode, SMS codes are printed in backend logs. Test account: `+79999999999` / code `123456`.
+SMS codes are printed in backend logs. Test account: `+79999999999` / code `123456`.
 
-### Desktop app (production build)
-
-```bash
-cd frontend
-npm install
-npm run electron:build:win
-```
-
-### Kubernetes
+### 4. Kubernetes
 
 ```bash
 kubectl apply -k k8s/
@@ -157,7 +224,7 @@ kubectl apply -k k8s/
 
 ### Requirements
 
-- Java 17+, Node.js 18+, Docker
+- Java 17+, Node.js 18+, Docker, Docker Compose v2+
 
 ---
 
@@ -165,16 +232,42 @@ kubectl apply -k k8s/
 
 | Service | URL |
 |---------|-----|
-| Web App | http://localhost:5173 |
+| Web App | http://localhost |
 | API | http://localhost:8080 |
 | Swagger UI | http://localhost:8080/swagger-ui/index.html |
 | Health | http://localhost:8080/actuator/health |
 | Prometheus | http://localhost:9090 |
-| Grafana | http://localhost:3000 (admin / admin) |
+| Grafana | http://localhost:3000 (admin / $GRAFANA_ADMIN_PASSWORD) |
 
 ---
 
 ## E2EE Protocol
+
+```mermaid
+sequenceDiagram
+    participant Alice as Alice's Browser
+    participant Server as Backend / DB
+    participant Bob as Bob's Browser
+
+    Note over Alice: Generate X25519 identity key,<br/>ECDSA signing key, signed prekey,<br/>50 one-time prekeys
+    Alice->>Server: POST /api/crypto/devices/register (key bundle)
+    
+    Note over Bob: Generate key bundle (same)
+    Bob->>Server: POST /api/crypto/devices/register (key bundle)
+
+    Note over Alice,Bob: X3DH Session Establishment
+    Alice->>Server: POST /api/crypto/resolve-chat-devices (fetch Bob's keys)
+    Server-->>Alice: Bob's identity key, signed prekey, one-time prekey
+    Note over Alice: Verify signed prekey signature (ECDSA P-256)<br/>Compute DH1-DH4, HKDF → shared secret
+    
+    Note over Alice: Initialize Double Ratchet
+    Alice->>Alice: messageKey = HMAC-SHA256(chainKey, 0x01)
+    Alice->>Alice: ciphertext = AES-256-GCM(plaintext, messageKey)
+
+    Alice->>Server: POST /api/messages/encrypted/v2 (fanout to all devices)
+    Server-->>Bob: WebSocket /topic/devices/{id}/chats/{chatId}
+    Note over Bob: Decrypt envelope,<br/>perform DH ratchet,<br/>derive message key,<br/>AES-256-GCM decrypt
+```
 
 ### 1. Device Registration
 
@@ -186,14 +279,14 @@ Each browser generates on first launch:
 
 Private keys stay in `localStorage`. The server stores only public key material.
 
-### 2. Session Establishment (X3DH-like)
+### 2. Session Establishment (X3DH)
 
 When Alice sends the first message to Bob:
 
 1. Resolve Bob's devices via `POST /api/crypto/resolve-chat-devices`
 2. Reserve a one-time prekey (atomic `FOR UPDATE` in PostgreSQL)
 3. Verify signed prekey signature (ECDSA P-256)
-4. Compute 3–4 X25519 DH operations
+4. Compute 3-4 X25519 DH operations
 5. Derive shared secret: `HKDF-SHA256(DH1 || DH2 || DH3 || DH4)`
 6. Initialize Double Ratchet with first DH ratchet step
 
@@ -208,6 +301,16 @@ Per the Signal specification:
 
 All operations use the Web Crypto API (`crypto.subtle`) — pure browser crypto.
 
+```mermaid
+graph LR
+    subgraph "Double Ratchet — one message"
+        CK[Chain Key<br/>Root Key] -->|DH Ratchet<br/>X25519| RK[New Root Key]
+        CK -->|Symmetric Ratchet<br/>HMAC-SHA256| MK[Message Key]
+        MK -->|AES-256-GCM| CT[Ciphertext]
+        RK -->|Next Message| CK2[Chain Key]
+    end
+```
+
 ### 4. Per-Device Envelopes
 
 One message → N encrypted envelopes (one per target device + one for own devices). Each envelope is routed via a per-device WebSocket topic:
@@ -216,17 +319,41 @@ One message → N encrypted envelopes (one per target device + one for own devic
 /topic/devices/{deviceId}/chats/{chatId}
 ```
 
+```mermaid
+graph TD
+    A[Alice sends message] --> F{Fanout}
+    F --> E1[Envelope for Bob's Phone]
+    F --> E2[Envelope for Bob's Desktop]
+    F --> E3[Envelope for Alice's Tablet<br/>cross-device sync]
+    E1 --> WS1[WS topic<br/>/topic/devices/phone/...]
+    E2 --> WS2[WS topic<br/>/topic/devices/desktop/...]
+    E3 --> WS3[WS topic<br/>/topic/devices/tablet/...]
+```
+
 ---
 
 ## Deployment
 
-### Docker Compose
+### Docker Compose (13 services)
+
+```yaml
+services:
+  postgres          # Database (PostgreSQL 16)
+  postgres-exporter # PG metrics for Prometheus
+  redis             # Cache (Redis 7)
+  redis-exporter    # Redis metrics for Prometheus
+  backend           # Spring Boot (Java 17)
+  frontend          # Nginx + React static
+  caddy             # Reverse proxy (auto HTTPS)
+  prometheus        # Metrics collection (14d retention)
+  loki              # Log aggregation
+  promtail          # Docker log scraping
+  grafana           # Dashboards & visualization
+```
 
 ```bash
 docker compose up -d
 ```
-
-Services: PostgreSQL 16, Redis 7, Backend (Spring Boot), Frontend (Nginx). Healthchecks on all services.
 
 ### Kubernetes
 
@@ -238,7 +365,12 @@ Includes: StatefulSet (Postgres, 10GB), Deployments (Redis, Backend ×2, Fronten
 
 ### CI/CD
 
-GitHub Actions: test → Docker build/push → K8s deploy with rollout status.
+[GitHub Actions](.github/workflows/ci.yml):
+
+1. **Backend:** Maven build + test (Checkstyle + JaCoCo 60%/40% coverage)
+2. **Frontend:** ESLint + Prettier + Vitest
+3. **Docker:** Buildx multi-arch, push to `ghcr.io`
+4. **Deploy:** `kustomize build | kubectl apply` with rollout status
 
 ---
 
@@ -261,22 +393,100 @@ WebSocket: 1,000 concurrent connections, 0 errors.
 ## Project Structure
 
 ```
-chaos-messenger_e2ee/
-├── backend/              # Spring Boot (Maven)
-│   ├── src/              # 33 Flyway migrations, crypto, message, chat, auth
-│   ├── Dockerfile        # Multi-stage JRE build
-│   └── docker-compose*.yml
-├── frontend/             # React 18 + Vite + Electron
-│   ├── src/              # crypto-engine.js (Double Ratchet), hooks, components
-│   ├── electron/         # Electron main process, preload
-│   │   ├── main.js       # Window, tray, IPC, auto-update
-│   │   └── preload.js    # Secure context bridge
-│   ├── Dockerfile        # Multi-stage nginx build
-│   └── nginx.conf        # Reverse proxy
-├── k8s/                  # Kubernetes manifests (kustomize)
-├── docker-compose.yml    # Root full-stack orchestration
-└── .github/workflows/    # CI/CD pipeline
+chaos-e2ee-messenger/
+├── backend/                  # Spring Boot (Maven)
+│   ├── src/main/java/        # 12 packages: auth, chat, crypto, message, ...
+│   ├── src/main/resources/   # 35 Flyway migrations, logback, grafana dashboards
+│   ├── src/test/             # Controller + unit tests
+│   ├── Dockerfile            # Multi-stage JRE build
+│   └── pom.xml               # Dependencies, checkstyle, jacoco
+├── frontend/                 # React 18 + Vite + Electron
+│   ├── src/                  # crypto-engine.js (Double Ratchet), hooks, components
+│   ├── electron/             # Electron main process, preload
+│   ├── Dockerfile            # Multi-stage nginx build
+│   └── nginx.conf            # Reverse proxy config
+├── infra/                    # Caddyfile, Loki, Promtail configs
+├── k8s/                      # Kubernetes manifests (kustomize)
+├── scripts/                  # smoke-test, healthcheck, backup
+├── docker-compose.yml        # Full production stack (13 services)
+├── docker-compose.override.yml  # Local overrides
+├── .env.example              # Environment variable template
+├── .github/workflows/        # CI/CD pipeline
+└── docs/                     # Screenshots, diagrams
 ```
+
+---
+
+## API Overview
+
+### Authentication (`/api/auth/`)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/exists?phone=` | Check account existence |
+| GET | `/username-available?username=` | Check username availability |
+| POST | `/send-code` | Send SMS verification code |
+| POST | `/verify-code` | Verify SMS code |
+| POST | `/complete-setup` | Complete phone registration |
+| POST | `/register` | Register by email + password |
+| POST | `/login` | Login by email + password |
+| POST | `/refresh` | Refresh JWT access token |
+| POST | `/logout` | Logout, revoke token |
+
+### Messaging (`/api/messages/`)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/encrypted/v2` | Send E2EE message (fanout) |
+| GET | `/chat/{chatId}/timeline` | Get message timeline |
+| POST | `/chat/{chatId}/read` | Mark as read |
+| POST | `/chat/{chatId}/delivered` | Mark as delivered |
+| POST | `/status` | Update message status |
+| PUT | `/{messageId}/encrypted/v2` | Edit E2EE message |
+| PUT | `/{messageId}/reactions` | Toggle reaction |
+| DELETE | `/{messageId}` | Delete message |
+
+### Crypto / Devices (`/api/crypto/`)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/devices/register` | Register device + key bundle |
+| GET | `/devices/current` | Validate device |
+| GET | `/devices/my` | List devices |
+| POST | `/devices/{id}/deactivate` | Deactivate device |
+| GET | `/bundle/{username}` | Get key bundle |
+| POST | `/resolve-chat-devices/{chatId}` | Resolve chat devices |
+| POST | `/chats/{chatId}/devices/{id}/reserve-prekey` | Reserve one-time prekey |
+
+### Chats (`/api/chats/`)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/direct` | Create/open direct chat |
+| POST | `/group` | Create group chat |
+| GET | `/my` | List my chats |
+| GET | `/requests` | Pending requests |
+| POST | `/{chatId}/requests/accept` | Accept request |
+| POST | `/group/participants` | Invite participants |
+| PATCH | `/{chatId}/group/settings` | Update group info |
+| DELETE | `/{chatId}` | Delete chat |
+
+### Users (`/api/users/`)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/search?q=` | Search users |
+| GET | `/me` | Current user data |
+| GET | `/profile` | Profile |
+| PUT | `/profile` | Update profile |
+
+### Demo (`/api/demo/`)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/seed` | Seed Alice + Bob demo accounts |
+
+Full Swagger/OpenAPI docs at `http://localhost:8080/swagger-ui/index.html`.
 
 ---
 
@@ -294,7 +504,7 @@ chaos-messenger_e2ee/
 
 ---
 
-## Message Persistence
+## Message Persistence (IndexedDB)
 
 After decryption, every message is stored locally in an **IndexedDB** database (`chaos-messenger` / `messages` store). This decouples rendering from the network:
 
@@ -319,7 +529,7 @@ IndexedDB was chosen over `localStorage` for:
 | `_text`, `_payload` | ✅ | Parsed message body |
 | `reactions`, `myReactions` | ✅ | Updated via `updateMessageReactions()` |
 | `_img`, `_voice` | ❌ | Object URLs are session-scoped; rebuilt on WebSocket re-decrypt |
-| `_attachment.objectUrl` | ❌ | Stripped before storage via `sanitizeAttachment()` |
+| `_attachment.objectUrl` | ❌ | Stripped before storage |
 
 ### Cache invalidation
 
@@ -334,6 +544,16 @@ Messages are **never evicted** from IndexedDB under normal operation. On device 
 - Spring SimpleBroker is not horizontally scalable
 - No safety numbers / device verification UI
 - XSS in localStorage would leak all keys (mitigated by CSP + short-lived JWTs)
+
+---
+
+## Screenshots
+
+| | |
+|---|---|
+| <img src="docs/assets/screenshots/screens-onboarding.png" width="200"/> | <img src="docs/assets/screenshots/features.png" width="200"/> |
+| <img src="docs/assets/screenshots/E2EE model.png" width="200"/> | <img src="docs/assets/screenshots/Architecture.png" width="200"/> |
+| <img src="docs/assets/screenshots/Stack.png" width="200"/> | <img src="docs/assets/screenshots/Security and encryption.png" width="200"/> |
 
 ---
 
