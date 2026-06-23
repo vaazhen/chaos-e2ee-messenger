@@ -7,7 +7,7 @@ const ICE_SERVERS = {
   ],
 };
 
-export default function useWebRTC({ publish, onCallEnded }) {
+export default function useWebRTC({ publish, onCallEnded, myUsername }) {
   const [callState, setCallState] = useState('idle'); // idle | ringing | connecting | connected
   const [remoteUsername, setRemoteUsername] = useState('');
   const [isVideo, setIsVideo] = useState(false);
@@ -15,6 +15,7 @@ export default function useWebRTC({ publish, onCallEnded }) {
   const [isScreenSharing, setIsScreenSharing] = useState(false);
 
   const peerRef = useRef(null);
+  const selfCallPeerRef = useRef(null);
   const localStreamRef = useRef(null);
   const remoteStreamRef = useRef(null);
   const pendingCandidatesRef = useRef([]);
@@ -31,6 +32,10 @@ export default function useWebRTC({ publish, onCallEnded }) {
     if (peerRef.current) {
       peerRef.current.close();
       peerRef.current = null;
+    }
+    if (selfCallPeerRef.current) {
+      selfCallPeerRef.current.close();
+      selfCallPeerRef.current = null;
     }
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(t => t.stop());
@@ -101,8 +106,60 @@ export default function useWebRTC({ publish, onCallEnded }) {
       currentChatIdRef.current = chatId;
       currentTargetRef.current = targetUsername;
       setIsVideo(video);
-      setCallState('connecting');
 
+      if (targetUsername === myUsername) {
+        setRemoteUsername(myUsername);
+        setCallState('connecting');
+
+        const pc1 = new RTCPeerConnection(ICE_SERVERS);
+        const pc2 = new RTCPeerConnection(ICE_SERVERS);
+
+        stream.getTracks().forEach(track => pc1.addTrack(track, stream));
+        stream.getTracks().forEach(track => pc2.addTrack(track, stream));
+
+        pc1.onicecandidate = (e) => {
+          if (e.candidate) pc2.addIceCandidate(e.candidate).catch(() => {});
+        };
+        pc2.onicecandidate = (e) => {
+          if (e.candidate) pc1.addIceCandidate(e.candidate).catch(() => {});
+        };
+
+        pc2.ontrack = (e) => {
+          if (remoteStreamRef.current) {
+            e.streams[0].getTracks().forEach(t => remoteStreamRef.current.addTrack(t));
+          } else {
+            remoteStreamRef.current = e.streams[0];
+          }
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.srcObject = remoteStreamRef.current;
+          }
+        };
+
+        pc1.onconnectionstatechange = () => {
+          if (pc1.connectionState === 'connected') {
+            setCallState('connected');
+            callStartTimeRef.current = Date.now();
+          }
+          if (['disconnected', 'failed', 'closed'].includes(pc1.connectionState)) {
+            onCallEnded?.();
+            cleanupCall();
+          }
+        };
+
+        const offer = await pc1.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: video });
+        await pc1.setLocalDescription(offer);
+        await pc2.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: offer.sdp }));
+
+        const answer = await pc2.createAnswer();
+        await pc2.setLocalDescription(answer);
+        await pc1.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: answer.sdp }));
+
+        peerRef.current = pc1;
+        selfCallPeerRef.current = pc2;
+        return;
+      }
+
+      setCallState('connecting');
       const pc = await createPeerConnection(stream, true);
       const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: video });
       await pc.setLocalDescription(offer);
@@ -118,7 +175,7 @@ export default function useWebRTC({ publish, onCallEnded }) {
       console.warn('[WebRTC] startCall error:', e.message);
       cleanupCall();
     }
-  }, [publish, createPeerConnection, cleanupCall]);
+  }, [publish, createPeerConnection, cleanupCall, myUsername, onCallEnded]);
 
   const answerCall = useCallback(async () => {
     const offerMsg = currentOfferRef.current;
@@ -167,6 +224,7 @@ export default function useWebRTC({ publish, onCallEnded }) {
 
     switch (msg.type) {
       case 'CALL_OFFER':
+        if (msg.fromUsername === myUsername) break; // self-call handled locally
         currentOfferRef.current = msg;
         setRemoteUsername(msg.fromUsername || 'Unknown');
         setCallState('ringing');
@@ -201,7 +259,7 @@ export default function useWebRTC({ publish, onCallEnded }) {
         cleanupCall();
         break;
     }
-  }, [cleanupCall]);
+  }, [cleanupCall, myUsername]);
 
   const endCall = useCallback(() => {
     if (publish && currentTargetRef.current) {
