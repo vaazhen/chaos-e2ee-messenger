@@ -989,9 +989,9 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
                     className="chat-head-btn chat-head-btn--call"
                     title={l("Звонок", "Call")}
                     onClick={() => {
-                      const otherUserId = activeChat?.otherUserId;
-                      if (otherUserId != null) {
-                        call.startCall(chatStore.activeId, String(otherUserId), false);
+                      const otherUser = activeChat?.username;
+                      if (otherUser) {
+                        call.startCall(chatStore.activeId, otherUser, false);
                       }
                     }}
                     disabled={call.callState !== 'idle'}
