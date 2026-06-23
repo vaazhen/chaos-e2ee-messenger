@@ -19,7 +19,7 @@ import ru.messenger.chaosmessenger.common.exception.RateLimitException;
 
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
-import org.springframework.http.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.beans.TypeMismatchException;
 import java.util.NoSuchElementException;
 import java.util.Objects;

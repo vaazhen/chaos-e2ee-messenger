@@ -1,0 +1,15 @@
+services:
+  # ── Disable Caddy (no domain — frontend nginx proxies directly) ──
+  caddy:
+    profiles:
+      - disabled
+
+  # ── Expose frontend on port 80 (http://IP) ──
+  frontend:
+    ports:
+      - "80:80"
+
+  # ── Grafana for dashboards (http://IP:3000) ──
+  grafana:
+    ports:
+      - "3000:3000"
