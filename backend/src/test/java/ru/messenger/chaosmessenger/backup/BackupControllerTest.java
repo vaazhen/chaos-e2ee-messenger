@@ -31,7 +31,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "jwt.secret=test-secret-key-must-be-32-chars-long!!",
         "spring.flyway.enabled=false",
         "spring.jpa.hibernate.ddl-auto=none",
-        "spring.testcontainers.service-connection.auto-detection=false"
+        "spring.testcontainers.service-connection.auto-detection=false",
+        "chaos.cors.allowed-origin-patterns=http://localhost:5173"
     },
     excludeAutoConfiguration = {
         SecurityAutoConfiguration.class,
