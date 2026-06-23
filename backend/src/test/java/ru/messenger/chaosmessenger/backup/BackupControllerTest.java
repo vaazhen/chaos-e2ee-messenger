@@ -1,12 +1,12 @@
 package ru.messenger.chaosmessenger.backup;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
-import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import ru.messenger.chaosmessenger.infra.security.JwtService;
@@ -40,21 +40,31 @@ class BackupControllerTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private JwtService jwtService;
+
     @MockitoBean
     private BackupService backupService;
 
     @MockitoBean
     private UserIdentityService userIdentityService;
 
+    private String token;
+
+    @BeforeEach
+    void setUp() {
+        token = jwtService.generateToken("testuser");
+    }
+
     @Test
-    @WithMockUser("testuser")
     void getBackupInfo_returnsStatus() throws Exception {
         when(userIdentityService.require("testuser")).thenReturn(createUser());
         when(backupService.getBackupInfo(1L)).thenReturn(
                 new BackupInfoResponse(true, 2, 3, "2026-06-23T12:00:00")
         );
 
-        mockMvc.perform(get("/api/backup/info"))
+        mockMvc.perform(get("/api/backup/info")
+                        .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.hasBackup").value(true))
                 .andExpect(jsonPath("$.latestVersion").value(2))
@@ -62,7 +72,6 @@ class BackupControllerTest {
     }
 
     @Test
-    @WithMockUser("testuser")
     void exportBackup_returnsData() throws Exception {
         when(userIdentityService.require("testuser")).thenReturn(createUser());
         when(backupService.exportBackup(1L, "test-pass")).thenReturn(
@@ -70,6 +79,7 @@ class BackupControllerTest {
         );
 
         mockMvc.perform(get("/api/backup/export")
+                        .header("Authorization", "Bearer " + token)
                         .header("X-Backup-Passphrase", "test-pass"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.version").value(1))
@@ -77,16 +87,15 @@ class BackupControllerTest {
     }
 
     @Test
-    @WithMockUser("testuser")
     void exportBackup_requiresPassphrase() throws Exception {
         when(userIdentityService.require("testuser")).thenReturn(createUser());
 
-        mockMvc.perform(get("/api/backup/export"))
+        mockMvc.perform(get("/api/backup/export")
+                        .header("Authorization", "Bearer " + token))
                 .andExpect(status().isBadRequest());
     }
 
     @Test
-    @WithMockUser("testuser")
     void importBackup_savesData() throws Exception {
         when(userIdentityService.require("testuser")).thenReturn(createUser());
 
@@ -95,6 +104,7 @@ class BackupControllerTest {
         );
 
         mockMvc.perform(post("/api/backup/import")
+                        .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk());
@@ -103,13 +113,13 @@ class BackupControllerTest {
     }
 
     @Test
-    @WithMockUser("testuser")
     void importBackup_validatesRequiredFields() throws Exception {
         when(userIdentityService.require("testuser")).thenReturn(createUser());
 
         String invalidJson = "{\"salt\":\"salt\",\"iv\":\"iv\"}";
 
         mockMvc.perform(post("/api/backup/import")
+                        .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(invalidJson))
                 .andExpect(status().isBadRequest());
