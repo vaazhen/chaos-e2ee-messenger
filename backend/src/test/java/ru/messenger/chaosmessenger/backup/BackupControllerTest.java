@@ -4,10 +4,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import ru.messenger.chaosmessenger.infra.security.JwtService;
 import ru.messenger.chaosmessenger.backup.api.BackupController;
 import ru.messenger.chaosmessenger.backup.dto.BackupExportResponse;
 import ru.messenger.chaosmessenger.backup.dto.BackupImportRequest;
@@ -23,15 +25,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest(
     value = BackupController.class,
     properties = {
-        "spring.datasource.url=jdbc:postgresql://localhost:5432/chaos_messenger_test",
-        "spring.datasource.username=test",
-        "spring.datasource.password=test",
         "jwt.secret=test-secret-key-must-be-32-chars-long!!",
         "spring.flyway.enabled=false",
         "spring.jpa.hibernate.ddl-auto=none",
         "spring.testcontainers.service-connection.auto-detection=false"
     }
 )
+@Import(JwtService.class)
 class BackupControllerTest {
 
     @Autowired
