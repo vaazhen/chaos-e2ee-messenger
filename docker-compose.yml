@@ -1,28 +1,53 @@
-version: '3.8'
+# Chaos Messenger — Production Demo Stack
+# Usage: docker compose up -d
+# See infra/README.md for deployment instructions.
 
 x-restart: &restart unless-stopped
+x-logging: &json-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
 
 services:
+
+  # ── Database ───────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
     restart: *restart
+    logging: *json-logging
     environment:
       POSTGRES_DB: chaos_messenger
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d chaos_messenger"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d chaos_messenger"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 20s
     networks:
       - app-net
 
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    restart: *restart
+    logging: *json-logging
+    environment:
+      DATA_SOURCE_NAME: postgresql://postgres:${POSTGRES_PASSWORD:?}@postgres:5432/chaos_messenger?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - app-net
+
+  # ── Cache ──────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     restart: *restart
+    logging: *json-logging
     volumes:
       - redisdata:/data
     healthcheck:
@@ -30,25 +55,46 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+      start_period: 10s
     networks:
       - app-net
 
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    restart: *restart
+    logging: *json-logging
+    environment:
+      REDIS_ADDR: redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - app-net
+
+  # ── Backend ────────────────────────────────────────────────
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     restart: *restart
+    logging: *json-logging
     environment:
       SPRING_PROFILES_ACTIVE: prod
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/chaos_messenger
-      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-postgres}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?}
       SPRING_DATA_REDIS_HOST: redis
-      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
-      CHAOS_CORS_ALLOWED_ORIGINS: ${CORS_ORIGINS:-http://localhost:80}
+      SPRING_DATA_REDIS_PORT: 6379
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      CHAOS_CORS_ALLOWED_ORIGINS: ${CORS_ORIGINS:?Set CORS_ORIGINS in .env}
+      CHAOS_CORS_ALLOWED_ORIGIN_PATTERNS: ""
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       CHAOS_ATTACHMENTS_STORAGE_PATH: /app/attachments
+      JAVA_OPTS: >-
+        -Xmx512m
+        -Djava.security.egd=file:/dev/./urandom
+        -Dlogback.statusListenerClass=ch.qos.logback.core.status.NopStatusListener
     volumes:
       - attachments:/app/attachments
     depends_on:
@@ -56,18 +102,107 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health/liveness"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     networks:
       - app-net
 
+  # ── Frontend ───────────────────────────────────────────────
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
     restart: *restart
-    ports:
-      - "${PORT:-80}:80"
+    logging: *json-logging
     depends_on:
       - backend
+    networks:
+      - app-net
+
+  # ── Reverse Proxy (Caddy with automatic HTTPS) ────────────
+  caddy:
+    image: caddy:2-alpine
+    restart: *restart
+    logging: *json-logging
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - frontend
+    networks:
+      - app-net
+
+  # ── Monitoring: Metrics ────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    restart: *restart
+    logging: *json-logging
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=14d
+      - --web.enable-lifecycle
+      - --log.level=warn
+    volumes:
+      - ./backend/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    depends_on:
+      - backend
+    networks:
+      - app-net
+
+  # ── Monitoring: Logs ───────────────────────────────────────
+  loki:
+    image: grafana/loki:3.4
+    restart: *restart
+    logging: *json-logging
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./infra/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki-data:/loki
+    networks:
+      - app-net
+
+  promtail:
+    image: grafana/promtail:3.4
+    restart: *restart
+    logging: *json-logging
+    command: -config.file=/etc/promtail/promtail-config.yml
+    volumes:
+      - ./infra/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    depends_on:
+      - loki
+    networks:
+      - app-net
+
+  # ── Visualization ──────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:latest
+    restart: *restart
+    logging: *json-logging
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env}
+      GF_INSTALL_PLUGINS: grafana-lokiexplore-app
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - ./backend/src/main/resources/grafana-datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro
+      - ./backend/src/main/resources/grafana-dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - ./backend/src/main/resources/chaos-messenger-dashboard.json:/var/lib/grafana/dashboards/chaos-messenger-dashboard.json:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+      - loki
     networks:
       - app-net
 
@@ -79,3 +214,8 @@ volumes:
   pgdata:
   redisdata:
   attachments:
+  prometheus-data:
+  loki-data:
+  grafana-data:
+  caddy-data:
+  caddy-config:

@@ -27,7 +27,7 @@ desktop.ini
 .env
 *.env
 application-local.properties
-application-prod.properties
+# application-prod.properties is now tracked (no secrets — they are in .env)
 
 # Testcontainers
 .testcontainers.properties

@@ -1,0 +1,12 @@
+# Caddy reverse proxy for Chaos Messenger
+# Replace DOMAIN_PLACEHOLDER with your actual domain before deploying
+# See infra/README.md for instructions
+
+DOMAIN_PLACEHOLDER {
+    reverse_proxy frontend:80
+
+    log {
+        output file /data/caddy/access.log
+        format json
+    }
+}

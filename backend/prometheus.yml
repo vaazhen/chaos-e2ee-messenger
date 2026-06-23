@@ -1,7 +1,17 @@
 global:
   scrape_interval: 15s
+  evaluation_interval: 15s
+
 scrape_configs:
   - job_name: 'chaos-messenger'
     metrics_path: /actuator/prometheus
     static_configs:
-      - targets: ['app:8080']
+      - targets: ['backend:8080']
+
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
