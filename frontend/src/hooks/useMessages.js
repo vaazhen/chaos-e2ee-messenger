@@ -3,6 +3,7 @@ import { api, call, getToken, API_BASE } from "../api";
 import { getOrCreateDeviceId } from "../deviceId";
 import { getTime } from "../helpers";
 import { saveMessagePreview } from "../previewCache";
+import * as localStore from "../localMessageStore";
 import { compressImageToDataUrl, IMAGE_PROFILES } from "../imagePipeline";
 
 const MAX_ENCRYPTED_PAYLOAD_CHARS = 180_000;
@@ -16,42 +17,56 @@ export function useMessages(myId) {
   const [loadingMsgs, setLoadingMsgs] = useState(false);
 
   // ── Load & decrypt messages for a chat ──────────────────────────────────────
+  // Architecture: IndexedDB is primary store (like Signal).
+  // On page reload → read from DB (zero crypto, zero API).
+  // Cold sync (first time) → API → decrypt → persist → render.
   const loadMessages = useCallback(async (chatId) => {
     if (!chatId) return;
     setLoadingMsgs(true);
     try {
-      const data = await api.getMessages(chatId);
-      if (!Array.isArray(data)) return;
-      const hidden = loadHiddenMessageIds(myId);
-      const decrypted = await Promise.all(
-        data
+      let fromApi = false;
+      const cached = await localStore.getMessagesByChat(chatId);
+      if (cached && cached.length > 0) {
+        setMsgs(prev => ({ ...prev, [chatId]: cached }));
+      } else {
+        fromApi = true;
+        const data = await api.getMessages(chatId);
+        if (!Array.isArray(data)) return;
+        const hidden = loadHiddenMessageIds(myId);
+        const filtered = data
           .filter(msg => !hidden.has(String(msg.id || msg.messageId)))
-          .filter(msg => !(msg.deleted === true || msg.deletedAt))
-          .map(msg => decryptMsg(msg, myId, chatId))
-      );
-      setMsgs(prev => ({ ...prev, [chatId]: decrypted }));
+          .filter(msg => !(msg.deleted === true || msg.deletedAt));
+        const decrypted = [];
+        for (const msg of filtered) {
+          decrypted.push(await decryptMsg(msg, myId, chatId));
+        }
+        await localStore.saveMessages(decrypted);
+        setMsgs(prev => ({ ...prev, [chatId]: decrypted }));
+      }
+      if (fromApi) {
+        try { await api.markRead(chatId); } catch (_) {}
+        try { await api.markDelivered(chatId); } catch (_) {}
+      }
     } catch (e) {
       console.error("loadMessages:", e);
     } finally {
       setLoadingMsgs(false);
     }
-    try { await api.markRead(chatId); } catch (_) {}
-    try { await api.markDelivered(chatId); } catch (_) {}
   }, [myId]);
 
   // ── Handle incoming WS event ─────────────────────────────────────────────────
   const handleIncomingEvent = useCallback(async (event, chatId) => {
     if (event.type === "MESSAGE_REACTION") {
-      setMsgs(prev => updateMessageReactions(
-        prev,
-        chatId,
-        event.messageId,
-        event.reactions,
-        event.actorUserId,
-        event.emoji,
-        event.active,
-        myId
-      ));
+      let updatedMyReactions;
+      setMsgs(prev => {
+        const updated = updateMessageReactions(prev, chatId, event.messageId, event.reactions, event.actorUserId, event.emoji, event.active, myId);
+        const msg = updated[chatId]?.find(m => String(m.id) === String(event.messageId));
+        if (msg) updatedMyReactions = msg.myReactions;
+        return updated;
+      });
+      if (updatedMyReactions) {
+        localStore.updateMessageReactions(event.messageId, event.reactions, updatedMyReactions).catch(() => {});
+      }
       return { type: event.type, isOut: Number(event.actorUserId) === Number(myId) };
     }
 
@@ -65,6 +80,7 @@ export function useMessages(myId) {
         ...prev,
         [chatId]: (prev[chatId] || []).filter(m => String(m.id) !== String(event.messageId)),
       }));
+      localStore.deleteMessage(event.messageId).catch(() => {});
       return null;
     }
 
@@ -129,6 +145,7 @@ export function useMessages(myId) {
     });
     const msg = {
       id:        messageId,
+      chatId,
       senderId:  event.senderId,
       content:   decryptedText,
       createdAt: event.createdAt,
@@ -157,6 +174,8 @@ export function useMessages(myId) {
         : [...withoutTemp, msg];
       return { ...prev, [chatId]: updated };
     });
+
+    localStore.saveMessage(msg).catch(() => {});
 
     return { isOut, text: preview, type: event.type, messageId };
   }, [myId]);
@@ -492,6 +511,8 @@ export function useMessages(myId) {
       [chatId]: (prev[chatId] || []).filter(m => String(m.id) !== String(msg.id)),
     }));
 
+    localStore.deleteMessage(msg.id).catch(() => {});
+
     if (scope === "me" || msg._temp) {
       addHiddenMessageId(myId, msg.id);
       return true;
@@ -534,7 +555,8 @@ export function useMessages(myId) {
 
 async function decryptMsg(msg, myId, fallbackChatId) {
   let decryptedText = msg.content || "[encrypted]";
-  if (msg.envelope && window.e2ee?.decryptEnvelope) {
+
+  if (decryptedText === "[encrypted]" && msg.envelope && window.e2ee?.decryptEnvelope) {
     try {
       const envelope = {
         ...msg.envelope,

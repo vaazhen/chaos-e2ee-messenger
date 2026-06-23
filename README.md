@@ -290,12 +290,45 @@ chaos-messenger_e2ee/
 | **Electron over Tauri** | WebCrypto guaranteed, zero Rust toolchain, proven cross-platform |
 | **PostgreSQL over NoSQL** | Foreign keys, migrations, JSON reactions, transactional envelopes |
 | **In-memory broker** | MVP-appropriate; horizontal scaling needs external broker relay |
+| **IndexedDB local store** | Decrypted messages persist in IndexedDB — zero API calls on page reload, zero re-decryption |
+
+---
+
+## Message Persistence
+
+After decryption, every message is stored locally in an **IndexedDB** database (`chaos-messenger` / `messages` store). This decouples rendering from the network:
+
+```
+WebSocket → decrypt → IndexedDB + React state
+Page reload → IndexedDB → React state (zero API, zero crypto)
+Cold sync  → API → decrypt → IndexedDB + React state
+```
+
+IndexedDB was chosen over `localStorage` for:
+- **Async API** — no main thread blocking
+- **Storage limits** — effectively unlimited (vs 5 MB for localStorage)
+- **Structured clone** — supports complex objects, dates, blobs
+- **On-device reset** — `clearAll()` removes all local messages when device identity is rotated
+
+### What is persisted
+
+| Field | Stored | Notes |
+|-------|--------|-------|
+| `id`, `chatId`, `senderId` | ✅ | Key path is `id` |
+| `content` (decrypted JSON) | ✅ | The full decrypted payload |
+| `_text`, `_payload` | ✅ | Parsed message body |
+| `reactions`, `myReactions` | ✅ | Updated via `updateMessageReactions()` |
+| `_img`, `_voice` | ❌ | Object URLs are session-scoped; rebuilt on WebSocket re-decrypt |
+| `_attachment.objectUrl` | ❌ | Stripped before storage via `sanitizeAttachment()` |
+
+### Cache invalidation
+
+Messages are **never evicted** from IndexedDB under normal operation. On device identity conflict (409 from server), `resetLocalDeviceIdentity()` + `clearAll()` wipe both crypto keys and local messages — the next `loadMessages` performs a full cold sync.
 
 ---
 
 ## Known Limitations
 
-- Double Ratchet needs more edge-case test vectors
 - Push notifications: endpoint storage exists, Web Push delivery not yet implemented
 - Attachments stored on local filesystem (not S3/GCS)
 - Spring SimpleBroker is not horizontally scalable

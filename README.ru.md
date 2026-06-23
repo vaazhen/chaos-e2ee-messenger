@@ -292,12 +292,45 @@ chaos-messenger_e2ee/
 | **PostgreSQL вместо NoSQL** | Foreign keys, миграции, JSON реакции, транзакции |
 | **Electron вместо Tauri** | WebCrypto гарантирован, zero Rust, проверенная кроссплатформенность |
 | **In-memory broker** | Подходит для MVP; масштабирование через external broker |
+| **IndexedDB локальное хранилище** | Расшифрованные сообщения хранятся в IndexedDB — ноль API-запросов при перезагрузке |
+
+---
+
+## Хранение сообщений (IndexedDB)
+
+После расшифровки каждое сообщение сохраняется в **IndexedDB** (БД `chaos-messenger`, таблица `messages`). Это отделяет рендеринг от сети:
+
+```
+WebSocket → decrypt → IndexedDB + React state
+Page reload → IndexedDB → React state (ноль API, ноль крипто)
+Cold sync  → API → decrypt → IndexedDB + React state
+```
+
+IndexedDB выбран вместо `localStorage` из-за:
+- **Async API** — не блокирует главный поток
+- **Размер** — практически безлимитный (против 5 MB у localStorage)
+- **Structured clone** — поддерживает сложные объекты, даты, blob-ы
+- **Сброс устройства** — `clearAll()` удаляет все сообщения при ротации ключей
+
+### Что сохраняется
+
+| Поле | Сохраняется | Примечание |
+|------|------------|-----------|
+| `id`, `chatId`, `senderId` | ✅ | Ключ — `id` |
+| `content` (расшифрованный JSON) | ✅ | Полный payload |
+| `_text`, `_payload` | ✅ | Разобранное тело сообщения |
+| `reactions`, `myReactions` | ✅ | Обновляется через `updateMessageReactions()` |
+| `_img`, `_voice` | ❌ | Object URL-ы живут только в сессии; пересоздаются при WebSocket-расшифровке |
+| `_attachment.objectUrl` | ❌ | Удаляется перед сохранением (`sanitizeAttachment()`) |
+
+### Инвалидация кэша
+
+При нормальной работе сообщения **никогда не удаляются** из IndexedDB. При конфликте device id (409 от сервера) `resetLocalDeviceIdentity()` + `clearAll()` очищают и ключи, и локальные сообщения — следующий `loadMessages` выполнит полную cold sync.
 
 ---
 
 ## Известные ограничения
 
-- Double Ratchet требует больше edge-case тестов
 - Push-уведомления: endpoint есть, Web Push delivery не реализован
 - Вложения на локальной ФС (не S3/GCS)
 - Spring SimpleBroker не масштабируется горизонтально
