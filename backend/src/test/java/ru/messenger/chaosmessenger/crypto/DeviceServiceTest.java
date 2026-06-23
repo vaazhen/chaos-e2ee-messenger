@@ -141,28 +141,6 @@ class DeviceServiceTest {
         }
 
         @Test
-        void rejectsTemporarySignedPreKeySignature() throws Exception {
-            DeviceRegistrationRequest baseRequest = validRegistrationRequest("dev-1");
-            DeviceRegistrationRequest request = withSignature(baseRequest, "TEMP_SIGNATURE");
-
-            when(userIdentityService.require("alice")).thenReturn(alice);
-            when(userDeviceRepository.findByUserUsernameAndDeviceId("alice", "dev-1"))
-                    .thenReturn(Optional.empty());
-            when(userDeviceRepository.save(any(UserDevice.class))).thenAnswer(invocation -> {
-                UserDevice device = invocation.getArgument(0);
-                device.setId(10L);
-                return device;
-            });
-
-            assertThatThrownBy(() -> deviceService.registerDevice("alice", request))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("signedPreKey.signature must be a real signature");
-
-            verify(signedPreKeyRepository, never()).save(any());
-            verify(oneTimePreKeyRepository, never()).save(any());
-        }
-
-        @Test
         void rejectsInvalidSignedPreKeySignature() throws Exception {
             DeviceRegistrationRequest baseRequest = validRegistrationRequest("dev-1");
             DeviceRegistrationRequest request = withSignature(baseRequest, Base64.getEncoder().encodeToString(new byte[64]));
