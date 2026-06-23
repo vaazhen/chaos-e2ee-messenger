@@ -13,6 +13,14 @@ const mocks = vi.hoisted(() => ({
   getToken: vi.fn(() => "jwt-token"),
   getOrCreateDeviceId: vi.fn(() => "device-a"),
   saveMessagePreview: vi.fn(),
+  localStore: {
+    getMessagesByChat: vi.fn(async () => []),
+    saveMessage: vi.fn(async () => {}),
+    saveMessages: vi.fn(async () => {}),
+    deleteMessage: vi.fn(async () => {}),
+    updateMessageReactions: vi.fn(async () => {}),
+    clearAll: vi.fn(async () => {}),
+  },
 }));
 
 vi.mock("../api", () => ({
@@ -28,6 +36,15 @@ vi.mock("../deviceId", () => ({
 
 vi.mock("../previewCache", () => ({
   saveMessagePreview: mocks.saveMessagePreview,
+}));
+
+vi.mock("../localMessageStore", () => ({
+  getMessagesByChat: mocks.localStore.getMessagesByChat,
+  saveMessage: mocks.localStore.saveMessage,
+  saveMessages: mocks.localStore.saveMessages,
+  deleteMessage: mocks.localStore.deleteMessage,
+  updateMessageReactions: mocks.localStore.updateMessageReactions,
+  clearAll: mocks.localStore.clearAll,
 }));
 
 describe("useMessages critical flow", () => {
