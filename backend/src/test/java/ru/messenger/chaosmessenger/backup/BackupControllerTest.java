@@ -22,6 +22,7 @@ import ru.messenger.chaosmessenger.user.service.UserIdentityService;
 
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(
@@ -71,6 +72,7 @@ class BackupControllerTest {
 
         mockMvc.perform(get("/api/backup/info")
                         .header("Authorization", "Bearer " + token))
+                .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.hasBackup").value(true))
                 .andExpect(jsonPath("$.latestVersion").value(2))
@@ -113,6 +115,7 @@ class BackupControllerTest {
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
+                .andDo(print())
                 .andExpect(status().isOk());
 
         verify(backupService).importBackup(eq(1L), any(BackupImportRequest.class));
