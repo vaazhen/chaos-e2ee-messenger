@@ -167,7 +167,6 @@ export default function useWebRTC({ publish, onCallEnded }) {
 
     switch (msg.type) {
       case 'CALL_OFFER':
-        if (msg.fromUsername === myUsername) break; // self-call handled locally
         currentOfferRef.current = msg;
         setRemoteUsername(msg.fromUsername || 'Unknown');
         setCallState('ringing');
@@ -202,7 +201,7 @@ export default function useWebRTC({ publish, onCallEnded }) {
         cleanupCall();
         break;
     }
-  }, [cleanupCall, myUsername]);
+  }, [cleanupCall]);
 
   const endCall = useCallback(() => {
     if (publish && currentTargetRef.current) {
