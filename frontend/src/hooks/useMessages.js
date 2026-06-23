@@ -22,12 +22,41 @@ export function useMessages(myId) {
   // Cold sync (first time) → API → decrypt → persist → render.
   const loadMessages = useCallback(async (chatId) => {
     if (!chatId) return;
+    const syncFromApi = async (chatId, cached) => {
+      try {
+        const data = await api.getMessages(chatId);
+        if (!Array.isArray(data)) return;
+        const existingIds = new Map(cached.map(m => [String(m.id || m.messageId), true]));
+        const hidden = loadHiddenMessageIds(myId);
+        const newOnes = data.filter(msg => !existingIds.has(String(msg.id || msg.messageId)))
+          .filter(msg => !hidden.has(String(msg.id || msg.messageId)))
+          .filter(msg => !(msg.deleted === true || msg.deletedAt));
+        if (newOnes.length === 0) return;
+        const decrypted = [];
+        for (const msg of newOnes) {
+          decrypted.push(await decryptMsg(msg, myId, chatId));
+        }
+        await localStore.saveMessages(decrypted);
+        setMsgs(prev => {
+          const existing = prev[chatId] || [];
+          const merged = [...existing];
+          for (const d of decrypted) {
+            const idx = merged.findIndex(m => String(m.id || m.messageId) === String(d.id || d.messageId));
+            if (idx === -1) merged.push(d);
+          }
+          return { ...prev, [chatId]: merged };
+        });
+      } catch (e) {
+        console.error("syncFromApi:", e);
+      }
+    };
     setLoadingMsgs(true);
     try {
       let fromApi = false;
       const cached = await localStore.getMessagesByChat(chatId);
       if (cached && cached.length > 0) {
         setMsgs(prev => ({ ...prev, [chatId]: cached }));
+        syncFromApi(chatId, cached);
       } else {
         fromApi = true;
         const data = await api.getMessages(chatId);

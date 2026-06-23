@@ -567,9 +567,10 @@
         const kid = skippedKeyId(envelope.ratchetPublicKey, envelope.messageIndex ?? 0);
         const mkRawB64 = session.MKSKIPPED[kid];
         if (!mkRawB64) return null;
-        delete session.MKSKIPPED[kid];
         const mk = await importMessageKey(b64ToBytes(mkRawB64));
-        return aesDecryptWithKey(envelope.ciphertext, envelope.nonce, mk);
+        const plainText = await aesDecryptWithKey(envelope.ciphertext, envelope.nonce, mk);
+        delete session.MKSKIPPED[kid];
+        return plainText;
     }
 
     async function skipMessageKeys(session, until) {
