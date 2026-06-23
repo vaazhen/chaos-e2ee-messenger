@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, getCurrentDeviceId } from "../api";
 import { compressImageToDataUrl, IMAGE_PROFILES } from "../imagePipeline";
+import { createEncryptedBackup, decryptBackup, restoreKeysFromBackup } from "../backup";
 
 const AVATARS = ["🦊", "🐺", "🦁", "🐯", "🐼", "🐨", "🐵", "🐸", "🐙", "🦉"];
 
@@ -130,7 +131,7 @@ export default function ProfileModal({
     avatarUrl: me?.avatarUrl || "",
   }));
 
-  const [tab, setTab] = useState("profile"); // profile | settings | devices
+  const [tab, setTab] = useState("profile"); // profile | settings | devices | backup
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [avatarError, setAvatarError] = useState("");
@@ -150,6 +151,15 @@ const [devices, setDevices] = useState([]);
   const [devicesLoading, setDevicesLoading] = useState(false);
   const [devicesError, setDevicesError] = useState("");
   const [deactivatingId, setDeactivatingId] = useState(null);
+
+  const [backupPassphrase, setBackupPassphrase] = useState("");
+  const [backupConfirmPassphrase, setBackupConfirmPassphrase] = useState("");
+  const [importPassphrase, setImportPassphrase] = useState("");
+  const [backupStatus, setBackupStatus] = useState("");
+  const [backupError, setBackupError] = useState("");
+  const [backupLoading, setBackupLoading] = useState(false);
+  const [backupInfo, setBackupInfo] = useState(null);
+  const [backupTab, setBackupTab] = useState("export"); // export | import
 
   // profile-settings-i18n-pass
   const isUnitTestRuntime =
@@ -327,6 +337,14 @@ const [devices, setDevices] = useState([]);
             onClick={() => setTab("devices")}
           >
             {l("Устройства", "Devices")}
+          </button>
+
+          <button
+            type="button"
+            className={tab === "backup" ? "active" : ""}
+            onClick={() => setTab("backup")}
+          >
+            {l("Резерв", "Backup")}
           </button>
         </div>
 
@@ -622,6 +640,168 @@ const [devices, setDevices] = useState([]);
               </div>
             </>
           )}
+
+          {tab === "backup" && (
+            <>
+              <div className="profile-device-hero">
+                <div className="profile-device-hero-icon">🔐</div>
+                <div>
+                  <b>{l("E2EE Резервное копирование", "E2EE Backup")}</b>
+                  <span>
+                    {l("Экспортируйте или импортируйте зашифрованные ключи устройства. Пароль нужен для расшифровки — не теряйте его.", "Export or import encrypted device keys. The passphrase is required for decryption — do not lose it.")}
+                  </span>
+                </div>
+              </div>
+
+              <div className="profile-security-note">
+                {l("Резервная копия содержит identity-ключи, pre-key'и и registration ID. После импорта устройство сможет расшифровывать старые сообщения.", "The backup contains identity keys, pre-keys and registration ID. After import, the device can decrypt old messages.")}
+              </div>
+
+              <div className="profile-backup-tabs" style={{display:"flex",gap:8,margin:"14px 0 10px",padding:"0 4px"}}>
+                <button
+                  type="button"
+                  className={`btn-sec`}
+                  style={{flex:1, fontWeight: backupTab === "export" ? 900 : 600, background: backupTab === "export" ? "var(--bg3)" : "transparent"}}
+                  onClick={() => setBackupTab("export")}
+                >
+                  {l("Экспорт", "Export")}
+                </button>
+                <button
+                  type="button"
+                  className={`btn-sec`}
+                  style={{flex:1, fontWeight: backupTab === "import" ? 900 : 600, background: backupTab === "import" ? "var(--bg3)" : "transparent"}}
+                  onClick={async () => {
+                    setBackupTab("import");
+                    try {
+                      const info = await api.getBackupInfo();
+                      setBackupInfo(info);
+                    } catch {}
+                  }}
+                >
+                  {l("Импорт", "Import")}
+                </button>
+              </div>
+
+              {backupError && <div className="profile-error">{backupError}</div>}
+              {backupStatus && <div className="profile-success">{backupStatus}</div>}
+
+              {backupTab === "export" && (
+                <div className="profile-card" style={{padding:18}}>
+                  <label className="profile-field">
+                    <span>{l("Пароль для шифрования", "Encryption passphrase")}</span>
+                    <input
+                      type="password"
+                      value={backupPassphrase}
+                      onChange={e => setBackupPassphrase(e.target.value)}
+                      placeholder={l("Минимум 8 символов", "At least 8 characters")}
+                    />
+                  </label>
+
+                  <label className="profile-field">
+                    <span>{l("Подтвердите пароль", "Confirm passphrase")}</span>
+                    <input
+                      type="password"
+                      value={backupConfirmPassphrase}
+                      onChange={e => setBackupConfirmPassphrase(e.target.value)}
+                      placeholder={l("Повторите пароль", "Repeat passphrase")}
+                    />
+                  </label>
+
+                  <div className="profile-bottom-actions" style={{marginTop:14}}>
+                    <button
+                      type="button"
+                      className="btn-pri"
+                      disabled={backupLoading || !backupPassphrase || backupPassphrase !== backupConfirmPassphrase || backupPassphrase.length < 8}
+                      onClick={async () => {
+                        setBackupError("");
+                        setBackupStatus("");
+                        setBackupLoading(true);
+                        try {
+                          const backup = await createEncryptedBackup(backupPassphrase);
+                          await api.importBackup(backup);
+                          setBackupStatus(l("Резервная копия сохранена на сервере", "Backup saved to server"));
+                          setBackupPassphrase("");
+                          setBackupConfirmPassphrase("");
+                        } catch (e) {
+                          setBackupError(e.message);
+                        } finally {
+                          setBackupLoading(false);
+                        }
+                      }}
+                    >
+                      {backupLoading ? l("Создание...", "Creating...") : l("Создать резервную копию", "Create backup")}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {backupTab === "import" && (
+                <>
+                  {backupInfo?.hasBackup && (
+                    <div className="profile-security-note" style={{marginTop:0}}>
+                      {l("Последняя копия от ", "Latest backup: ")}
+                      {backupInfo.createdAt
+                        ? formatDate(backupInfo.createdAt, effectiveLang)
+                        : l("неизвестно", "unknown")}
+                      {backupInfo.latestVersion != null && ` · v${backupInfo.latestVersion}`}
+                    </div>
+                  )}
+
+                  {!backupInfo?.hasBackup && (
+                    <div className="profile-empty-devices" style={{marginTop:8}}>
+                      <b>{l("Нет резервных копий", "No backups found")}</b>
+                      <span>{l("Сначала создайте экспорт на исходном устройстве.", "Create an export on the source device first.")}</span>
+                    </div>
+                  )}
+
+                  {backupInfo?.hasBackup && (
+                    <div className="profile-card" style={{padding:18}}>
+                      <label className="profile-field">
+                        <span>{l("Пароль для расшифровки", "Decryption passphrase")}</span>
+                        <input
+                          type="password"
+                          value={importPassphrase}
+                          onChange={e => setImportPassphrase(e.target.value)}
+                          placeholder={l("Введите пароль от резервной копии", "Enter backup passphrase")}
+                        />
+                      </label>
+
+                      <div className="profile-bottom-actions" style={{marginTop:14}}>
+                        <button
+                          type="button"
+                          className="btn-pri"
+                          disabled={backupLoading || !importPassphrase}
+                          onClick={async () => {
+                            setBackupError("");
+                            setBackupStatus("");
+                            setBackupLoading(true);
+                            try {
+                              const exported = await api.exportBackup(importPassphrase);
+                              const decrypted = await decryptBackup(
+                                exported.encryptedPayload,
+                                exported.salt,
+                                exported.iv,
+                                importPassphrase
+                              );
+                              await restoreKeysFromBackup(decrypted);
+                              setBackupStatus(l("Ключи восстановлены. Перезайдите, чтобы завершить восстановление.", "Keys restored. Re-login to complete recovery."));
+                              setImportPassphrase("");
+                            } catch (e) {
+                              setBackupError(e.message || l("Неверный пароль или повреждённые данные", "Wrong passphrase or corrupted data"));
+                            } finally {
+                              setBackupLoading(false);
+                            }
+                          }}
+                        >
+                          {backupLoading ? l("Восстановление...", "Restoring...") : l("Восстановить ключи", "Restore keys")}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </>
+          )}
         </div>
       </section>
     </div>
@@ -740,7 +920,7 @@ const PROFILE_DRAWER_CSS = `
   padding:3px;
   background:var(--bg3);
   display:grid;
-  grid-template-columns:1fr 1fr 1fr;
+  grid-template-columns:1fr 1fr 1fr 1fr;
   flex-shrink:0;
   gap:2px;
 }
@@ -958,6 +1138,16 @@ const PROFILE_DRAWER_CSS = `
   padding:12px 14px;
   color:var(--red);
   background:rgba(229,72,77,.12);
+  font-size:14px;
+  line-height:1.4;
+}
+
+.profile-success{
+  margin-top:14px;
+  border-radius:20px;
+  padding:12px 14px;
+  color:var(--green);
+  background:rgba(34,197,94,.12);
   font-size:14px;
   line-height:1.4;
 }

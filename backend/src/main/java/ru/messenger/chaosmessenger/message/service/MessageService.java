@@ -940,7 +940,13 @@ public class MessageService {
             if (Objects.equals(username, sender.getUsername())) return;
             if (!onlineService.isOnline(username)) {
                 userIdentityService.resolve(username).ifPresent(user ->
-                        pushNotificationService.sendPushToUser(user.getId(), "New message", "You have a new encrypted message")
+                        pushNotificationService.sendPushToUser(
+                                user.getId(),
+                                sender.getDisplayName(),
+                                "New encrypted message",
+                                "chat-" + message.getChatId(),
+                                String.valueOf(message.getChatId())
+                        )
                 );
             }
         });

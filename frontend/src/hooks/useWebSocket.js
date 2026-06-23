@@ -15,6 +15,7 @@ export default function useWebSocket({
   onStatusUpdate,
   onTyping,
   onConnectionState,
+  onCallSignal,
   enabled,
 }) {
   const clientRef   = useRef(null);
@@ -22,11 +23,11 @@ export default function useWebSocket({
   const chatIdsRef  = useRef([]);
   const heartbeatRef = useRef(null);
   const hadConnectedRef = useRef(false);
-  const handlersRef = useRef({ onMessage, onChatListUpdate, onRequestsUpdate, onStatusUpdate, onTyping, onConnectionState });
+  const handlersRef = useRef({ onMessage, onChatListUpdate, onRequestsUpdate, onStatusUpdate, onTyping, onConnectionState, onCallSignal });
 
   useEffect(() => {
-    handlersRef.current = { onMessage, onChatListUpdate, onRequestsUpdate, onStatusUpdate, onTyping, onConnectionState };
-  }, [onMessage, onChatListUpdate, onRequestsUpdate, onStatusUpdate, onTyping, onConnectionState]);
+    handlersRef.current = { onMessage, onChatListUpdate, onRequestsUpdate, onStatusUpdate, onTyping, onConnectionState, onCallSignal };
+  }, [onMessage, onChatListUpdate, onRequestsUpdate, onStatusUpdate, onTyping, onConnectionState, onCallSignal]);
 
   useEffect(() => { chatIdsRef.current = chatIds; }, [chatIds]);
 
@@ -77,6 +78,16 @@ export default function useWebSocket({
       subsRef.current["myStatus"] = client.subscribe(`/topic/devices/${did}/status`, (msg) => {
         try { handlersRef.current.onStatusUpdate?.({ type: "delivery", ...JSON.parse(msg.body || "{}") }); }
         catch (_) {}
+      });
+    }
+
+    if (did) {
+      const callTopic = `/topic/devices/${did}/calls`;
+      subsRef.current["calls"] = client.subscribe(callTopic, (msg) => {
+        try {
+          const data = JSON.parse(msg.body || "{}");
+          handlersRef.current.onCallSignal?.(data);
+        } catch (_) {}
       });
     }
 
@@ -219,6 +230,9 @@ export default function useWebSocket({
         destination: "/app/typing",
         body: JSON.stringify({ chatId }),
       });
+    },
+    publish: (dest, body) => {
+      clientRef.current?.publish({ destination: dest, body: typeof body === "string" ? body : JSON.stringify(body) });
     },
   };
 }

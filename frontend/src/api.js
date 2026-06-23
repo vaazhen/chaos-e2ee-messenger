@@ -207,4 +207,25 @@ export const api = {
   // ── i18n ──────────────────────────────────────────────────────────────────
   getTranslations: (lang) => call(`/v1/i18n/messages?lang=${encodeURIComponent(lang)}`),
   setLang:         (lang) => call(`/v1/i18n/lang?lang=${encodeURIComponent(lang)}`, { method: "POST" }),
+
+  // ── E2EE Backup ──────────────────────────────────────────────────────────
+  getBackupInfo:   ()     => call("/backup/info"),
+  exportBackup:    async (passphrase) => {
+    const token = getToken();
+    const deviceId = getCurrentDeviceId();
+    const res = await fetch(API_BASE + "/backup/export", {
+      headers: {
+        "Content-Type": "application/json",
+        "X-Backup-Passphrase": passphrase,
+        ...(token ? { Authorization: "Bearer " + token } : {}),
+        ...(deviceId ? { "X-Device-Id": deviceId } : {}),
+      },
+    });
+    if (!res.ok) throw new Error("Backup export failed");
+    return res.json();
+  },
+  importBackup:    (data) => call("/backup/import", { method: "POST", body: JSON.stringify(data) }),
+
+  // ── Safety Numbers ───────────────────────────────────────────────────────
+  resolveDevicesForSafetyNumber: (chatId) => call(`/crypto/resolve-chat-devices/${chatId}`, { method: "POST" }),
 };
