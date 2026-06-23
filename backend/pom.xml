@@ -157,7 +157,7 @@
         <configuration>
           <configLocation>checkstyle.xml</configLocation>
           <failOnViolation>true</failOnViolation>
-          <suppressionsLocation>checkstyle-suppressions.xml</suppressionsLocation>
+          <suppressionsLocation>file:///${project.basedir}/checkstyle-suppressions.xml</suppressionsLocation>
         </configuration>
         <executions>
           <execution>
