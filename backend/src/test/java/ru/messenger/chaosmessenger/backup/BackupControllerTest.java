@@ -20,7 +20,18 @@ import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@WebMvcTest(BackupController.class)
+@WebMvcTest(
+    value = BackupController.class,
+    properties = {
+        "spring.datasource.url=jdbc:postgresql://localhost:5432/chaos_messenger_test",
+        "spring.datasource.username=test",
+        "spring.datasource.password=test",
+        "jwt.secret=test-secret-key-must-be-32-chars-long!!",
+        "spring.flyway.enabled=false",
+        "spring.jpa.hibernate.ddl-auto=none",
+        "spring.testcontainers.service-connection.auto-detection=false"
+    }
+)
 class BackupControllerTest {
 
     @Autowired
