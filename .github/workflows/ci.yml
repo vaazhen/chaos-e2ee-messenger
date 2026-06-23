@@ -79,6 +79,9 @@ jobs:
     needs: [backend-build, frontend-build]
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
 
