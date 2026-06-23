@@ -50,6 +50,16 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
             sessionUserMap.remove(sessionId);
             sessionDeviceMap.remove(sessionId);
             log.info("WebSocket DISCONNECT sessionId={}", sessionId);
+            return message;
+        }
+
+        // Restore user from session for all other commands (MESSAGE, SEND, etc.)
+        // so that @MessageMapping handlers can resolve Principal via simpUser header.
+        if (accessor.getUser() == null) {
+            String username = sessionUserMap.get(accessor.getSessionId());
+            if (username != null) {
+                accessor.setUser(() -> username);
+            }
         }
 
         return message;
