@@ -50,6 +50,8 @@ import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Value;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -71,6 +73,9 @@ public class MessageService {
     private final SimpMessagingTemplate messagingTemplate;
     private final ObjectMapper objectMapper;
     private final MeterRegistry meterRegistry;
+
+    @Value("${chaos.reactions.allowed-emojis:👍,❤️,😂,😮,😢,🔥}")
+    private Set<String> allowedEmojis;
 
     @Transactional
     public DeviceMessageEventResponse sendEncryptedMessageV2(String username, EncryptedSendMessageRequestV2 request) {
@@ -125,23 +130,27 @@ public class MessageService {
         final Map<String, MessageEnvelope> byDeviceFinal = byDevice;
         final Chat chat = chatRepository.findById(request.chatId()).orElse(null);
         TransactionUtils.afterCommit(() -> {
-            incrementUnreadForOthers(msgFinal.getChatId(), sender.getId());
-            fanoutCreatedEvent(msgFinal, byDeviceFinal);
-            notifyChatListUpdated(msgFinal.getChatId(), "message_created");
-            if (chat != null
-                    && "DIRECT".equals(chat.getType())
-                    && "PENDING".equalsIgnoreCase(String.valueOf(chat.getDirectStatus()))) {
-                ChatListUpdateEvent requestEvent = ChatListUpdateEvent.forChat(msgFinal.getChatId(), "request_message");
-                participantRepository.findDistinctUsernamesByChatId(msgFinal.getChatId()).forEach(participantUsername -> {
-                    if (!Objects.equals(participantUsername, sender.getUsername())) {
-                        messagingTemplate.convertAndSend(
-                                "/topic/users/" + participantUsername + "/requests",
-                                requestEvent
-                        );
-                    }
-                });
+            try {
+                incrementUnreadForOthers(msgFinal.getChatId(), sender.getId());
+                fanoutCreatedEvent(msgFinal, byDeviceFinal);
+                notifyChatListUpdated(msgFinal.getChatId(), "message_created");
+                if (chat != null
+                        && "DIRECT".equals(chat.getType())
+                        && "PENDING".equalsIgnoreCase(String.valueOf(chat.getDirectStatus()))) {
+                    ChatListUpdateEvent requestEvent = ChatListUpdateEvent.forChat(msgFinal.getChatId(), "request_message");
+                    participantRepository.findDistinctUsernamesByChatId(msgFinal.getChatId()).forEach(participantUsername -> {
+                        if (!Objects.equals(participantUsername, sender.getUsername())) {
+                            messagingTemplate.convertAndSend(
+                                    "/topic/users/" + participantUsername + "/requests",
+                                    requestEvent
+                            );
+                        }
+                    });
+                }
+                notifyOfflineUsersViaPush(msgFinal, sender);
+            } catch (Exception e) {
+                log.error("afterCommit fanout failed for message {} in chat {}", msgFinal.getId(), msgFinal.getChatId(), e);
             }
-            notifyOfflineUsersViaPush(msgFinal, sender);
         });
 
         return toDeviceEvent("MESSAGE_CREATED", message, byDevice.get(currentDevice.getDeviceId()), sender.getId());
@@ -186,8 +195,12 @@ public class MessageService {
         final Message msgEditFinal = message;
         final Map<String, MessageEnvelope> byDeviceEditFinal = byDevice;
         TransactionUtils.afterCommit(() -> {
-            fanoutEditedEvent(msgEditFinal, byDeviceEditFinal);
-            notifyChatListUpdated(msgEditFinal.getChatId(), "message_edited");
+            try {
+                fanoutEditedEvent(msgEditFinal, byDeviceEditFinal);
+                notifyChatListUpdated(msgEditFinal.getChatId(), "message_edited");
+            } catch (Exception e) {
+                log.error("afterCommit edit fanout failed for message {}", msgEditFinal.getId(), e);
+            }
         });
 
         return toDeviceEvent("MESSAGE_EDITED", message, byDevice.get(currentDevice.getDeviceId()), sender.getId());
@@ -249,15 +262,19 @@ public class MessageService {
 
         final Message msgDelFinal = message;
         TransactionUtils.afterCommit(() -> {
-            fanoutDeleteEvent(msgDelFinal);
-            notifyChatListUpdated(msgDelFinal.getChatId(), "message_deleted");
+            try {
+                fanoutDeleteEvent(msgDelFinal);
+                notifyChatListUpdated(msgDelFinal.getChatId(), "message_deleted");
+            } catch (Exception e) {
+                log.error("afterCommit delete fanout failed for message {}", msgDelFinal.getId(), e);
+            }
         });
     }
 
     @Transactional
     public void markChatAsRead(String username, Long chatId) {
         User user = requireUser(username);
-        UserDevice currentDevice = currentDeviceOrNull();
+        UserDevice currentDevice = requireCurrentDevice();
         String deviceId = deviceIdOrFallback(currentDevice);
 
         requireParticipant(chatId, user.getId());
@@ -283,18 +300,22 @@ public class MessageService {
         incrementCounter("messages_read_total", Math.max(receiptRows, 0));
 
         TransactionUtils.afterCommit(() -> {
-            unreadService.reset(user.getId(), chatId);
-            if (directOrSavedChat) {
-                sendBulkStatusToSenderDevices(affectedSenderIds, chatId, Message.MessageStatus.READ.name(), user.getId());
+            try {
+                unreadService.reset(user.getId(), chatId);
+                if (directOrSavedChat) {
+                    sendBulkStatusToSenderDevices(affectedSenderIds, chatId, Message.MessageStatus.READ.name(), user.getId());
+                }
+                notifyChatListUpdated(chatId, "chat_read");
+            } catch (Exception e) {
+                log.error("afterCommit read fanout failed for chat {}", chatId, e);
             }
-            notifyChatListUpdated(chatId, "chat_read");
         });
     }
 
     @Transactional
     public void markChatAsDelivered(String username, Long chatId) {
         User user = requireUser(username);
-        UserDevice currentDevice = currentDeviceOrNull();
+        UserDevice currentDevice = requireCurrentDevice();
         String deviceId = deviceIdOrFallback(currentDevice);
 
         requireParticipant(chatId, user.getId());
@@ -316,15 +337,19 @@ public class MessageService {
         incrementCounter("messages_delivered_total", Math.max(receiptRows, 0));
 
         TransactionUtils.afterCommit(() -> {
-            sendBulkStatusToSenderDevices(affectedSenderIds, chatId, Message.MessageStatus.DELIVERED.name(), user.getId());
-            notifyChatListUpdated(chatId, "chat_delivered");
+            try {
+                sendBulkStatusToSenderDevices(affectedSenderIds, chatId, Message.MessageStatus.DELIVERED.name(), user.getId());
+                notifyChatListUpdated(chatId, "chat_delivered");
+            } catch (Exception e) {
+                log.error("afterCommit delivered fanout failed for chat {}", chatId, e);
+            }
         });
     }
 
     @Transactional
     public void updateMessageStatus(String username, Long messageId, String status) {
         User user = requireUser(username);
-        UserDevice currentDevice = currentDeviceOrNull();
+        UserDevice currentDevice = requireCurrentDevice();
         String deviceId = deviceIdOrFallback(currentDevice);
 
         Message message = messageRepository.findById(messageId)
@@ -346,7 +371,13 @@ public class MessageService {
 
         updateAggregateStatus(message);
         String aggregateStatus = message.getStatus().name();
-        TransactionUtils.afterCommit(() -> sendStatusToSenderDevices(message, aggregateStatus));
+        TransactionUtils.afterCommit(() -> {
+            try {
+                sendStatusToSenderDevices(message, aggregateStatus);
+            } catch (Exception e) {
+                log.error("afterCommit status fanout failed for message {}", message.getId(), e);
+            }
+        });
     }
 
     @Transactional
@@ -400,7 +431,13 @@ public class MessageService {
 
         saveMessageEvent(message, user.getId(), "REACTION", Map.of("emoji", cleanEmoji, "active", active));
 
-        TransactionUtils.afterCommit(() -> fanoutReactionEvent(message.getChatId(), event));
+        TransactionUtils.afterCommit(() -> {
+            try {
+                fanoutReactionEvent(message.getChatId(), event);
+            } catch (Exception e) {
+                log.error("afterCommit reaction fanout failed for message {}", messageId, e);
+            }
+        });
 
         return event;
     }
@@ -440,7 +477,6 @@ public class MessageService {
                 .stream()
                 .filter(id -> !Objects.equals(id, message.getSenderId()))
                 .toList();
-
         if (recipients.isEmpty()) {
             return Message.MessageStatus.SENT;
         }
@@ -867,16 +903,15 @@ public class MessageService {
 
     private String normalizeEmoji(String emoji) {
         String value = String.valueOf(emoji == null ? "" : emoji).trim();
-        Set<String> allowed = Set.of("👍", "❤️", "😂", "😮", "😢", "🔥");
 
-        if (!allowed.contains(value)) {
-            throw new IllegalArgumentException("Unsupported reaction emoji");
+        if (!allowedEmojis.contains(value)) {
+            throw new IllegalArgumentException("Unsupported reaction emoji: " + value);
         }
 
         return value;
     }
 
-    private UserDevice currentDeviceOrNull() {
+    private UserDevice requireCurrentDevice() {
         return currentDeviceService.requireCurrentDevice();
     }
 

@@ -165,9 +165,6 @@ public class DeviceService {
             throw new IllegalArgumentException("signedPreKey.publicKey is required");
         if (signature == null || signature.isBlank())
             throw new IllegalArgumentException("signedPreKey.signature is required");
-        if ("TEMP_SIGNATURE".equals(signature))
-            throw new IllegalArgumentException("signedPreKey.signature must be a real signature");
-
         verifySignedPreKeySignature(device.getSigningPublicKey(), publicKey, signature);
 
         Optional<SignedPreKey> existingOpt = signedPreKeyRepository.findByDeviceIdAndPreKeyId(device.getId(), preKeyId);

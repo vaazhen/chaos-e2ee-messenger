@@ -33,3 +33,16 @@ backend/*.log
 
 # Maven wrapper jar is usually allowed, but keep generated files out
 .mvn/timing.properties
+
+# runtime data
+attachments/
+logs/
+
+# backup dirs
+"frontend — копия"
+
+# docker
+.dockerignore
+
+# k8s overlay (user-specific)
+k8s/overlays/

@@ -129,7 +129,8 @@ export default function ChaosMessenger() {
   const [replyTo,        setReplyTo]        = useState(null);
   const [ctx,            setCtx]            = useState(null);
   
-  const [ctxClosing,     setCtxClosing]     = useState(false);const [showSettings,   setShowSettings]   = useState(false);
+  const [ctxClosing,     setCtxClosing]     = useState(false);
+  const [showSettings,   setShowSettings]   = useState(false);
   const [showNewChat,    setShowNewChat]    = useState(false);
   const [newChatInitialTab, setNewChatInitialTab] = useState("direct");
   const [typingUsers,    setTypingUsers]    = useState({});
@@ -549,10 +550,8 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
           chatStore.updateChatPreview(chatId, result.text, result.isOut, event.createdAt, !result.isOut && !isActive);
         }
         if (!result.isOut && isActive) {
-          import("./api").then(({ api }) => {
-            api.markRead(chatId).catch(() => {});
-            api.markDelivered(chatId).catch(() => {});
-          });
+          api.markRead(chatId).catch(() => {});
+          api.markDelivered(chatId).catch(() => {});
         }
       }
       if (requestChatIds.has(String(chatId))) {
@@ -860,7 +859,7 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
           onOpenНастройки={() => setShowSettings(true)}
           onMarkAllRead={() => {
             chatStore.chats.forEach(c => {
-              import("./api").then(({ api }) => api.markRead(c.id).catch(() => {}));
+              api.markRead(c.id).catch(() => {});
             });
             chatStore.setChats(prev => prev.map(c => ({ ...c, unread: 0 })));
           }}
@@ -1238,18 +1237,14 @@ const [deleteTarget,   setDeleteTarget]   = useState(null);
           requests={chatStore.requests.map(c => ({ ...c, name: displayNameForChat(c, auth.me?.id) }))}
           loadingRequests={chatStore.loadingRequests}
           onAcceptRequest={async (chatId) => {
-            try {
-              await import("./api").then(({ api }) => api.acceptRequest(chatId));
-            } catch (_) {}
+            try { await api.acceptRequest(chatId); } catch (_) {}
             await chatStore.loadRequests(auth.me?.id);
             await chatStore.loadChats(auth.me?.id);
             setShowNewChat(false);
             chatStore.selectChat(chatId);
           }}
           onDeclineRequest={async (chatId) => {
-            try {
-              await import("./api").then(({ api }) => api.declineRequest(chatId));
-            } catch (_) {}
+            try { await api.declineRequest(chatId); } catch (_) {}
             chatStore.loadRequests(auth.me?.id);
             chatStore.loadChats(auth.me?.id);
           }}

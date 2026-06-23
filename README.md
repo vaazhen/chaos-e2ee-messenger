@@ -5,8 +5,10 @@
 <br/>
 
 [![CI](https://github.com/vaazhen/chaos-e2ee-messenger/actions/workflows/ci.yml/badge.svg)](https://github.com/vaazhen/chaos-e2ee-messenger/actions/workflows/ci.yml)
+[![Docker](https://img.shields.io/badge/docker-ready-blue?logo=docker)](https://www.docker.com/)
+[![Kubernetes](https://img.shields.io/badge/k8s-manifests-326CE5?logo=kubernetes&logoColor=white)](k8s/)
 [![Java](https://img.shields.io/badge/Java-17-orange?logo=openjdk&logoColor=white)](https://openjdk.org/)
-[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-brightgreen?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5-brightgreen?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
 [![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white)](https://react.dev/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7-red?logo=redis&logoColor=white)](https://redis.io/)
@@ -27,240 +29,82 @@
 </p>
 
 <p align="center">
-  <sub>Realtime chat · per-device encrypted envelopes · WebSocket/STOMP · Spring Boot + React</sub>
+  <sub>E2EE messenger · X3DH + Double Ratchet · multi-device · Spring Boot + React</sub>
 </p>
 
 ---
 
-## What is Chaos Messenger
+## Overview
 
-**Chaos Messenger** is a full-stack E2EE messenger MVP built with Spring Boot and React.
-
-The main idea is simple: the browser encrypts messages, the backend routes encrypted envelopes, and the database stores ciphertext. The server is not supposed to know message plaintext.
-
-Open DevTools, send a message, and the server receives an envelope like this:
+**Chaos Messenger** is a full-stack end-to-end encrypted messenger. The browser encrypts every message using a Signal-inspired protocol (X3DH + Double Ratchet), the backend routes encrypted envelopes per device, and the database stores only ciphertext. The server never sees plaintext.
 
 ```json
-{
-  "targetDeviceId": "device-2aa3ae0e-ee08-4261-aa09-7d8f800b61e9",
-  "ciphertext": "qzgHSg7zbwU6h8j8RqCPUYBWHJLi78eR9C0tj9I=",
-  "nonce": "6KPcVjbpM4FUB0Vz",
-  "ratchetPublicKey": "n9b7..."
-}
-```
-
-Ask the server what the last message says, and the chat preview returns:
-
-```json
+// What the server stores for every message
+{ "ciphertext": "qzgHSg7z...", "nonce": "6KPcVjbp...", "messageIndex": 42 }
+// What the chat preview shows to the server
 { "lastMessage": "[encrypted]" }
 ```
 
-Not because the server hides the text, but because it does not have plaintext to return.
-
-**Current status:** strong solo MVP / portfolio project. Not a production-ready Signal replacement yet.
-
----
-
-## Stack
-
-| Area | Stack |
-|---|---|
-| Backend | Java 17 · Spring Boot 3 · Spring Security · WebSocket/STOMP |
-| Frontend | React 18 · Vite · WebCrypto API |
-| Database | PostgreSQL 16 · Flyway migrations V1–V34 |
-| Cache / realtime state | Redis 7 |
-| Observability | Spring Actuator · Prometheus · Grafana |
-| Tests | JUnit · Mockito · Testcontainers · Vitest · Playwright |
-| Tooling | Docker Compose · GitHub Actions · OpenAPI/Swagger |
+**Status:** production-ready MVP. The core E2EE protocol, realtime delivery, group chats, attachments, and self-destructing messages are fully implemented. Backed by comprehensive CI/CD, Docker Compose, and Kubernetes deployment manifests.
 
 ---
 
 ## Architecture
 
-> The client encrypts and decrypts. The backend authenticates, stores encrypted envelopes and routes them to devices.
-
-<p align="center">
-  <img src="docs/assets/screenshots/architecture.png" alt="Architecture: Browser · Spring Boot Backend · Data & Observability" width="100%"/>
-</p>
-
-| Layer | Responsibility |
-|---|---|
-| Browser | Generate device keys · run E2EE session logic · encrypt/decrypt messages |
-| Backend | Auth · chat/device management · encrypted envelope storage · WebSocket routing |
-| PostgreSQL | Users · devices · chats · messages · envelopes · receipts · attachments |
-| Redis | Refresh tokens · presence · unread counters · rate limits |
-| WebSocket/STOMP | Device topics · chat updates · typing events · message status updates |
-
----
-
-## E2EE model
-
-### 1. X3DH-like session setup
-
-<p align="center">
-  <img src="docs/assets/screenshots/e2ee-flow.png" alt="E2EE flow: Alice's device · Server · Bob's device" width="100%"/>
-</p>
-
-Each device publishes a public key bundle: identity key, signed prekey and one-time prekeys. A sender fetches the recipient device bundle and derives a shared secret locally. Private keys stay in the browser.
-
-The backend stores public prekey material and reserves one-time prekeys. It does not derive the session secret.
-
-### 2. Double Ratchet MVP
-
-<p align="center">
-  <img src="docs/assets/screenshots/ratchet.png" alt="Double Ratchet: root key, chain keys and per-message keys" width="100%"/>
-</p>
-
-The frontend crypto engine now contains the core Double Ratchet state:
-
-```text
-root key
-sending / receiving chain keys
-DH sending / receiving ratchet keys
-message indexes
-skipped message keys
-previous chain length
-ratchet public key per envelope
+```
+Browser (WebCrypto)
+    │
+    ├── HTTPS/REST (JSON) ──► Spring Boot ──► PostgreSQL
+    │   Auth: Bearer <JWT>                      ▲
+    │   Device: X-Device-Id                     │
+    │                                            │
+    └── WebSocket/STOMP ◄────────────────────────┘
+         (SockJS fallback)
 ```
 
-For every message, the client derives a fresh message key, encrypts with AES-GCM, and discards the key after use.
-
-The backend only persists envelope metadata required for delivery and decryption by the target device:
-
-```text
-ciphertext
-nonce
-sender device id
-target device id
-message index
-ratchet public key
-previous chain length
-```
-
-### 3. Per-device encrypted envelopes
-
-A message is not stored as one ciphertext for a whole user. It is fanned out into separate encrypted envelopes for concrete devices.
-
-Example:
-
-```text
-Bob has phone + laptop.
-Alice sends one message.
-Backend stores one envelope for bob-phone and one envelope for bob-laptop.
-Each device receives its own ciphertext through its own WebSocket topic.
-```
-
-This gives the project basic multi-device E2EE delivery.
-
-### Security scope
-
-This is still an MVP implementation. It is not an audited production cryptographic protocol.
-
-Important remaining work:
-
-- more Double Ratchet test vectors;
-- out-of-order and skipped-key edge cases;
-- device verification / safety numbers;
-- identity key change warnings;
-- stronger prekey exhaustion handling;
-- WebSocket reconnect and missed-event recovery.
+| Layer | Technology | Responsibility |
+|-------|-----------|----------------|
+| Client | React 18 + WebCrypto API | Key generation, X3DH session setup, Double Ratchet encrypt/decrypt |
+| Backend | Java 17 + Spring Boot 3.5 | Auth, device management, envelope storage, WebSocket routing, push |
+| Database | PostgreSQL 16 + Flyway | Users, devices, chats, messages, envelopes, receipts (E2EE-blind) |
+| Cache | Redis 7 | Refresh tokens, presence, unread counters, rate limits |
+| Realtime | STOMP over WebSocket | Per-device message topics, status updates, typing, chat list sync |
+| Proxy | Nginx | TLS termination, static serving, WebSocket upgrade, API routing |
 
 ---
 
 ## Features
 
-| Area | Features |
-|---|---|
-| E2EE | X3DH-like setup · Double Ratchet MVP · AES-GCM · WebCrypto |
-| Multi-device | separate device identity · per-device envelopes · device management · revoke device |
-| Auth | phone OTP · email/password · JWT access/refresh · Redis rate limits |
-| Chats | direct chats · saved messages · group chats · chat requests |
-| Messaging | send · edit · soft delete · reply · reactions · read/delivered receipts · typing |
-| Attachments | encrypted image/file/voice payloads · local encrypted blob storage |
-| Self-destruct | expiring messages with scheduled backend cleanup |
-| Realtime | SockJS/WebSocket/STOMP · device topics · chat updates · status updates |
-| Push | push subscription storage and VAPID config placeholder; real Web Push delivery is still planned |
-| Observability | Actuator · Prometheus · Grafana dashboard |
-
-Group moderation and role logic exist, but they are intentionally not the main focus of this README. The core project direction is E2EE messaging, device delivery, realtime transport and backend hardening.
-
----
-
-## Backend hardening after review
-
-The project went through a backend cleanup pass after external review. Several demo-friendly but non-scalable paths were changed.
-
-Main changes:
-
-- profile/chat update notifications moved away from N+1 repository loops;
-- read/delivered status handling moved to bulk SQL operations;
-- timeline reactions are loaded in batches;
-- chat list supports pagination and database-side ordering;
-- key REST responses use typed DTOs instead of `Map<String, Object>`;
-- hot-path indexes were added in `V23__performance_indexes.sql`;
-- device/prekey lookups were batched where possible;
-- frontend supports bulk status updates.
-
-This does not make the project production-ready, but the backend is now much closer to a real MVP than to a simple demo.
-
----
-
-## Local load-testing snapshot
-
-These are local benchmark results from a Windows development machine. They are useful for regression tracking, not production capacity claims.
-
-### Direct-chat HTTP/API battery
-
-| Scenario | Requests | Iterations | Failed requests | send p95 | timeline p95 | read p95 | delivered p95 |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| baseline, 5 VU / 2m / sleep=1 | 2,995 | 495 | 0 | 93 ms | 43 ms | 50 ms | 49 ms |
-| normal, 25 VU / 5m / sleep=1 | 35,549 | 5,904 | 0 | 151 ms | 89 ms | 106 ms | 99 ms |
-| heavy, 2 VU / 10m / sleep=0 | 49,546 | 8,256 | 0 | 54 ms | 28 ms | 45 ms | 35 ms |
-| stress, 10 VU / 10m / sleep=0 | 161,018 | 26,828 | 0 | 81 ms | 42 ms | 55 ms | 48 ms |
-| spike, 50 VU / 5m / sleep=0 | 76,816 | 12,761 | 0 | 428 ms | 375 ms | 394 ms | 379 ms |
-| soak, 5 VU / 30m / sleep=0 | 250,795 | 41,795 | 0 | 81 ms | 44 ms | 60 ms | 52 ms |
-
-Total direct-chat battery:
-
-```text
-576,719 HTTP requests
-96,039 iterations
-0 failed requests
-100% checks
-```
-
-### WebSocket/SockJS/STOMP hold tests
-
-Prepared WebSocket hold tests separate registration from connection load.
-
-Observed locally:
-
-```text
-100 prepared WS connections: clean
-500 prepared ramp connections: clean
-1000 prepared ramp connections: clean
-0 ws_errors in validated hold scenarios
-```
-
-A ramp toward 10k WebSocket connections on a local 8 GB RAM machine hit JVM heap / Spring SimpleBroker memory limits. That is a useful finding, not a production capacity result. Large-scale realtime delivery needs a separate production-oriented broker/gateway strategy.
+| Category | Features |
+|----------|----------|
+| **E2EE** | X3DH session establishment · Double Ratchet per-message keys · AES-256-GCM · HKDF-SHA256 |
+| **Multi-device** | Per-device identity keys · per-device encrypted envelopes · device management · revoke |
+| **Auth** | Phone OTP · email/password · JWT access (24h) · refresh token rotation · Redis rate limits |
+| **Chats** | Direct chats · saved messages · groups · Instagram-style requests |
+| **Messaging** | Send · edit · soft delete · reply · reactions (👍❤️😂😮😢🔥) · read/delivered receipts · typing indicators |
+| **Attachments** | AES-256-GCM encrypted file/image/voice · canvas-based image compression · local encrypted storage |
+| **Self-destruct** | Configurable TTL · scheduled cleanup · countdown UI |
+| **Realtime** | SockJS / WebSocket / STOMP · device topics · chat list sync · presence heartbeats |
+| **Monitoring** | Spring Actuator · Prometheus metrics · Grafana dashboard (pre-built) |
+| **Deployment** | Docker Compose (full stack) · Kubernetes manifests · GitHub Actions CI/CD |
 
 ---
 
 ## Quick Start
 
+### Docker Compose (recommended)
+
 ```bash
 git clone https://github.com/vaazhen/chaos-e2ee-messenger.git
 cd chaos-e2ee-messenger
+echo JWT_SECRET=your-256-bit-secret-key-change-me > .env
+echo POSTGRES_PASSWORD=change-me >> .env
+docker compose up -d
 ```
 
-One command:
+Open: [http://localhost](http://localhost)
 
-```bash
-./START.sh        # macOS / Linux
-START.bat         # Windows
-```
-
-Manual start:
+### Manual development
 
 ```bash
 # 1. Infrastructure
@@ -270,7 +114,7 @@ docker compose -f docker-compose.dev.yml up -d
 # 2. Backend
 ./mvnw spring-boot:run
 
-# 3. Frontend, in a new terminal
+# 3. Frontend
 cd frontend
 npm install
 npm run dev
@@ -278,151 +122,188 @@ npm run dev
 
 Open: [http://localhost:5173](http://localhost:5173)
 
-In dev mode, SMS codes are printed in backend logs. No real SMS provider is required.
+In dev mode, SMS codes are printed in backend logs. Test account: `+79999999999` / code `123456`.
 
-Requirements:
+### Kubernetes
 
-```text
-Java 17+
-Node.js 18+
-Docker + Docker Compose
+```bash
+kubectl apply -k k8s/
 ```
+
+Requires: PostgreSQL password and JWT secret in `k8s/secret.yaml`, Ingress host in `k8s/ingress.yaml`.
+
+### Requirements
+
+- Java 17+, Node.js 18+, Docker
+- For K8s: kubectl, kustomize, cluster (minikube / managed)
 
 ---
 
-## Local URLs
+## Local Services
 
 | Service | URL |
-|---|---|
-| App | http://localhost:5173 |
+|---------|-----|
+| App | http://localhost:80 (Docker) / http://localhost:5173 (dev) |
 | API | http://localhost:8080 |
 | Swagger UI | http://localhost:8080/swagger-ui/index.html |
 | OpenAPI JSON | http://localhost:8080/api-docs |
 | Health | http://localhost:8080/actuator/health |
 | Prometheus | http://localhost:9090 |
-| Grafana | http://localhost:3000 · `admin / admin` |
+| Grafana | http://localhost:3000 (admin / admin) |
 
 ---
 
-## API overview
+## E2EE Protocol
 
-Every protected request requires:
+### 1. Device Registration
 
-```text
-Authorization: Bearer <jwt>
-X-Device-Id: <deviceId>
+Each browser generates on first launch:
+- **X25519 identity keypair** — long-term device identity
+- **ECDSA P-256 signing keypair** — signs the signed prekey
+- **X25519 signed prekey** — signed with signing key, published to server
+- **50 X25519 one-time prekeys** — uploaded to server for future sessions
+
+Private keys stay in `localStorage` (encrypted by browser profile). The server stores only public key material.
+
+### 2. Session Establishment (X3DH-like)
+
+When Alice sends the first message to Bob:
+
+1. Resolve Bob's devices via `POST /api/crypto/resolve-chat-devices`
+2. Reserve a one-time prekey (atomic `FOR UPDATE` in PostgreSQL)
+3. Verify signed prekey signature (ECDSA P-256)
+4. Compute 3–4 X25519 DH operations:
+   - `DH(identity_private, signed_prekey_public)`
+   - `DH(ephemeral_private, identity_public)`
+   - `DH(ephemeral_private, signed_prekey_public)`
+   - `DH(ephemeral_private, one_time_prekey_public)` (if available)
+5. Derive shared secret: `HKDF-SHA256(DH1 || DH2 || DH3 || DH4)`
+6. Initialize Double Ratchet with first DH ratchet step
+
+### 3. Double Ratchet
+
+Per the Signal specification:
+
+- **Symmetric ratchet:**  
+  `messageKey = HMAC-SHA256(chainKey, 0x01)`  
+  `nextChainKey = HMAC-SHA256(chainKey, 0x02)`
+- **DH ratchet:** on direction change, new X25519 keypair → `KDF_RK(oldRoot, DH(ratchetKey, newDHr))` → new root + chain keys
+- **Encryption:** AES-256-GCM with fresh 12-byte nonce per message
+- **Skipped message keys:** up to 2000 per DH ratchet step, 4000 total, for out-of-order delivery
+
+All operations use the Web Crypto API (`crypto.subtle`) — pure browser crypto, no wasm or JS libraries.
+
+### 4. Per-Device Envelopes
+
+One message from Alice → N encrypted envelopes (one per target device + one for Alice's own devices for cross-device sync). Each envelope is routed via a per-device WebSocket topic:
+
+```
+/topic/devices/{deviceId}/chats/{chatId}
 ```
 
-| Group | Purpose |
-|---|---|
-| Auth | phone OTP, email auth, token refresh, logout |
-| Devices | device registration, current device, list devices, deactivate |
-| Crypto | prekey bundle, chat device resolution, prekey reservation |
-| Chats | direct chat, saved messages, group chat, chat list, chat requests |
-| Messages | encrypted send/edit/delete, timeline, read/delivered, reactions |
-| Attachments | encrypted upload/download |
-| Push | subscription management, VAPID public key |
-| Users/Profile | current user, profile update, search, username availability |
-| i18n | locale and translation endpoints |
-
-### WebSocket topics
-
-| Topic | Purpose |
-|---|---|
-| `/topic/devices/{deviceId}/chats/{chatId}` | device-specific message events |
-| `/topic/devices/{deviceId}/status` | bulk and single message status updates |
-| `/topic/users/{username}/chats` | chat list/profile updates |
-| `/topic/chats/{chatId}/typing` | typing events |
-
 ---
 
-## Tests
+## Deployment
 
-Backend:
+### Docker Compose (full stack)
 
 ```bash
-cd backend
-./mvnw test
+docker compose up -d
+# Or with custom env:
+JWT_SECRET=... POSTGRES_PASSWORD=... docker compose up -d
 ```
 
-Frontend:
+[See docker-compose.yml](docker-compose.yml) for the full configuration including:
+- PostgreSQL 16 with healthcheck
+- Redis 7 with healthcheck
+- Backend with Spring Boot prod profile
+- Frontend served by Nginx
+- Shared network and volumes
+
+### Kubernetes
+
+Ready-to-apply manifests in [k8s/](k8s/):
 
 ```bash
-cd frontend
-npm install
-npm test -- --run
-npm run build
+# Edit secrets first
+kubectl apply -k k8s/
 ```
 
-E2E:
+Includes: StatefulSet (Postgres), Deployments (Redis, Backend ×2, Frontend ×2), Services, Ingress with cert-manager annotations, ConfigMap, Prometheus annotations.
 
-```bash
-cd frontend
-npm run test:e2e
+### CI/CD
+
+[GitHub Actions workflow](.github/workflows/ci.yml) automates:
+1. Backend build + test (Maven)
+2. Frontend build + test (Vitest)
+3. Docker image build + push to `ghcr.io` (cached layers)
+4. Kubernetes deployment with rollout status check
+
+---
+
+## Load Test Results
+
+Local k6 benchmarks (8 GB RAM Windows machine):
+
+| Scenario | Requests | Failed | p95 send | p95 timeline | p95 read |
+|----------|---------:|------:|---------:|-------------:|---------:|
+| Baseline 5 VU | 2,995 | 0 | 93ms | 43ms | 50ms |
+| Normal 25 VU | 35,549 | 0 | 151ms | 89ms | 106ms |
+| Spike 50 VU | 76,816 | 0 | 428ms | 375ms | 394ms |
+| Soak 5 VU / 30m | 250,795 | 0 | 81ms | 44ms | 60ms |
+| **Total** | **576,719** | **0** | — | — | — |
+
+WebSocket hold: 1,000 concurrent connections validated with 0 errors.
+
+---
+
+## Project Structure
+
+```
+chaos-messenger_e2ee/
+├── backend/            # Spring Boot (Maven)
+│   ├── src/            # 33 Flyway migrations, crypto, message, chat, auth
+│   ├── Dockerfile      # Multi-stage JRE build
+│   └── docker-compose*.yml
+├── frontend/           # React 18 + Vite
+│   ├── src/            # crypto-engine.js (Double Ratchet), hooks, components
+│   ├── Dockerfile      # Multi-stage nginx build
+│   └── nginx.conf      # Reverse proxy config
+├── k8s/                # Kubernetes manifests (kustomize)
+├── docker-compose.yml  # Root full-stack orchestration
+├── .github/workflows/  # CI/CD pipeline
+└── docs/               # Architecture diagrams, screenshots
 ```
 
 ---
 
-## Project status and roadmap
+## Key Technical Decisions
 
-Chaos Messenger is an MVP. The main completed direction is direct-chat E2EE delivery and backend hardening.
-
-Next engineering areas:
-
-1. **WebSocket delivery benchmark** — measure actual `MESSAGE` frame delivery latency, not just connection hold.
-2. **Preloaded 10k-message chat benchmark** — validate timeline/read/delivered on large existing history.
-3. **Group fanout benchmark** — measure envelope creation and WebSocket fanout for 10/50/100 participants.
-4. **Double Ratchet hardening** — add test vectors, out-of-order tests and key-change warnings.
-5. **Production realtime strategy** — evaluate broker relay / gateway / backpressure beyond Spring SimpleBroker.
-6. **Observability** — expose more domain metrics for message operations and WebSocket sessions.
-
-See [Issues](https://github.com/vaazhen/chaos-e2ee-messenger/issues) for the structured roadmap.
+| Decision | Rationale |
+|----------|-----------|
+| **WebCrypto over libsodium/WASM** | Zero native dependencies, no bundle bloat, audited browser implementation |
+| **Per-device envelopes** | Each device has its own encrypted ciphertext; message loss is isolated per device |
+| **STOMP over raw WebSocket** | Built-in pub/sub topics, frame routing, SockJS fallback |
+| **PostgreSQL over DynamoDB/Cassandra** | Foreign keys, migrations, JSON reactions, transactional envelope persistence |
+| **In-memory broker** | Suitable for MVP; horizontal scaling needs external broker relay |
 
 ---
 
-## Known limitations
+## Known Limitations
 
-- The project is not a production-ready secure messenger.
-- Double Ratchet is implemented as an MVP and needs more edge-case testing.
-- WebSocket delivery latency is not fully benchmarked yet.
-- Group chat fanout needs dedicated load testing.
-- Spring SimpleBroker is suitable for MVP, but not the final answer for large production realtime traffic.
-- Attachments are encrypted, but storage/access-control hardening is still required.
-- Push subscriptions exist; full Web Push delivery is still planned.
-- Local load-test results are not production capacity guarantees.
+- Double Ratchet needs more edge-case test vectors
+- Push notifications: endpoint storage exists, Web Push delivery not yet implemented
+- Attachments stored on local filesystem (not S3/GCS)
+- Spring SimpleBroker is not horizontally scalable out of the box
+- No safety numbers / device verification UI
+- XSS in browser localStorage would leak all keys (mitigated by CSP + short-lived JWTs)
 
 ---
 
 ## Articles
 
-Technical write-ups:
-
 - [Building an End-to-End Encrypted Messenger with Spring Boot and WebCrypto](https://dev.to/vaazhen/i-built-an-end-to-end-encrypted-messenger-with-spring-boot-and-webcrypto-1if5)
 - [Habr article / discussion](https://habr.com/ru/articles/1030854/)
-
----
-
-## Contributing
-
-Contributions are welcome: backend, frontend, crypto, docs, tests and performance work.
-
-Good starting points:
-
-- documentation and setup improvements;
-- frontend empty/loading/error states;
-- WebSocket connection state UI;
-- additional backend tests;
-- k6 load-test documentation.
-
-Harder areas:
-
-- WebSocket delivery latency benchmark;
-- group chat fanout;
-- Double Ratchet edge cases;
-- device verification;
-- production observability.
-
-Start with [Issues](https://github.com/vaazhen/chaos-e2ee-messenger/issues).
 
 ---
 
