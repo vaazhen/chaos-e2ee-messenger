@@ -91,6 +91,7 @@ services:
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       CHAOS_ATTACHMENTS_STORAGE_PATH: /app/attachments
+      CHAOS_DEMO_ENABLED: ${CHAOS_DEMO_ENABLED:-false}
       JAVA_OPTS: >-
         -Xmx512m
         -Djava.security.egd=file:/dev/./urandom
@@ -131,6 +132,8 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env (e.g. example.com)}
     volumes:
       - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
