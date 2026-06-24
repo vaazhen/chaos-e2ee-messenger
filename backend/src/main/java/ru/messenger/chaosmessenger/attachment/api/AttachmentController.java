@@ -5,11 +5,14 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
+import ru.messenger.chaosmessenger.attachment.access.AttachmentAccessService;
 import ru.messenger.chaosmessenger.attachment.domain.EncryptedAttachment;
 import ru.messenger.chaosmessenger.attachment.service.AttachmentStorageService;
 import ru.messenger.chaosmessenger.user.domain.User;
@@ -27,6 +30,7 @@ public class AttachmentController {
 
     private final AttachmentStorageService attachmentStorageService;
     private final UserIdentityService userIdentityService;
+    private final AttachmentAccessService attachmentAccessService;
 
     @Operation(summary = "Upload encrypted file")
     @PostMapping("/upload")
@@ -42,8 +46,14 @@ public class AttachmentController {
 
     @Operation(summary = "Download encrypted file")
     @GetMapping("/{attachmentId}")
-    public ResponseEntity<byte[]> download(@PathVariable String attachmentId) throws IOException {
+    public ResponseEntity<byte[]> download(@PathVariable String attachmentId, Authentication auth) throws IOException {
         EncryptedAttachment attachment = attachmentStorageService.findByAttachmentId(attachmentId);
+
+        User currentUser = userIdentityService.require(auth.getName());
+        if (!attachmentAccessService.canDownload(attachment, currentUser.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied to attachment");
+        }
+
         byte[] data = attachmentStorageService.download(attachmentId);
 
         String contentType = attachment.getContentType() != null
