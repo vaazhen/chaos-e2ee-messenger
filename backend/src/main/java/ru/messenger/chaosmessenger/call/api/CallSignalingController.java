@@ -6,6 +6,7 @@ import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
+import ru.messenger.chaosmessenger.call.CallAuthorizationService;
 
 import java.security.Principal;
 import java.util.Map;
@@ -16,6 +17,7 @@ import java.util.Map;
 public class CallSignalingController {
 
     private final SimpMessagingTemplate messagingTemplate;
+    private final CallAuthorizationService callAuthorizationService;
 
     @MessageMapping("/call.offer")
     public void handleOffer(@Payload Map<String, Object> payload, Principal principal) {
@@ -24,6 +26,10 @@ public class CallSignalingController {
         String sdp = (String) payload.get("sdp");
 
         String username = principal != null ? principal.getName() : "unknown";
+
+        if (!callAuthorizationService.isCallAllowed(username, targetUsername)) {
+            return;
+        }
 
         Map<String, Object> message = Map.of(
                 "type", "CALL_OFFER",
@@ -44,6 +50,10 @@ public class CallSignalingController {
 
         String username = principal != null ? principal.getName() : "unknown";
 
+        if (!callAuthorizationService.isCallAllowed(username, targetUsername)) {
+            return;
+        }
+
         Map<String, Object> message = Map.of(
                 "type", "CALL_ANSWER",
                 "fromUsername", username,
@@ -63,6 +73,10 @@ public class CallSignalingController {
 
         String username = principal != null ? principal.getName() : "unknown";
 
+        if (!callAuthorizationService.isCallAllowed(username, targetUsername)) {
+            return;
+        }
+
         Map<String, Object> message = Map.of(
                 "type", "ICE_CANDIDATE",
                 "fromUsername", username,
@@ -81,6 +95,10 @@ public class CallSignalingController {
 
         String username = principal != null ? principal.getName() : "unknown";
 
+        if (!callAuthorizationService.isCallAllowed(username, targetUsername)) {
+            return;
+        }
+
         Map<String, Object> message = Map.of(
                 "type", "CALL_END",
                 "fromUsername", username,
@@ -89,4 +107,5 @@ public class CallSignalingController {
 
         messagingTemplate.convertAndSend("/topic/users/" + targetUsername + "/calls", message);
     }
+
 }
