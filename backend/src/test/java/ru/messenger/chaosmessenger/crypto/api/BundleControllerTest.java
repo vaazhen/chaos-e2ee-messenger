@@ -8,9 +8,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.core.Authentication;
 import ru.messenger.chaosmessenger.crypto.device.CurrentDeviceService;
 import ru.messenger.chaosmessenger.crypto.dto.DeviceBundleDto;
+import ru.messenger.chaosmessenger.crypto.dto.OneTimePreKeyDto;
 import ru.messenger.chaosmessenger.crypto.dto.PreKeyBundleResponse;
 import ru.messenger.chaosmessenger.crypto.dto.ResolvedChatDevicesResponse;
+import ru.messenger.chaosmessenger.crypto.dto.SignedPreKeyDto;
 import ru.messenger.chaosmessenger.crypto.prekey.PreKeyService;
+
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verify;
@@ -28,8 +32,7 @@ class BundleControllerTest {
     @Test
     void getBundleDelegatesToPreKeyService() {
         PreKeyBundleResponse expected = new PreKeyBundleResponse(
-                "dev-a", 1, "identity-key", "signed-pre-key",
-                "signature", null
+                "bob", List.of()
         );
 
         when(authentication.getName()).thenReturn("alice");
@@ -45,7 +48,7 @@ class BundleControllerTest {
 
     @Test
     void resolveChatDevicesDelegatesToPreKeyService() {
-        ResolvedChatDevicesResponse expected = new ResolvedChatDevicesResponse(100L, null);
+        ResolvedChatDevicesResponse expected = new ResolvedChatDevicesResponse(100L, "alice", "dev-a", List.of());
 
         when(authentication.getName()).thenReturn("alice");
         when(currentDeviceService.requireCurrentDevice()).thenReturn(null);
@@ -60,7 +63,12 @@ class BundleControllerTest {
 
     @Test
     void reserveOneTimePreKeyDelegatesToPreKeyService() {
-        DeviceBundleDto expected = new DeviceBundleDto("dev-b", 1, "key", null);
+        DeviceBundleDto expected = new DeviceBundleDto(
+                2L, 20L, "dev-b", 123, "Device dev-b",
+                "identity-public-key", "signing-public-key",
+                new SignedPreKeyDto(1, "signed-pre-key", "signature"),
+                new OneTimePreKeyDto(2, "one-time-pre-key")
+        );
 
         when(authentication.getName()).thenReturn("alice");
         when(currentDeviceService.requireCurrentDevice()).thenReturn(null);
