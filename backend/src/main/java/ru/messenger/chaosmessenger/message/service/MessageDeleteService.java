@@ -23,6 +23,7 @@ public class MessageDeleteService {
     private final MessageRepository messageRepository;
     private final MessageAccessService messageAccessService;
     private final MessageFanoutService messageFanoutService;
+    private final MessageOutboxService messageOutboxService;
 
     @Transactional
     public void deleteMessage(String username, Long messageId) {
@@ -43,6 +44,9 @@ public class MessageDeleteService {
         messageRepository.save(message);
         messageFanoutService.incrementCounter("messages_deleted_total");
         messageFanoutService.saveMessageEvent(message, user.getId(), "DELETE", Map.of());
+
+        messageOutboxService.messageDeleted(message);
+        messageOutboxService.chatListUpdated(message.getChatId(), "message_deleted");
 
         final Message msgDelFinal = message;
         TransactionUtils.afterCommit(() -> {

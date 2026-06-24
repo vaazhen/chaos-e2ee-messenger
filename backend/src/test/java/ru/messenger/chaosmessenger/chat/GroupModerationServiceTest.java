@@ -19,6 +19,7 @@ import ru.messenger.chaosmessenger.chat.dto.UpdateGroupParticipantsRequest;
 import ru.messenger.chaosmessenger.chat.dto.UpdateGroupRoleRequest;
 import ru.messenger.chaosmessenger.chat.repository.ChatParticipantRepository;
 import ru.messenger.chaosmessenger.chat.repository.ChatRepository;
+import ru.messenger.chaosmessenger.chat.service.ChatOutboxService;
 import ru.messenger.chaosmessenger.chat.service.GroupModerationService;
 import ru.messenger.chaosmessenger.common.exception.ChatException;
 import ru.messenger.chaosmessenger.user.domain.User;
@@ -41,6 +42,7 @@ class GroupModerationServiceTest {
     @Mock ChatParticipantRepository participantRepository;
     @Mock ChatAccessService chatAccessService;
     @Mock ChatQueryService chatQueryService;
+    @Mock ChatOutboxService chatOutboxService;
 
     @InjectMocks GroupModerationService groupModerationService;
 

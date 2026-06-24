@@ -21,6 +21,7 @@ public class SelfDestructScheduler {
 
     private final MessageRepository messageRepository;
     private final MessageFanoutService messageFanoutService;
+    private final MessageOutboxService messageOutboxService;
 
     @Scheduled(fixedRate = 30000)
     @Transactional
@@ -39,6 +40,9 @@ public class SelfDestructScheduler {
         Set<Long> affectedChatIds = expired.stream()
                 .map(Message::getChatId)
                 .collect(Collectors.toSet());
+
+        expired.forEach(messageOutboxService::messageDeleted);
+        affectedChatIds.forEach(chatId -> messageOutboxService.chatListUpdated(chatId, "message_deleted"));
 
         List<Message> expiredCopy = List.copyOf(expired);
         TransactionUtils.afterCommit(() -> {

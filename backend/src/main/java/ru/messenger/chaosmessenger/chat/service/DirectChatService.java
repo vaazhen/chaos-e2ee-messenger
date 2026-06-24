@@ -27,6 +27,7 @@ public class DirectChatService {
     private final ChatParticipantRepository participantRepository;
     private final UserRepository userRepository;
     private final ChatAccessService chatAccessService;
+    private final ChatOutboxService chatOutboxService;
 
     @Transactional
     public Long createDirectChat(String currentUsername, Long targetUserId) {
@@ -72,6 +73,11 @@ public class DirectChatService {
                             && "PENDING".equalsIgnoreCase(updated.getDirectStatus())
                             && Objects.equals(updated.getDirectRequestedBy(), currentUser.getId());
 
+            chatOutboxService.chatListUpdated(chatId, "chat_exists");
+            if (targetOnlyRequest) {
+                chatOutboxService.requestUpdated(chatId, "request_exists");
+            }
+
             TransactionUtils.afterCommit(() -> {
                 chatAccessService.notifyChatListUpdated(currentUsr, chatId, "chat_exists");
                 if (targetOnlyRequest) {
@@ -104,6 +110,9 @@ public class DirectChatService {
         final Long chatId = chat.getId();
         final String currentUsr = currentUser.getUsername();
         final String targetUsr = targetUser.getUsername();
+        chatOutboxService.chatListUpdated(chatId, "chat_created");
+        chatOutboxService.requestUpdated(chatId, "request_created");
+
         TransactionUtils.afterCommit(() -> {
             chatAccessService.notifyChatListUpdated(currentUsr, chatId, "chat_created");
             chatAccessService.notifyRequestsUpdated(targetUsr, chatId, "request_created");
@@ -142,6 +151,8 @@ public class DirectChatService {
         chat.setDirectStatus("ACCEPTED");
         chatRepository.save(chat);
         List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
+        chatOutboxService.requestUpdated(chatId, "request_accepted");
+        chatOutboxService.chatListUpdated(chatId, "request_accepted");
 
         TransactionUtils.afterCommit(() -> {
             chatAccessService.notifyRequestsUpdated(username, chatId, "request_accepted");
@@ -174,6 +185,8 @@ public class DirectChatService {
         chat.setDirectStatus("DECLINED");
         chatRepository.save(chat);
         List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
+        chatOutboxService.requestUpdated(chatId, "request_declined");
+        chatOutboxService.chatListUpdated(chatId, "request_declined");
 
         TransactionUtils.afterCommit(() -> {
             chatAccessService.notifyRequestsUpdated(username, chatId, "request_declined");

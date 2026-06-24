@@ -39,10 +39,18 @@ public class AttachmentController {
 
     @Operation(summary = "Upload encrypted file")
     @PostMapping("/upload")
-    public Map<String, String> upload(@RequestParam("file") MultipartFile file, Authentication auth) throws IOException {
+    public Map<String, String> upload(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "chatId", required = false) Long chatId,
+            Authentication auth
+    ) throws IOException {
         User user = userIdentityService.require(auth.getName());
+        if (!attachmentAccessService.canUpload(chatId, user.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied to chat attachments");
+        }
         String attachmentId = attachmentStorageService.upload(
                 user.getId(),
+                chatId,
                 file.getBytes(),
                 file.getContentType()
         );

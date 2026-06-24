@@ -30,6 +30,7 @@ public class MessageEditService {
     private final MessageAccessService messageAccessService;
     private final MessageSendService messageSendService;
     private final MessageFanoutService messageFanoutService;
+    private final MessageOutboxService messageOutboxService;
 
     @Transactional
     public DeviceMessageEventResponse editEncryptedMessageV2(String username, Long messageId, EncryptedEditMessageRequestV2 request) {
@@ -66,6 +67,9 @@ public class MessageEditService {
 
         Map<String, MessageEnvelope> byDevice = messageSendService.persistEnvelopes(message, sender, request.envelopes(), targetDevices);
         messageFanoutService.saveMessageEvent(message, sender.getId(), "EDIT", Map.of("version", message.getVersion()));
+
+        messageOutboxService.messageEdited(message, byDevice);
+        messageOutboxService.chatListUpdated(message.getChatId(), "message_edited");
 
         final Message msgEditFinal = message;
         final Map<String, MessageEnvelope> byDeviceEditFinal = byDevice;

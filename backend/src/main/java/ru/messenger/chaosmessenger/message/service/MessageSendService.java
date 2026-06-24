@@ -49,6 +49,7 @@ public class MessageSendService {
     private final UserDeviceRepository userDeviceRepository;
     private final MessageAccessService messageAccessService;
     private final MessageFanoutService messageFanoutService;
+    private final MessageOutboxService messageOutboxService;
     private final ChatAccessService chatAccessService;
 
     @Transactional
@@ -99,6 +100,9 @@ public class MessageSendService {
         messageFanoutService.incrementCounter("messages_sent_total");
 
         Map<String, MessageEnvelope> byDevice = persistEnvelopes(message, sender, request.envelopes(), targetDevices);
+
+        messageOutboxService.messageCreated(message, byDevice);
+        messageOutboxService.chatListUpdated(message.getChatId(), "message_created");
 
         final Message msgFinal = message;
         final Map<String, MessageEnvelope> byDeviceFinal = byDevice;
