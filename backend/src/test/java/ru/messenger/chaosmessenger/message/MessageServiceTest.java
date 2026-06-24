@@ -1,291 +1,101 @@
 package ru.messenger.chaosmessenger.message;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
-import ru.messenger.chaosmessenger.TestFixtures;
-import ru.messenger.chaosmessenger.chat.domain.Message;
-import ru.messenger.chaosmessenger.chat.domain.Chat;
-import ru.messenger.chaosmessenger.chat.domain.ChatParticipant;
-import ru.messenger.chaosmessenger.chat.domain.GroupRole;
-import ru.messenger.chaosmessenger.chat.repository.ChatParticipantRepository;
-import ru.messenger.chaosmessenger.chat.repository.ChatRepository;
-import ru.messenger.chaosmessenger.common.exception.MessageException;
-import ru.messenger.chaosmessenger.crypto.device.CurrentDeviceService;
-import ru.messenger.chaosmessenger.crypto.device.UserDevice;
-import ru.messenger.chaosmessenger.crypto.device.UserDeviceRepository;
-import ru.messenger.chaosmessenger.crypto.dto.EncryptedMessageEnvelopeInput;
+import ru.messenger.chaosmessenger.crypto.dto.EncryptedEditMessageRequestV2;
 import ru.messenger.chaosmessenger.crypto.dto.EncryptedSendMessageRequestV2;
-import ru.messenger.chaosmessenger.infra.presence.UnreadService;
 import ru.messenger.chaosmessenger.message.dto.DeviceMessageEventResponse;
+import ru.messenger.chaosmessenger.message.dto.MessageTimelineItemResponse;
 import ru.messenger.chaosmessenger.message.dto.ReactionEvent;
-import ru.messenger.chaosmessenger.message.repository.MessageEnvelopeRepository;
-import ru.messenger.chaosmessenger.message.repository.MessageEventRepository;
-import ru.messenger.chaosmessenger.message.repository.MessageReactionRepository;
-import ru.messenger.chaosmessenger.message.repository.MessageReceiptRepository;
-import ru.messenger.chaosmessenger.message.repository.MessageRepository;
+import ru.messenger.chaosmessenger.message.service.MessageDeleteService;
+import ru.messenger.chaosmessenger.message.service.MessageEditService;
+import ru.messenger.chaosmessenger.message.service.MessageReactionService;
+import ru.messenger.chaosmessenger.message.service.MessageReceiptService;
+import ru.messenger.chaosmessenger.message.service.MessageSendService;
 import ru.messenger.chaosmessenger.message.service.MessageService;
-import ru.messenger.chaosmessenger.user.domain.User;
-import ru.messenger.chaosmessenger.user.repository.UserRepository;
-import ru.messenger.chaosmessenger.user.service.UserIdentityService;
+import ru.messenger.chaosmessenger.message.service.MessageTimelineService;
 
 import java.util.List;
-import java.util.Optional;
-import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.argThat;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-@DisplayName("MessageService")
+@DisplayName("MessageService facade delegates to sub-services")
 class MessageServiceTest {
 
-    @Mock MessageRepository messageRepository;
-    @Mock MessageEnvelopeRepository messageEnvelopeRepository;
-    @Mock MessageEventRepository messageEventRepository;
-    @Mock MessageReceiptRepository messageReceiptRepository;
-    @Mock MessageReactionRepository messageReactionRepository;
-    @Mock ChatParticipantRepository participantRepository;
-    @Mock ChatRepository chatRepository;
-    @Mock UserRepository userRepository;
-    @Mock UserIdentityService userIdentityService;
-    @Mock UserDeviceRepository userDeviceRepository;
-    @Mock CurrentDeviceService currentDeviceService;
-    @Mock UnreadService unreadService;
-    @Mock ru.messenger.chaosmessenger.infra.presence.OnlineService onlineService;
-    @Mock ru.messenger.chaosmessenger.push.service.PushNotificationService pushNotificationService;
-    @Mock SimpMessagingTemplate messagingTemplate;
-    @Mock ObjectMapper objectMapper;
-    @Spy MeterRegistry meterRegistry = new SimpleMeterRegistry();
+    @Mock MessageSendService messageSendService;
+    @Mock MessageEditService messageEditService;
+    @Mock MessageDeleteService messageDeleteService;
+    @Mock MessageReceiptService messageReceiptService;
+    @Mock MessageReactionService messageReactionService;
+    @Mock MessageTimelineService messageTimelineService;
 
     @InjectMocks MessageService messageService;
 
-    User alice;
-    UserDevice aliceDevice;
-
-    @BeforeEach
-    void setUp() {
-        alice = TestFixtures.user(1L, "alice");
-        aliceDevice = TestFixtures.device(10L, 1L, "device-alice-1");
+    @Test
+    @DisplayName("sendEncryptedMessageV2 delegates to MessageSendService")
+    void sendEncryptedMessageV2() {
+        var request = mock(EncryptedSendMessageRequestV2.class);
+        var response = mock(DeviceMessageEventResponse.class);
+        when(messageSendService.sendEncryptedMessageV2("alice", request)).thenReturn(response);
+        assertThat(messageService.sendEncryptedMessageV2("alice", request)).isSameAs(response);
     }
 
     @Test
-    void returnsExistingMessageForSameClientMessageIdRetry() {
-        Message existing = TestFixtures.sentMessage(100L, 5L, 1L, "device-alice-1");
-        existing.setClientMessageId("client-100");
-
-        when(userIdentityService.require("alice")).thenReturn(alice);
-        when(currentDeviceService.requireCurrentDevice()).thenReturn(aliceDevice);
-        when(participantRepository.existsByChatIdAndUserId(5L, 1L)).thenReturn(true);
-        when(messageRepository.findBySenderIdAndSenderDeviceIdAndClientMessageId(1L, "device-alice-1", "client-100"))
-                .thenReturn(Optional.of(existing));
-        when(messageEnvelopeRepository.findByMessageIdAndTargetDeviceId(100L, "device-alice-1"))
-                .thenReturn(Optional.empty());
-
-        DeviceMessageEventResponse response = messageService.sendEncryptedMessageV2(
-                "alice",
-                sendRequest(5L, "client-100", "device-alice-1")
-        );
-
-        assertThat(response.messageId()).isEqualTo(100L);
-        assertThat(response.clientMessageId()).isEqualTo("client-100");
-        verify(messageRepository, never()).save(any());
-        verify(messageEnvelopeRepository, never()).save(any());
-        verify(unreadService, never()).increment(anyLong(), anyLong());
+    @DisplayName("editEncryptedMessageV2 delegates to MessageEditService")
+    void editEncryptedMessageV2() {
+        var request = mock(EncryptedEditMessageRequestV2.class);
+        var response = mock(DeviceMessageEventResponse.class);
+        when(messageEditService.editEncryptedMessageV2("alice", 500L, request)).thenReturn(response);
+        assertThat(messageService.editEncryptedMessageV2("alice", 500L, request)).isSameAs(response);
     }
 
     @Test
-    void rejectsClientMessageIdConflictInsideSameSenderDeviceScope() {
-        Message existing = TestFixtures.sentMessage(100L, 6L, 1L, "device-alice-1");
-        existing.setClientMessageId("client-100");
-
-        when(userIdentityService.require("alice")).thenReturn(alice);
-        when(currentDeviceService.requireCurrentDevice()).thenReturn(aliceDevice);
-        when(participantRepository.existsByChatIdAndUserId(5L, 1L)).thenReturn(true);
-        when(messageRepository.findBySenderIdAndSenderDeviceIdAndClientMessageId(1L, "device-alice-1", "client-100"))
-                .thenReturn(Optional.of(existing));
-
-        assertThatThrownBy(() -> messageService.sendEncryptedMessageV2(
-                "alice",
-                sendRequest(5L, "client-100", "device-alice-1")
-        ))
-                .isInstanceOf(MessageException.class)
-                .hasMessageContaining("clientMessageId");
+    @DisplayName("getChatTimeline delegates to MessageTimelineService")
+    void getChatTimeline() {
+        var response = mock(MessageTimelineItemResponse.class);
+        when(messageTimelineService.getChatTimeline("alice", 100L, 50L, 25)).thenReturn(List.of(response));
+        assertThat(messageService.getChatTimeline("alice", 100L, 50L, 25)).containsExactly(response);
     }
 
     @Test
-    void markChatAsDeliveredWritesReceipt() {
-        when(userIdentityService.require("alice")).thenReturn(alice);
-        when(currentDeviceService.requireCurrentDevice()).thenReturn(aliceDevice);
-        when(participantRepository.existsByChatIdAndUserId(5L, 1L)).thenReturn(true);
-        when(messageRepository.findDistinctSenderIdsByChatIdAndSenderIdNotAndStatus(5L, 1L, Message.MessageStatus.SENT))
-                .thenReturn(List.of(2L));
-        when(messageReceiptRepository.upsertDeliveredForChat(eq(5L), eq(1L), eq("device-alice-1"), any(java.time.LocalDateTime.class)))
-                .thenReturn(1);
-        when(participantRepository.findDistinctUsernamesByChatId(5L)).thenReturn(List.of("alice", "bob"));
-        when(userDeviceRepository.findByUserIdInAndActiveTrue(List.of(2L))).thenReturn(List.of());
-
-        messageService.markChatAsDelivered("alice", 5L);
-
-        verify(messageReceiptRepository).upsertDeliveredForChat(
-                eq(5L), eq(1L), eq("device-alice-1"), any(java.time.LocalDateTime.class)
-        );
-        verify(messageRepository).recalculateAggregateStatusesForChat(5L, 1L);
+    @DisplayName("deleteMessage delegates to MessageDeleteService")
+    void deleteMessage() {
+        messageService.deleteMessage("alice", 500L);
+        verify(messageDeleteService).deleteMessage("alice", 500L);
     }
 
     @Test
-    void markChatAsReadWritesReceipt() {
-        when(userIdentityService.require("alice")).thenReturn(alice);
-        when(currentDeviceService.requireCurrentDevice()).thenReturn(aliceDevice);
-        when(participantRepository.existsByChatIdAndUserId(5L, 1L)).thenReturn(true);
-        when(participantRepository.findUserIdsByChatId(5L)).thenReturn(List.of(1L, 2L));
-        when(messageRepository.findDistinctSenderIdsByChatIdAndSenderIdNotAndStatusNot(5L, 1L, Message.MessageStatus.READ))
-                .thenReturn(List.of(2L));
-        when(messageReceiptRepository.upsertReadForChat(eq(5L), eq(1L), eq("device-alice-1"), any(java.time.LocalDateTime.class)))
-                .thenReturn(1);
-        when(participantRepository.findDistinctUsernamesByChatId(5L)).thenReturn(List.of("alice", "bob"));
-        when(userDeviceRepository.findByUserIdInAndActiveTrue(List.of(2L))).thenReturn(List.of());
-
-        messageService.markChatAsRead("alice", 5L);
-
-        verify(unreadService).reset(1L, 5L);
-        verify(messageReceiptRepository).upsertReadForChat(
-                eq(5L), eq(1L), eq("device-alice-1"), any(java.time.LocalDateTime.class)
-        );
-        verify(messageRepository).recalculateAggregateStatusesForChat(5L, 1L);
+    @DisplayName("markChatAsRead delegates to MessageReceiptService")
+    void markChatAsRead() {
+        messageService.markChatAsRead("alice", 100L);
+        verify(messageReceiptService).markChatAsRead("alice", 100L);
     }
 
     @Test
-    void senderCannotUpdateOwnStatus() {
-        Message msg = TestFixtures.sentMessage(1L, 5L, 1L, "device-alice");
-
-        when(userIdentityService.require("alice")).thenReturn(alice);
-        when(currentDeviceService.requireCurrentDevice()).thenReturn(aliceDevice);
-        when(messageRepository.findById(1L)).thenReturn(Optional.of(msg));
-        when(participantRepository.existsByChatIdAndUserId(5L, 1L)).thenReturn(true);
-
-        messageService.updateMessageStatus("alice", 1L, "READ");
-
-        verify(messageReceiptRepository, never()).save(any());
-        verify(messageRepository, never()).save(any());
+    @DisplayName("markChatAsDelivered delegates to MessageReceiptService")
+    void markChatAsDelivered() {
+        messageService.markChatAsDelivered("alice", 100L);
+        verify(messageReceiptService).markChatAsDelivered("alice", 100L);
     }
 
     @Test
-    void toggleReactionAddsReaction() throws Exception {
-        Message msg = TestFixtures.sentMessage(100L, 5L, 2L, "device-bob-1");
-
-        when(userIdentityService.require("alice")).thenReturn(alice);
-        when(currentDeviceService.requireCurrentDevice()).thenReturn(aliceDevice);
-        when(messageRepository.findById(100L)).thenReturn(Optional.of(msg));
-        when(participantRepository.existsByChatIdAndUserId(5L, 1L)).thenReturn(true);
-        when(objectMapper.writeValueAsString(any())).thenReturn("{}");
-        when(participantRepository.findUserIdsByChatId(5L)).thenReturn(List.of(1L, 2L));
-        when(userDeviceRepository.findByUserIdInAndActiveTrue(any())).thenReturn(List.of());
-        when(participantRepository.findDistinctUsernamesByChatId(5L)).thenReturn(List.of("alice", "bob"));
-
-        ReactionEvent event = messageService.toggleReaction("alice", 100L, "👍");
-
-        assertThat(event.type()).isEqualTo("MESSAGE_REACTION");
-        assertThat(event.emoji()).isEqualTo("👍");
-        assertThat(event.active()).isTrue();
-
-        verify(messageReactionRepository).save(argThat(reaction ->
-                reaction.getMessageId().equals(100L)
-                        && reaction.getChatId().equals(5L)
-                        && reaction.getUserId().equals(1L)
-                        && reaction.getEmoji().equals("👍")
-        ));
+    @DisplayName("updateMessageStatus delegates to MessageReceiptService")
+    void updateMessageStatus() {
+        messageService.updateMessageStatus("alice", 500L, "READ");
+        verify(messageReceiptService).updateMessageStatus("alice", 500L, "READ");
     }
 
     @Test
-    void rejectsGroupMessageWhenWhoCanWritePolicyBlocksSender() {
-        Chat group = new Chat();
-        group.setId(5L);
-        group.setType("GROUP");
-        group.setWhoCanWrite("ADMINS");
-
-        when(userIdentityService.require("alice")).thenReturn(alice);
-        when(currentDeviceService.requireCurrentDevice()).thenReturn(aliceDevice);
-        when(participantRepository.existsByChatIdAndUserId(5L, 1L)).thenReturn(true);
-        when(chatRepository.findById(5L)).thenReturn(Optional.of(group));
-        when(participantRepository.findByChatIdAndUserId(5L, 1L))
-                .thenReturn(Optional.of(new ChatParticipant(5L, 1L, GroupRole.MEMBER)));
-
-        assertThatThrownBy(() -> messageService.sendEncryptedMessageV2(
-                "alice",
-                sendRequest(5L, "client-100", "device-alice-1")
-        ))
-                .isInstanceOf(MessageException.class)
-                .hasMessageContaining("cannot write");
-    }
-
-    @Test
-    void rejectsGroupMessageWhenSenderIsMuted() {
-        Chat group = new Chat();
-        group.setId(5L);
-        group.setType("GROUP");
-        group.setWhoCanWrite("ALL");
-        ChatParticipant participant = new ChatParticipant(5L, 1L, GroupRole.MEMBER);
-        participant.setMutedUntil(LocalDateTime.now().plusMinutes(5));
-
-        when(userIdentityService.require("alice")).thenReturn(alice);
-        when(currentDeviceService.requireCurrentDevice()).thenReturn(aliceDevice);
-        when(participantRepository.existsByChatIdAndUserId(5L, 1L)).thenReturn(true);
-        when(chatRepository.findById(5L)).thenReturn(Optional.of(group));
-        when(participantRepository.findByChatIdAndUserId(5L, 1L)).thenReturn(Optional.of(participant));
-
-        assertThatThrownBy(() -> messageService.sendEncryptedMessageV2("alice", sendRequest(5L, "client-100", "device-alice-1")))
-                .isInstanceOf(MessageException.class)
-                .hasMessageContaining("muted");
-    }
-
-    @Test
-    void rejectsGroupMessageWhenSenderIsBanned() {
-        Chat group = new Chat();
-        group.setId(5L);
-        group.setType("GROUP");
-        group.setWhoCanWrite("ALL");
-        ChatParticipant participant = new ChatParticipant(5L, 1L, GroupRole.MEMBER);
-        participant.setBannedAt(LocalDateTime.now());
-
-        when(userIdentityService.require("alice")).thenReturn(alice);
-        when(currentDeviceService.requireCurrentDevice()).thenReturn(aliceDevice);
-        when(participantRepository.existsByChatIdAndUserId(5L, 1L)).thenReturn(true);
-        when(chatRepository.findById(5L)).thenReturn(Optional.of(group));
-        when(participantRepository.findByChatIdAndUserId(5L, 1L)).thenReturn(Optional.of(participant));
-
-        assertThatThrownBy(() -> messageService.sendEncryptedMessageV2("alice", sendRequest(5L, "client-100", "device-alice-1")))
-                .isInstanceOf(MessageException.class)
-                .hasMessageContaining("banned");
-    }
-
-    private static EncryptedSendMessageRequestV2 sendRequest(Long chatId, String clientMessageId, String senderDeviceId) {
-        return new EncryptedSendMessageRequestV2(
-                chatId,
-                clientMessageId,
-                senderDeviceId,
-                List.of(new EncryptedMessageEnvelopeInput(
-                        "device-alice-1", 1L, "WHISPER", "identity",
-                        null, "ciphertext", "nonce", null, null, null, 1,
-                        null, null
-                )),
-                null
-        );
+    @DisplayName("toggleReaction delegates to MessageReactionService")
+    void toggleReaction() {
+        var response = mock(ReactionEvent.class);
+        when(messageReactionService.toggleReaction("alice", 500L, "👍")).thenReturn(response);
+        assertThat(messageService.toggleReaction("alice", 500L, "👍")).isSameAs(response);
     }
 }
