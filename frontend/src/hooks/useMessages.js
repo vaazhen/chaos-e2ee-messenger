@@ -73,8 +73,8 @@ export function useMessages(myId) {
         setMsgs(prev => ({ ...prev, [chatId]: decrypted }));
       }
       if (fromApi) {
-        try { await api.markRead(chatId); } catch (_) {}
-        try { await api.markDelivered(chatId); } catch (_) {}
+        try { await api.markRead(chatId); } catch (_) { /* ignore optional failure */ }
+        try { await api.markDelivered(chatId); } catch (_) { /* ignore optional failure */ }
       }
     } catch (e) {
       console.error("loadMessages:", e);
@@ -858,7 +858,7 @@ function addHiddenMessageId(myId, messageId) {
   ids.add(String(messageId));
   try {
     localStorage.setItem(hiddenKey(myId), JSON.stringify([...ids].slice(-2000)));
-  } catch (_) {}
+  } catch (_) { /* ignore optional failure */ }
 }
 
 async function compressImageFile(file) {

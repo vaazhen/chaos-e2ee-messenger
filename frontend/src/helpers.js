@@ -115,7 +115,7 @@ export const mapChat = (c, myId, labels) => {
           messageId: lastMessageId,
         })
       : null;
-  } catch (_) {}
+  } catch (_) { /* ignore optional failure */ }
 
   const serverPreview = String(c.lastContent || "").trim();
   const normalizedServerPreview = serverPreview === "[encrypted]" ? "" : serverPreview;

@@ -106,7 +106,7 @@ export default function VoiceMessage({ src, durationMs = 0, variant = "in", onCa
   useEffect(() => () => {
     const audio = audioRef.current;
     if (audio && !audio.paused) {
-      try { audio.pause(); } catch (_) {}
+      try { audio.pause(); } catch (_) { /* ignore media cleanup failure */ }
     }
   }, []);
 
@@ -121,7 +121,7 @@ export default function VoiceMessage({ src, durationMs = 0, variant = "in", onCa
       }
       try {
         window.dispatchEvent(new CustomEvent(PLAY_EVENT, { detail: ownIdRef.current }));
-      } catch (_) {}
+      } catch (_) { /* ignore optional failure */ }
     } else {
       audio.pause();
     }

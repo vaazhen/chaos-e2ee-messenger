@@ -1064,6 +1064,8 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
                   lang={lang}
                   chat={activeChat}
                   chatBg={chatBg}
+                  auth={auth}
+                  setSafetyModal={setSafetyModal}
                   onChangeBg={setChatBg}
                   onClose={() => setChatInfoOpen(false)}
                   onOpenSearch={() => { setChatInfoOpen(false); setChatSearchOpen(true); }}
@@ -1268,14 +1270,14 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
           requests={chatStore.requests.map(c => ({ ...c, name: displayNameForChat(c, auth.me?.id) }))}
           loadingRequests={chatStore.loadingRequests}
           onAcceptRequest={async (chatId) => {
-            try { await api.acceptRequest(chatId); } catch (_) {}
+            try { await api.acceptRequest(chatId); } catch (_) { /* ignore stale request state */ }
             await chatStore.loadRequests(auth.me?.id);
             await chatStore.loadChats(auth.me?.id);
             setShowNewChat(false);
             chatStore.selectChat(chatId);
           }}
           onDeclineRequest={async (chatId) => {
-            try { await api.declineRequest(chatId); } catch (_) {}
+            try { await api.declineRequest(chatId); } catch (_) { /* ignore stale request state */ }
             chatStore.loadRequests(auth.me?.id);
             chatStore.loadChats(auth.me?.id);
           }}
@@ -1372,7 +1374,7 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
   );
 }
 
-function ChatInfoPanel({ chat, chatBg, onChangeBg, onClose, onOpenSearch, lang, panelRef }) {
+function ChatInfoPanel({ chat, chatBg, auth, setSafetyModal, onChangeBg, onClose, onOpenSearch, lang, panelRef }) {
   const effectiveLang = String(lang || "ru").toLowerCase().startsWith("en") ? "en" : "ru";
   const l = (ru, en) => (effectiveLang === "ru" ? ru : en);
 

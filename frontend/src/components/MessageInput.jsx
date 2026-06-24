@@ -647,7 +647,7 @@ return (
         <div className="voice-error">{voiceError}</div>
       )}
 
-      {false && recording && (
+      {recording && (
         <div className={`recording-panel${recordingLocked ? " locked" : ""}`} onClick={e => e.stopPropagation()}>
           <div className="recording-pulse" />
           <span>{formatDuration(recordingMs)}</span>

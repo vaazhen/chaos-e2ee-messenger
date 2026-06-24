@@ -33,7 +33,7 @@ export default function useWebSocket({
 
   const unsub = (name) => {
     if (subsRef.current[name]) {
-      try { subsRef.current[name].unsubscribe(); } catch (_) {}
+      try { subsRef.current[name].unsubscribe(); } catch (_) { /* ignore optional failure */ }
       delete subsRef.current[name];
     }
   };
@@ -55,7 +55,7 @@ export default function useWebSocket({
       if (!client?.connected) return;
       try {
         client.publish({ destination: "/app/user.online", body: "{}" });
-      } catch (_) {}
+      } catch (_) { /* ignore optional failure */ }
     }, 25000);
   };
 
@@ -71,13 +71,13 @@ export default function useWebSocket({
 
     subsRef.current["userStatus"] = client.subscribe("/topic/user/status", (msg) => {
       try { handlersRef.current.onStatusUpdate?.({ type: "user_status", ...JSON.parse(msg.body || "{}") }); }
-      catch (_) {}
+      catch (_) { /* ignore malformed websocket payload */ }
     });
 
     if (did) {
       subsRef.current["myStatus"] = client.subscribe(`/topic/devices/${did}/status`, (msg) => {
         try { handlersRef.current.onStatusUpdate?.({ type: "delivery", ...JSON.parse(msg.body || "{}") }); }
-        catch (_) {}
+        catch (_) { /* ignore malformed websocket payload */ }
       });
     }
 
@@ -86,7 +86,7 @@ export default function useWebSocket({
       try {
         const data = JSON.parse(msg.body || "{}");
         handlersRef.current.onCallSignal?.(data);
-      } catch (_) {}
+      } catch (_) { /* ignore optional failure */ }
     });
 
     subsRef.current["chats"] = client.subscribe(
@@ -144,7 +144,7 @@ export default function useWebSocket({
 
     subsRef.current[typingSubName] = client.subscribe(typingTopic, (msg) => {
       try { handlersRef.current.onTyping?.(JSON.parse(msg.body || "{}"), cid); }
-      catch (_) {}
+      catch (_) { /* ignore malformed websocket payload */ }
     });
   };
 
@@ -210,7 +210,7 @@ export default function useWebSocket({
     return () => {
       stopPresenceHeartbeat();
       unsubAll();
-      try { client.deactivate(); } catch (_) {}
+      try { client.deactivate(); } catch (_) { /* ignore optional failure */ }
       clientRef.current = null;
     };
   }, [enabled, me?.username]); // keep the socket stable across normal re-renders

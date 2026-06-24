@@ -166,7 +166,7 @@ export function useAuth() {
 
   const logout = useCallback(async () => {
     const rt = loadRefreshToken();
-    if (rt) { try { await api.logout(rt); } catch (_) {} }
+    if (rt) { try { await api.logout(rt); } catch (_) { /* ignore optional failure */ } }
     clearToken(); clearRefreshToken(); setMe(null); setSetupToken(null); setScreen("auth");
     if (typeof window !== "undefined" && window.location?.reload) {
       window.location.reload();
