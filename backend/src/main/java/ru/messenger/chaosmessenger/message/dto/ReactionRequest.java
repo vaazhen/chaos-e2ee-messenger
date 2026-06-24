@@ -7,4 +7,5 @@ public record ReactionRequest(
         @NotBlank(message = "Emoji is required")
         @Size(max = 16, message = "Emoji is too long")
         String emoji
-) {}
+) {
+}

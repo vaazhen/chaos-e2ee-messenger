@@ -1,7 +1,11 @@
 package ru.messenger.chaosmessenger.common.api;
 
 import lombok.extern.slf4j.Slf4j;
-import ru.messenger.chaosmessenger.common.exception.*;
+import ru.messenger.chaosmessenger.common.exception.AuthException;
+import ru.messenger.chaosmessenger.common.exception.ChatException;
+import ru.messenger.chaosmessenger.common.exception.CryptoException;
+import ru.messenger.chaosmessenger.common.exception.MessageException;
+import ru.messenger.chaosmessenger.common.exception.RateLimitException;
 
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
@@ -45,7 +49,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiErrorResponse> handleNotFound(NoSuchElementException ex) {
         log.warn("Resource not found: {}", ex.getMessage());
         String code = "NOT_FOUND";
-        String message = localize(code, new Object[]{ex.getMessage()}, "Entity not found");
+        String message = localize(code, new Object[] { ex.getMessage() }, "Entity not found");
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(new ApiErrorResponse(
                         HttpStatus.NOT_FOUND.value(),
@@ -59,7 +63,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiErrorResponse> handleBadRequest(IllegalArgumentException ex) {
         log.warn("Bad request: {}", ex.getMessage());
         String code = "BAD_REQUEST";
-        String message = localize(code, new Object[]{ex.getMessage()}, "Bad request");
+        String message = localize(code, new Object[] { ex.getMessage() }, "Bad request");
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(new ApiErrorResponse(
                         HttpStatus.BAD_REQUEST.value(),
@@ -73,7 +77,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiErrorResponse> handleConflict(IllegalStateException ex) {
         log.warn("Conflict: {}", ex.getMessage());
         String code = "CONFLICT";
-        String message = localize(code, new Object[]{ex.getMessage()}, "Conflict occurred");
+        String message = localize(code, new Object[] { ex.getMessage() }, "Conflict occurred");
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(new ApiErrorResponse(
                         HttpStatus.CONFLICT.value(),
@@ -99,7 +103,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiErrorResponse> handleAuth(AuthException ex) {
         log.warn("Auth error: {}", ex.getMessage());
         String code = "AUTH_ERROR";
-        String message = localize(code, new Object[]{ex.getMessage()}, ex.getMessage());
+        String message = localize(code, new Object[] { ex.getMessage() }, ex.getMessage());
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                 .body(new ApiErrorResponse(HttpStatus.UNAUTHORIZED.value(), code, message, LocalDateTime.now()));
     }
@@ -121,7 +125,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiErrorResponse> handleChatException(ChatException ex) {
         log.warn("Chat error: {}", ex.getMessage());
         String code = "CHAT_ERROR";
-        String message = localize(code, new Object[]{ex.getMessage()}, ex.getMessage());
+        String message = localize(code, new Object[] { ex.getMessage() }, ex.getMessage());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(new ApiErrorResponse(HttpStatus.BAD_REQUEST.value(), code, message, LocalDateTime.now()));
     }
@@ -130,7 +134,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiErrorResponse> handleMessageException(MessageException ex) {
         log.warn("Message error: {}", ex.getMessage());
         String code = "MESSAGE_ERROR";
-        String message = localize(code, new Object[]{ex.getMessage()}, ex.getMessage());
+        String message = localize(code, new Object[] { ex.getMessage() }, ex.getMessage());
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(new ApiErrorResponse(HttpStatus.CONFLICT.value(), code, message, LocalDateTime.now()));
     }
@@ -139,7 +143,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiErrorResponse> handleCryptoException(CryptoException ex) {
         log.error("Crypto error", ex);
         String code = "CRYPTO_ERROR";
-        String message = localize(code, new Object[]{ex.getMessage()}, ex.getMessage());
+        String message = localize(code, new Object[] { ex.getMessage() }, ex.getMessage());
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(new ApiErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR.value(), code, message, LocalDateTime.now()));
     }
@@ -163,7 +167,9 @@ public class GlobalExceptionHandler {
         String message = ex.getBindingResult().getFieldErrors().stream()
                 .map(error -> error.getField() + ": " + error.getDefaultMessage())
                 .collect(Collectors.joining("; "));
-        if (message.isBlank()) message = "Validation failed";
+        if (message.isBlank()) {
+            message = "Validation failed";
+        }
         log.warn("Validation failed: {}", message);
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(new ApiErrorResponse(HttpStatus.BAD_REQUEST.value(), "VALIDATION_ERROR", message, LocalDateTime.now()));
@@ -174,12 +180,13 @@ public class GlobalExceptionHandler {
         String message = ex.getConstraintViolations().stream()
                 .map(v -> v.getPropertyPath() + ": " + v.getMessage())
                 .collect(Collectors.joining("; "));
-        if (message.isBlank()) message = "Validation failed";
+        if (message.isBlank()) {
+            message = "Validation failed";
+        }
         log.warn("Constraint violation: {}", message);
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(new ApiErrorResponse(HttpStatus.BAD_REQUEST.value(), "VALIDATION_ERROR", message, LocalDateTime.now()));
     }
-
 
     @ExceptionHandler(MissingRequestHeaderException.class)
     public ResponseEntity<ApiErrorResponse> handleMissingHeader(MissingRequestHeaderException ex) {
@@ -247,7 +254,9 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiErrorResponse> handleResponseStatus(ResponseStatusException ex) {
         log.warn("Response status: {} - {}", ex.getStatusCode(), ex.getReason());
         HttpStatus status = HttpStatus.resolve(ex.getStatusCode().value());
-        if (status == null) status = HttpStatus.INTERNAL_SERVER_ERROR;
+        if (status == null) {
+            status = HttpStatus.INTERNAL_SERVER_ERROR;
+        }
         String message = ex.getReason() == null || ex.getReason().isBlank()
                 ? status.getReasonPhrase()
                 : ex.getReason();

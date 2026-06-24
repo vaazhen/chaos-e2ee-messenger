@@ -1,8 +1,8 @@
 package ru.messenger.chaosmessenger.crypto.prekey;
 
-
 import ru.messenger.chaosmessenger.user.service.UserIdentityService;
-import ru.messenger.chaosmessenger.common.exception.*;
+import ru.messenger.chaosmessenger.common.exception.ChatException;
+import ru.messenger.chaosmessenger.common.exception.CryptoException;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -11,7 +11,11 @@ import ru.messenger.chaosmessenger.chat.repository.ChatParticipantRepository;
 import ru.messenger.chaosmessenger.crypto.device.CurrentDeviceService;
 import ru.messenger.chaosmessenger.crypto.device.UserDevice;
 import ru.messenger.chaosmessenger.crypto.device.UserDeviceRepository;
-import ru.messenger.chaosmessenger.crypto.dto.*;
+import ru.messenger.chaosmessenger.crypto.dto.DeviceBundleDto;
+import ru.messenger.chaosmessenger.crypto.dto.OneTimePreKeyDto;
+import ru.messenger.chaosmessenger.crypto.dto.PreKeyBundleResponse;
+import ru.messenger.chaosmessenger.crypto.dto.ResolvedChatDevicesResponse;
+import ru.messenger.chaosmessenger.crypto.dto.SignedPreKeyDto;
 import ru.messenger.chaosmessenger.user.domain.User;
 
 import java.time.LocalDateTime;
@@ -242,5 +246,6 @@ public class PreKeyService {
     private record ReadOnlyPreKeys(
             Map<Long, SignedPreKey> signedByDeviceId,
             Map<Long, OneTimePreKey> oneTimeByDeviceId
-    ) {}
+    ) {
+    }
 }

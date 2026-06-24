@@ -7,4 +7,5 @@ public record ResolvedChatDevicesResponse(
         String username,
         String currentDeviceId,
         List<DeviceBundleDto> targetDevices
-) {}
+) {
+}

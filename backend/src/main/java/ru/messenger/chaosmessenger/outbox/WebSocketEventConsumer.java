@@ -79,7 +79,9 @@ public class WebSocketEventConsumer {
 
     private void fanoutMessageEvent(DomainEvent event, JsonNode payload) {
         Long chatId = payload.has("chatId") ? payload.get("chatId").asLong() : null;
-        if (chatId == null) return;
+        if (chatId == null) {
+            return;
+        }
 
         if ("MESSAGE_STATUS".equals(event.eventType()) || "MESSAGE_BULK_STATUS".equals(event.eventType())) {
             fanoutMessageStatus(event, payload);
@@ -93,7 +95,9 @@ public class WebSocketEventConsumer {
     private void fanoutMessageStatus(DomainEvent event, JsonNode payload) {
         if ("MESSAGE_STATUS".equals(event.eventType())) {
             JsonNode senderId = payload.get("senderId");
-            if (senderId == null) return;
+            if (senderId == null) {
+                return;
+            }
             Long chatId = payload.has("chatId") ? payload.get("chatId").asLong() : null;
             sendToDeviceTopic(payload, senderId.asLong(), "/status", payload);
         } else if ("MESSAGE_BULK_STATUS".equals(event.eventType())) {
@@ -176,7 +180,7 @@ public class WebSocketEventConsumer {
 
     @DltHandler
     public void handleDlt(DomainEvent event) {
-        log.error("Event sent to DLT: {}:{} type={}. Payload: {}", event.aggregateType(), event.aggregateId(), event.eventType(), event.payload());
+        log.error("Event sent to DLT: {}:{} type={}", event.aggregateType(), event.aggregateId(), event.eventType());
     }
 
     private void fanoutChatListUpdate(JsonNode payload, String reason) {

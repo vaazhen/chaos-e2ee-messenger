@@ -10,4 +10,5 @@ public record OneTimePreKeyDto(
         @NotBlank(message = "One-time pre-key public key is required")
         @Size(max = 4096, message = "One-time pre-key public key is too long")
         String publicKey
-) {}
+) {
+}

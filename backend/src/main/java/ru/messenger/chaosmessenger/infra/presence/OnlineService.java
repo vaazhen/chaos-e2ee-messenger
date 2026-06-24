@@ -79,7 +79,9 @@ public class OnlineService {
 
     public LocalDateTime getLastSeen(String username) {
         String s = redisTemplate.opsForValue().get(lastSeenKey(username));
-        if (s == null) return LocalDateTime.now().minusDays(1);
+        if (s == null) {
+            return LocalDateTime.now().minusDays(1);
+        }
         try {
             return LocalDateTime.parse(s);
         } catch (Exception ex) {
@@ -88,7 +90,9 @@ public class OnlineService {
     }
 
     public Map<String, Boolean> isOnlineMany(Collection<String> usernames) {
-        if (usernames == null || usernames.isEmpty()) return Map.of();
+        if (usernames == null || usernames.isEmpty()) {
+            return Map.of();
+        }
 
         List<String> distinct = usernames.stream()
                 .filter(Objects::nonNull)
@@ -96,7 +100,9 @@ public class OnlineService {
                 .filter(s -> !s.isBlank())
                 .distinct()
                 .toList();
-        if (distinct.isEmpty()) return Map.of();
+        if (distinct.isEmpty()) {
+            return Map.of();
+        }
 
         List<String> keys = distinct.stream().map(this::presenceKey).toList();
         List<String> values = redisTemplate.opsForValue().multiGet(keys);
@@ -110,7 +116,9 @@ public class OnlineService {
     }
 
     public Map<String, LocalDateTime> getLastSeenMany(Collection<String> usernames) {
-        if (usernames == null || usernames.isEmpty()) return Map.of();
+        if (usernames == null || usernames.isEmpty()) {
+            return Map.of();
+        }
 
         List<String> distinct = usernames.stream()
                 .filter(Objects::nonNull)
@@ -118,7 +126,9 @@ public class OnlineService {
                 .filter(s -> !s.isBlank())
                 .distinct()
                 .toList();
-        if (distinct.isEmpty()) return Map.of();
+        if (distinct.isEmpty()) {
+            return Map.of();
+        }
 
         List<String> keys = distinct.stream().map(this::lastSeenKey).toList();
         List<String> values = redisTemplate.opsForValue().multiGet(keys);
@@ -132,7 +142,9 @@ public class OnlineService {
     }
 
     private LocalDateTime parseLastSeenOrDefault(String s) {
-        if (s == null) return LocalDateTime.now().minusDays(1);
+        if (s == null) {
+            return LocalDateTime.now().minusDays(1);
+        }
         try {
             return LocalDateTime.parse(s);
         } catch (Exception ex) {

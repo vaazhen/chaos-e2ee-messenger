@@ -4,7 +4,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.messenger.chaosmessenger.chat.access.ChatQueryService;
-import ru.messenger.chaosmessenger.chat.dto.*;
+import ru.messenger.chaosmessenger.chat.dto.ChatResponse;
+import ru.messenger.chaosmessenger.chat.dto.UpdateGroupParticipantsRequest;
+import ru.messenger.chaosmessenger.chat.dto.UpdateGroupPermissionsRequest;
+import ru.messenger.chaosmessenger.chat.dto.UpdateGroupRoleRequest;
+import ru.messenger.chaosmessenger.chat.dto.UpdateGroupSettingsRequest;
 
 import java.util.List;
 

@@ -13,4 +13,5 @@ public record VerifyCodeResponse(
         String deviceRegistrationToken,
         Long userId,
         String username
-) {}
+) {
+}

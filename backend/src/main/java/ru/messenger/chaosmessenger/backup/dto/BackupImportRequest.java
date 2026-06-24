@@ -8,4 +8,5 @@ public record BackupImportRequest(
         @NotBlank String iv,
         String backupType,
         String checksum
-) {}
+) {
+}

@@ -12,4 +12,5 @@ public record AuthResponse(
         String token,
         String refreshToken,
         String deviceRegistrationToken
-) {}
+) {
+}

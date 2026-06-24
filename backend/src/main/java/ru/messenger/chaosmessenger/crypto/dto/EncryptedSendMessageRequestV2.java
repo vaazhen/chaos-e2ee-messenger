@@ -22,4 +22,5 @@ public record EncryptedSendMessageRequestV2(
         @Size(max = 1000, message = "Too many encrypted envelopes")
         List<EncryptedMessageEnvelopeInput> envelopes,
         Integer selfDestructSeconds
-) {}
+) {
+}

@@ -22,6 +22,7 @@ import ru.messenger.chaosmessenger.user.dto.UserSummaryResponse;
 import ru.messenger.chaosmessenger.user.repository.UserRepository;
 
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 
 @Slf4j
@@ -44,7 +45,6 @@ public class UserService {
                 .orElseThrow(() -> new NoSuchElementException("User not found: " + username));
         return new UserSummaryResponse(user.getId(), user.getUsername());
     }
-
 
     public List<UserSearchResponse> searchUsers(String q) {
         String query = q == null ? "" : q.trim();

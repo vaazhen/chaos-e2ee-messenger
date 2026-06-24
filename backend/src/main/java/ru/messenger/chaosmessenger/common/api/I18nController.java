@@ -36,8 +36,8 @@ public class I18nController {
     }
 
     @GetMapping("/available")
-    public ResponseEntity<List<Map<String,String>>> available() {
-        List<Map<String,String>> langs = List.of(
+    public ResponseEntity<List<Map<String, String>>> available() {
+        List<Map<String, String>> langs = List.of(
                 Map.of("code", "en", "label", "English"),
                 Map.of("code", "ru", "label", "Russian")
         );

@@ -25,7 +25,8 @@ public class DemoService {
     private final VerificationCodeRepository codeRepository;
     private final PasswordEncoder passwordEncoder;
 
-    private record DemoAccount(String phone, String code, String username, String firstName, String lastName) {}
+    private record DemoAccount(String phone, String code, String username, String firstName, String lastName) {
+    }
 
     @Transactional
     public Map<String, Object> seed() {

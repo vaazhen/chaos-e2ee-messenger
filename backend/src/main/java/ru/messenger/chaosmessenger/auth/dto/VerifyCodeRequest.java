@@ -7,4 +7,5 @@ public record VerifyCodeRequest(
         String phone,
         @NotBlank(message = "Verification code is required")
         String code
-) {}
+) {
+}

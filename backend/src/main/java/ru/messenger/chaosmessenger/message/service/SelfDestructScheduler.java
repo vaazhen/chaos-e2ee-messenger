@@ -26,7 +26,9 @@ public class SelfDestructScheduler {
     @Transactional
     public void deleteExpiredMessages() {
         List<Message> expired = messageRepository.findByExpiresAtBeforeAndDeletedAtIsNull(LocalDateTime.now());
-        if (expired.isEmpty()) return;
+        if (expired.isEmpty()) {
+            return;
+        }
 
         log.info("Self-destruct: deleting {} expired messages", expired.size());
 

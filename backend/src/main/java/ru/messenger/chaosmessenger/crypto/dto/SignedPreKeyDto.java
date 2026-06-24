@@ -13,4 +13,5 @@ public record SignedPreKeyDto(
         @NotBlank(message = "Signed pre-key signature is required")
         @Size(max = 4096, message = "Signed pre-key signature is too long")
         String signature
-) {}
+) {
+}

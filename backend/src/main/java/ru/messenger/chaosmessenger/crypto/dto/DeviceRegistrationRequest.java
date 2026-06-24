@@ -30,4 +30,5 @@ public record DeviceRegistrationRequest(
         @Valid
         @Size(max = 500, message = "Too many one-time pre-keys")
         List<OneTimePreKeyDto> oneTimePreKeys
-) {}
+) {
+}

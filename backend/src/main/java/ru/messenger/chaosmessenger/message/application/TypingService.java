@@ -4,7 +4,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import ru.messenger.chaosmessenger.chat.repository.ChatParticipantRepository;
-import ru.messenger.chaosmessenger.user.domain.User;
 import ru.messenger.chaosmessenger.user.service.UserIdentityService;
 
 @Slf4j

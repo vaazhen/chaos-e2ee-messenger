@@ -9,7 +9,11 @@ import ru.messenger.chaosmessenger.chat.domain.Chat;
 import ru.messenger.chaosmessenger.chat.domain.ChatParticipant;
 import ru.messenger.chaosmessenger.chat.domain.GroupPolicy;
 import ru.messenger.chaosmessenger.chat.domain.GroupRole;
-import ru.messenger.chaosmessenger.chat.dto.*;
+import ru.messenger.chaosmessenger.chat.dto.ChatResponse;
+import ru.messenger.chaosmessenger.chat.dto.UpdateGroupParticipantsRequest;
+import ru.messenger.chaosmessenger.chat.dto.UpdateGroupPermissionsRequest;
+import ru.messenger.chaosmessenger.chat.dto.UpdateGroupRoleRequest;
+import ru.messenger.chaosmessenger.chat.dto.UpdateGroupSettingsRequest;
 import ru.messenger.chaosmessenger.chat.repository.ChatParticipantRepository;
 import ru.messenger.chaosmessenger.chat.repository.ChatRepository;
 import ru.messenger.chaosmessenger.common.TransactionUtils;
@@ -36,9 +40,12 @@ public class GroupModerationService {
 
     @Transactional
     public Long createGroupChat(String currentUsername, String name, List<Long> memberIds) {
-        if (name == null || name.isBlank()) throw new ChatException("Group name is required");
-        if (memberIds == null || memberIds.isEmpty())
+        if (name == null || name.isBlank()) {
+            throw new ChatException("Group name is required");
+        }
+        if (memberIds == null || memberIds.isEmpty()) {
             throw new ChatException("Group must have at least one other member");
+        }
 
         User creator = userRepository.findByUsername(currentUsername)
                 .orElseThrow(() -> new ChatException("Current user not found"));
@@ -154,7 +161,9 @@ public class GroupModerationService {
 
         if (request.name() != null) {
             String normalizedName = request.name().trim();
-            if (normalizedName.isBlank()) throw new ChatException("Group name is required");
+            if (normalizedName.isBlank()) {
+                throw new ChatException("Group name is required");
+            }
             chat.setName(normalizedName);
         }
         if (request.avatarUrl() != null) {

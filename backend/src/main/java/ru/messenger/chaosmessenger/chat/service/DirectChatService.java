@@ -126,11 +126,15 @@ public class DirectChatService {
         Chat chat = chatRepository.findById(chatId)
                 .orElseThrow(() -> new ChatException("Chat not found"));
 
-        if (!"DIRECT".equals(chat.getType())) throw new ChatException("Not a direct chat");
+        if (!"DIRECT".equals(chat.getType())) {
+            throw new ChatException("Not a direct chat");
+        }
         if (!participantRepository.existsByChatIdAndUserId(chatId, currentUser.getId())) {
             throw new ChatException("Not a chat participant");
         }
-        if (!"PENDING".equalsIgnoreCase(chat.getDirectStatus())) return;
+        if (!"PENDING".equalsIgnoreCase(chat.getDirectStatus())) {
+            return;
+        }
         if (Objects.equals(chat.getDirectRequestedBy(), currentUser.getId())) {
             throw new ChatException("Requester cannot accept own request");
         }
@@ -154,11 +158,15 @@ public class DirectChatService {
         Chat chat = chatRepository.findById(chatId)
                 .orElseThrow(() -> new ChatException("Chat not found"));
 
-        if (!"DIRECT".equals(chat.getType())) throw new ChatException("Not a direct chat");
+        if (!"DIRECT".equals(chat.getType())) {
+            throw new ChatException("Not a direct chat");
+        }
         if (!participantRepository.existsByChatIdAndUserId(chatId, currentUser.getId())) {
             throw new ChatException("Not a chat participant");
         }
-        if (!"PENDING".equalsIgnoreCase(chat.getDirectStatus())) return;
+        if (!"PENDING".equalsIgnoreCase(chat.getDirectStatus())) {
+            return;
+        }
         if (Objects.equals(chat.getDirectRequestedBy(), currentUser.getId())) {
             throw new ChatException("Requester cannot decline own request");
         }

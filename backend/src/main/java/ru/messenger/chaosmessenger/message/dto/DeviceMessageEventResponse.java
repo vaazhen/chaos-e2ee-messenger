@@ -20,4 +20,5 @@ public record DeviceMessageEventResponse(
         Map<String, Long> reactions,
         Set<String> myReactions,
         LocalDateTime expiresAt
-) {}
+) {
+}

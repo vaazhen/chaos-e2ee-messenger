@@ -51,6 +51,13 @@ class GroupModerationServiceTest {
     void setUp() {
         alice = TestFixtures.user(1L, "alice");
         bob = TestFixtures.user(2L, "bob");
+
+        lenient().doCallRealMethod()
+                .when(chatAccessService).validateRoleChange(any(ChatParticipant.class), any(ChatParticipant.class), any(GroupRole.class));
+        lenient().doCallRealMethod()
+                .when(chatAccessService).validateCanModerate(any(ChatParticipant.class), any(ChatParticipant.class), anyLong(), anyString());
+        lenient().doCallRealMethod()
+                .when(chatAccessService).parseRole(anyString());
     }
 
     @Nested
@@ -187,6 +194,8 @@ class GroupModerationServiceTest {
             when(chatAccessService.requireActiveGroup(20L)).thenReturn(group);
             when(chatAccessService.requireParticipantEntity(20L, 1L))
                     .thenReturn(new ChatParticipant(20L, 1L, GroupRole.MODERATOR));
+            when(chatAccessService.requireParticipantEntity(20L, 2L))
+                    .thenReturn(new ChatParticipant(20L, 2L, GroupRole.MEMBER));
 
             assertThatThrownBy(() -> groupModerationService.updateGroupParticipantRole(
                     "alice", 20L, 2L, new UpdateGroupRoleRequest("MEMBER")))

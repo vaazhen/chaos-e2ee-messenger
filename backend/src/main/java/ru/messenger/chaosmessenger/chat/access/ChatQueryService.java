@@ -24,7 +24,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
@@ -57,15 +56,23 @@ public class ChatQueryService {
                 safeLimit,
                 safeOffset
         );
-        if (chatIds.isEmpty()) return List.of();
+        if (chatIds.isEmpty()) {
+            return List.of();
+        }
 
         List<Chat> chats = chatRepository.findByIdIn(chatIds);
         List<Long> visibleChatIds = chats.stream()
                 .filter(c -> {
-                    if (c.getDeletedAt() != null) return false;
-                    if (!"DIRECT".equals(c.getType())) return true;
+                    if (c.getDeletedAt() != null) {
+                        return false;
+                    }
+                    if (!"DIRECT".equals(c.getType())) {
+                        return true;
+                    }
                     String st = c.getDirectStatus();
-                    if ("DECLINED".equalsIgnoreCase(st)) return false;
+                    if ("DECLINED".equalsIgnoreCase(st)) {
+                        return false;
+                    }
                     if ("PENDING".equalsIgnoreCase(st)) {
                         return Objects.equals(c.getDirectRequestedBy(), currentUser.getId());
                     }
@@ -73,7 +80,9 @@ public class ChatQueryService {
                 })
                 .map(Chat::getId)
                 .toList();
-        if (visibleChatIds.isEmpty()) return List.of();
+        if (visibleChatIds.isEmpty()) {
+            return List.of();
+        }
 
         List<Long> orderedVisibleIds = chatIds.stream()
                 .filter(visibleChatIds::contains)
@@ -100,17 +109,21 @@ public class ChatQueryService {
 
         final String savedName = chatAccessService.savedChatName();
 
-        Map<Long, Long> unreadByChatId = unreadService.getMany(currentUser.getId(), orderedVisibleIds);
-        if (unreadByChatId == null) unreadByChatId = Map.of();
+        Map<Long, Long> unreadByChatIdResult = unreadService.getMany(currentUser.getId(), orderedVisibleIds);
+        final Map<Long, Long> unreadByChatId = unreadByChatIdResult == null ? Map.of() : unreadByChatIdResult;
 
         Set<String> usernames = usersById.values().stream()
                 .map(User::getUsername)
                 .filter(Objects::nonNull)
                 .collect(Collectors.toSet());
-        Map<String, Boolean> onlineByUsername = onlineService.isOnlineMany(usernames);
-        if (onlineByUsername == null) onlineByUsername = Map.of();
-        Map<String, LocalDateTime> lastSeenByUsername = onlineService.getLastSeenMany(usernames);
-        if (lastSeenByUsername == null) lastSeenByUsername = Map.of();
+        Map<String, Boolean> onlineByUsernameResult = onlineService.isOnlineMany(usernames);
+        final Map<String, Boolean> onlineByUsername = onlineByUsernameResult == null
+                ? Map.of()
+                : onlineByUsernameResult;
+        Map<String, LocalDateTime> lastSeenByUsernameResult = onlineService.getLastSeenMany(usernames);
+        final Map<String, LocalDateTime> lastSeenByUsername = lastSeenByUsernameResult == null
+                ? Map.of()
+                : lastSeenByUsernameResult;
 
         Map<Long, ChatResponse> responsesByChatId = chats.stream().map(chat -> {
                     List<ChatParticipant> participants = byChat.getOrDefault(chat.getId(), List.of());
@@ -145,7 +158,9 @@ public class ChatQueryService {
                         List<GroupParticipantInfo> groupInfos = participants.stream()
                                 .map(p -> {
                                     User u = usersById.get(p.getUserId());
-                                    if (u == null && p.getUserId().equals(currentUser.getId())) u = currentUser;
+                                    if (u == null && p.getUserId().equals(currentUser.getId())) {
+                                        u = currentUser;
+                                    }
                                     return new GroupParticipantInfo(
                                             p.getUserId(),
                                             u != null ? u.getUsername() : null,
@@ -227,10 +242,14 @@ public class ChatQueryService {
                 safeLimit,
                 safeOffset
         );
-        if (chatIds.isEmpty()) return List.of();
+        if (chatIds.isEmpty()) {
+            return List.of();
+        }
 
         List<Chat> chats = chatRepository.findByIdIn(chatIds);
-        if (chats.isEmpty()) return List.of();
+        if (chats.isEmpty()) {
+            return List.of();
+        }
 
         List<ChatParticipant> allParticipants = participantRepository.findByChatIdIn(chatIds);
         Map<Long, List<ChatParticipant>> byChat = allParticipants.stream()
@@ -248,17 +267,21 @@ public class ChatQueryService {
                 .collect(Collectors.toMap(Message::getChatId, m -> m,
                         (left, right) -> left.getCreatedAt().isAfter(right.getCreatedAt()) ? left : right));
 
-        Map<Long, Long> unreadByChatId = unreadService.getMany(currentUser.getId(), chatIds);
-        if (unreadByChatId == null) unreadByChatId = Map.of();
+        Map<Long, Long> unreadByChatIdResult = unreadService.getMany(currentUser.getId(), chatIds);
+        final Map<Long, Long> unreadByChatId = unreadByChatIdResult == null ? Map.of() : unreadByChatIdResult;
 
         Set<String> usernames = usersById.values().stream()
                 .map(User::getUsername)
                 .filter(Objects::nonNull)
                 .collect(Collectors.toSet());
-        Map<String, Boolean> onlineByUsername = onlineService.isOnlineMany(usernames);
-        if (onlineByUsername == null) onlineByUsername = Map.of();
-        Map<String, LocalDateTime> lastSeenByUsername = onlineService.getLastSeenMany(usernames);
-        if (lastSeenByUsername == null) lastSeenByUsername = Map.of();
+        Map<String, Boolean> onlineByUsernameResult = onlineService.isOnlineMany(usernames);
+        final Map<String, Boolean> onlineByUsername = onlineByUsernameResult == null
+                ? Map.of()
+                : onlineByUsernameResult;
+        Map<String, LocalDateTime> lastSeenByUsernameResult = onlineService.getLastSeenMany(usernames);
+        final Map<String, LocalDateTime> lastSeenByUsername = lastSeenByUsernameResult == null
+                ? Map.of()
+                : lastSeenByUsernameResult;
 
         Map<Long, ChatResponse> responsesByChatId = chats.stream().map(chat -> {
             List<ChatParticipant> participants = byChat.getOrDefault(chat.getId(), List.of());
@@ -377,7 +400,9 @@ public class ChatQueryService {
             List<GroupParticipantInfo> groupInfos = participants.stream()
                     .map(p -> {
                         User u = usersById.get(p.getUserId());
-                        if (u == null && p.getUserId().equals(currentUser.getId())) u = currentUser;
+                        if (u == null && p.getUserId().equals(currentUser.getId())) {
+                            u = currentUser;
+                        }
                         return new GroupParticipantInfo(
                                 p.getUserId(),
                                 u != null ? u.getUsername() : null,

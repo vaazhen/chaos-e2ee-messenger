@@ -14,7 +14,6 @@ import ru.messenger.chaosmessenger.chat.repository.ChatRepository;
 import ru.messenger.chaosmessenger.common.TransactionUtils;
 import ru.messenger.chaosmessenger.common.exception.ChatException;
 import ru.messenger.chaosmessenger.common.exception.MessageException;
-import ru.messenger.chaosmessenger.crypto.device.CurrentDeviceService;
 import ru.messenger.chaosmessenger.crypto.device.UserDevice;
 import ru.messenger.chaosmessenger.crypto.device.UserDeviceRepository;
 import ru.messenger.chaosmessenger.crypto.dto.EncryptedMessageEnvelopeInput;

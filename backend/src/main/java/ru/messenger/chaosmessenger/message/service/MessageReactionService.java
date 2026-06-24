@@ -7,7 +7,6 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.messenger.chaosmessenger.chat.domain.Message;
 import ru.messenger.chaosmessenger.common.TransactionUtils;
 import ru.messenger.chaosmessenger.common.exception.MessageException;
-import ru.messenger.chaosmessenger.crypto.device.CurrentDeviceService;
 import ru.messenger.chaosmessenger.crypto.device.UserDevice;
 import ru.messenger.chaosmessenger.message.access.MessageAccessService;
 import ru.messenger.chaosmessenger.message.domain.MessageReaction;
@@ -143,7 +142,9 @@ public class MessageReactionService {
     }
 
     public Set<String> myReactions(Long messageId, Long userId) {
-        if (userId == null) return Set.of();
+        if (userId == null) {
+            return Set.of();
+        }
         return messageReactionRepository.findByMessageId(messageId)
                 .stream()
                 .filter(r -> Objects.equals(r.getUserId(), userId))

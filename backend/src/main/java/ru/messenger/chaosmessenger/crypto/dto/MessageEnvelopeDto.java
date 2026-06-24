@@ -15,4 +15,5 @@ public record MessageEnvelopeDto(
         Integer messageIndex,
         String ratchetPublicKey,
         Integer previousChainLength
-) {}
+) {
+}

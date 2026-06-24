@@ -6,10 +6,10 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class NoopSmsSender implements SmsSender {
-    private static final Logger log = LoggerFactory.getLogger(NoopSmsSender.class);
+    private static final Logger LOG = LoggerFactory.getLogger(NoopSmsSender.class);
 
     @Override
     public void sendSms(String phone, String text) {
-        log.info("(NOOP SMS) To {}: {}", phone, text);
+        LOG.info("(NOOP SMS) To {}: {}", phone, text);
     }
 }

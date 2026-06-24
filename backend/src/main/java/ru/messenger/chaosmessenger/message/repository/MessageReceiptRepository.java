@@ -19,7 +19,6 @@ public interface MessageReceiptRepository extends JpaRepository<MessageReceipt, 
 
     List<MessageReceipt> findByMessageIdIn(Collection<Long> messageIds);
 
-
     @Modifying(flushAutomatically = true, clearAutomatically = false)
     @Query(value = """
             insert into message_receipts (
