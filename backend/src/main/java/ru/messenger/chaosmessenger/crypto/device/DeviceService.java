@@ -279,16 +279,16 @@ public class DeviceService {
         oneTimePreKeyRepository.deleteByDeviceId(device.getId());
         oneTimePreKeyRepository.flush();
 
-        for (var dto : request.oneTimePreKeys()) {
-            OneTimePreKey oneTimePreKey = OneTimePreKey.builder()
-                    .device(device)
-                    .preKeyId(dto.preKeyId())
-                    .publicKey(dto.publicKey())
-                    .createdAt(LocalDateTime.now())
-                    .build();
+        List<OneTimePreKey> preKeys = request.oneTimePreKeys().stream()
+                .map(dto -> OneTimePreKey.builder()
+                        .device(device)
+                        .preKeyId(dto.preKeyId())
+                        .publicKey(dto.publicKey())
+                        .createdAt(LocalDateTime.now())
+                        .build())
+                .toList();
 
-            oneTimePreKeyRepository.save(oneTimePreKey);
-        }
+        oneTimePreKeyRepository.saveAll(preKeys);
     }
 
     private void validateOneTimePreKeys(DeviceRegistrationRequest request) {
