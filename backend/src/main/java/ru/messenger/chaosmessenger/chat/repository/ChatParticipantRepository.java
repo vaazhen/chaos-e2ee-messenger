@@ -84,4 +84,13 @@ public interface ChatParticipantRepository extends JpaRepository<ChatParticipant
     Optional<Long> findSavedChatId(
             @Param("userId") Long userId
     );
+
+    @Query(value = """
+            select case when count(*) > 0 then true else false end
+            from chat_participants cp1
+            join chat_participants cp2 on cp1.chat_id = cp2.chat_id
+            where cp1.user_id = :userId1
+              and cp2.user_id = :userId2
+            """, nativeQuery = true)
+    boolean shareAnyChat(@Param("userId1") Long userId1, @Param("userId2") Long userId2);
 }

@@ -3,6 +3,7 @@ package ru.messenger.chaosmessenger.push.api;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -25,7 +26,7 @@ public class PushSubscriptionController {
 
     @Operation(summary = "Subscribe to push notifications")
     @PostMapping("/subscribe")
-    public void subscribe(@RequestBody PushSubscriptionRequest request, Authentication auth) {
+    public void subscribe(@Valid @RequestBody PushSubscriptionRequest request, Authentication auth) {
         User user = userIdentityService.require(auth.getName());
         String deviceId = currentDeviceService.requireCurrentDevice().getDeviceId();
         pushNotificationService.subscribe(
