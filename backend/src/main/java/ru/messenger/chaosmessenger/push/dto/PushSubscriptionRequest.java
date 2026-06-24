@@ -1,7 +1,9 @@
 package ru.messenger.chaosmessenger.push.dto;
 
+import jakarta.validation.constraints.NotBlank;
+
 public record PushSubscriptionRequest(
-        String endpoint,
-        String p256dh,
-        String auth
+        @NotBlank String endpoint,
+        @NotBlank String p256dh,
+        @NotBlank String auth
 ) {}
