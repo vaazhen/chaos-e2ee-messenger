@@ -150,7 +150,7 @@ export default function useWebRTC({ publish, onCallEnded }) {
         for (const candidate of pendingCandidatesRef.current) {
           try {
             await pc.addIceCandidate(new RTCIceCandidate(candidate));
-          } catch {}
+          } catch { /* ignore optional failure */ }
         }
         pendingCandidatesRef.current = [];
       }
@@ -181,7 +181,7 @@ export default function useWebRTC({ publish, onCallEnded }) {
           for (const candidate of pendingCandidatesRef.current) {
             try {
               await pc.addIceCandidate(new RTCIceCandidate(candidate));
-            } catch {}
+            } catch { /* ignore optional failure */ }
           }
           pendingCandidatesRef.current = [];
         }
@@ -191,7 +191,7 @@ export default function useWebRTC({ publish, onCallEnded }) {
         if (pc && pc.remoteDescription) {
           try {
             await pc.addIceCandidate(new RTCIceCandidate({ candidate: msg.candidate, sdpMid: msg.mid }));
-          } catch {}
+          } catch { /* ignore optional failure */ }
         } else if (pc) {
           pendingCandidatesRef.current.push({ candidate: msg.candidate, sdpMid: msg.mid });
         }
@@ -243,7 +243,7 @@ export default function useWebRTC({ publish, onCallEnded }) {
           localStreamRef.current.addTrack(newTrack);
           if (localVideoRef.current) localVideoRef.current.srcObject = localStreamRef.current;
           setIsVideo(true);
-        } catch {}
+        } catch { /* ignore optional failure */ }
       }
     }
   }, []);
