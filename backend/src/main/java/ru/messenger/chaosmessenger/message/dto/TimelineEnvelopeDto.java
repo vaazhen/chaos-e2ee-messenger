@@ -12,4 +12,5 @@ public record TimelineEnvelopeDto(
         Integer messageIndex,
         String ratchetPublicKey,
         Integer previousChainLength
-) {}
+) {
+}

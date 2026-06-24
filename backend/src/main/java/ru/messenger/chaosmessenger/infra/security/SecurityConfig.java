@@ -56,7 +56,7 @@ public class SecurityConfig {
     }
 
     private String[] publicEndpoints() {
-        return new String[]{
+        return new String[] {
                 "/",
                 "/index.html",
                 "/error",
@@ -76,7 +76,7 @@ public class SecurityConfig {
     }
 
     private String[] docsEndpoints() {
-        return new String[]{
+        return new String[] {
                 "/swagger-ui.html",
                 "/swagger-ui/**",
                 "/api-docs",
@@ -85,6 +85,6 @@ public class SecurityConfig {
     }
 
     private String[] prometheusEndpoint() {
-        return new String[]{"/actuator/prometheus"};
+        return new String[] { "/actuator/prometheus" };
     }
 }

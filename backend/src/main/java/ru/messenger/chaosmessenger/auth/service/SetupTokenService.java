@@ -37,7 +37,9 @@ public class SetupTokenService {
 
     /** Resolve the phone bound to the setup token without consuming it. */
     public String getPhone(String token) {
-        if (token == null || token.isBlank()) return null;
+        if (token == null || token.isBlank()) {
+            return null;
+        }
         return redisTemplate.opsForValue().get(PREFIX + token);
     }
 
@@ -47,7 +49,9 @@ public class SetupTokenService {
      * The token is deleted on first use (one-time).
      */
     public String consumePhone(String token) {
-        if (token == null || token.isBlank()) return null;
+        if (token == null || token.isBlank()) {
+            return null;
+        }
         String key = PREFIX + token;
         String phone = redisTemplate.opsForValue().getAndDelete(key);
         if (phone != null) {

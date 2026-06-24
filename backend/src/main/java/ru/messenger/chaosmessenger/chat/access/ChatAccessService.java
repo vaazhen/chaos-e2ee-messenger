@@ -39,8 +39,12 @@ public class ChatAccessService {
     public Chat requireActiveGroup(Long chatId) {
         Chat chat = chatRepository.findById(chatId)
                 .orElseThrow(() -> new ChatException("Chat not found"));
-        if (!"GROUP".equals(chat.getType())) throw new ChatException("Not a group chat");
-        if (chat.getDeletedAt() != null) throw new ChatException("Group is archived");
+        if (!"GROUP".equals(chat.getType())) {
+            throw new ChatException("Not a group chat");
+        }
+        if (chat.getDeletedAt() != null) {
+            throw new ChatException("Group is archived");
+        }
         return chat;
     }
 
@@ -50,7 +54,9 @@ public class ChatAccessService {
     }
 
     public void requirePolicy(GroupRole role, GroupPolicy policy, String message) {
-        if (!role.atLeast(policy.minRole())) throw new ChatException(message);
+        if (!role.atLeast(policy.minRole())) {
+            throw new ChatException(message);
+        }
     }
 
     public void validateRoleChange(ChatParticipant actor, ChatParticipant target, GroupRole targetRole) {
@@ -108,14 +114,20 @@ public class ChatAccessService {
     }
 
     public String normalizeReason(String reason) {
-        if (reason == null) return null;
+        if (reason == null) {
+            return null;
+        }
         String normalized = reason.trim();
-        if (normalized.isBlank()) return null;
+        if (normalized.isBlank()) {
+            return null;
+        }
         return normalized.length() > 255 ? normalized.substring(0, 255) : normalized;
     }
 
     public GroupRole parseRole(String role) {
-        if (role == null || role.isBlank()) throw new ChatException("Role is required");
+        if (role == null || role.isBlank()) {
+            throw new ChatException("Role is required");
+        }
         try {
             return GroupRole.valueOf(role.trim().toUpperCase());
         } catch (IllegalArgumentException e) {
@@ -124,11 +136,17 @@ public class ChatAccessService {
     }
 
     public GroupPolicy parsePolicy(String value, boolean allowAllAlias) {
-        if (value == null || value.isBlank()) throw new ChatException("Policy is required");
+        if (value == null || value.isBlank()) {
+            throw new ChatException("Policy is required");
+        }
         try {
             GroupPolicy policy = GroupPolicy.valueOf(value.trim().toUpperCase());
-            if (allowAllAlias && policy == GroupPolicy.ANYONE) return GroupPolicy.ALL;
-            if (!allowAllAlias && policy == GroupPolicy.ALL) return GroupPolicy.ANYONE;
+            if (allowAllAlias && policy == GroupPolicy.ANYONE) {
+                return GroupPolicy.ALL;
+            }
+            if (!allowAllAlias && policy == GroupPolicy.ALL) {
+                return GroupPolicy.ANYONE;
+            }
             return policy;
         } catch (IllegalArgumentException e) {
             throw new ChatException("Unsupported policy: " + value);
@@ -163,7 +181,9 @@ public class ChatAccessService {
 
     private void writeChatOutboxEvent(Long chatId, String reason, boolean isRequest) {
         String dedupKey = chatId + ":" + reason;
-        if (!seenOutboxEvents.add(dedupKey)) return;
+        if (!seenOutboxEvents.add(dedupKey)) {
+            return;
+        }
 
         try {
             List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);

@@ -9,4 +9,5 @@ import jakarta.validation.constraints.NotBlank;
 public record UpdateGroupRoleRequest(
         @NotBlank(message = "role is required")
         String role
-) {}
+) {
+}

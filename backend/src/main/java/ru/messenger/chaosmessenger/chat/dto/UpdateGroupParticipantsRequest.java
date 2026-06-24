@@ -10,4 +10,5 @@ import java.util.List;
 public record UpdateGroupParticipantsRequest(
         @NotEmpty(message = "At least one user id is required")
         List<Long> userIds
-) {}
+) {
+}

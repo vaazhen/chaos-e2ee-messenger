@@ -20,7 +20,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  */
 public final class TransactionUtils {
 
-    private TransactionUtils() {}
+    private TransactionUtils() {
+    }
 
     public static void afterCommit(Runnable action) {
         if (TransactionSynchronizationManager.isActualTransactionActive()) {

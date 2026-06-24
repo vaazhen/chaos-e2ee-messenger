@@ -5,7 +5,6 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.messenger.chaosmessenger.chat.domain.Message;
-import ru.messenger.chaosmessenger.crypto.device.UserDevice;
 import ru.messenger.chaosmessenger.message.access.MessageAccessService;
 import ru.messenger.chaosmessenger.message.domain.MessageEnvelope;
 import ru.messenger.chaosmessenger.message.dto.MessageTimelineItemResponse;

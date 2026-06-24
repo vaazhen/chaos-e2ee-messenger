@@ -21,7 +21,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class PhoneVerificationService {
 
-    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(PhoneVerificationService.class);
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(PhoneVerificationService.class);
     private static final int MAX_ATTEMPTS = 5;
 
     private final VerificationCodeRepository codeRepo;
@@ -50,14 +50,14 @@ public class PhoneVerificationService {
         codeRepo.saveAndFlush(vc);
 
         smsSender.sendSms(normalizedPhone, "Your verification code: " + code);
-        log.debug("Sent verification code to {}", normalizedPhone);
+        LOG.debug("Sent verification code to {}", normalizedPhone);
     }
 
     @Transactional
     public VerificationResult verifyCode(String phone, String code) {
         String normalizedPhone = normalizePhone(phone);
         try {
-            log.debug("Verifying code for phone={}", normalizedPhone);
+            LOG.debug("Verifying code for phone={}", normalizedPhone);
 
             Optional<VerificationCode> maybe = codeRepo.findTopByPhoneAndUsedAtIsNullOrderByIdDesc(normalizedPhone);
             if (maybe.isEmpty()) {
@@ -67,7 +67,7 @@ public class PhoneVerificationService {
             VerificationCode vc = maybe.get();
             int attempts = vc.getAttempts() == null ? 0 : vc.getAttempts();
             if (attempts >= MAX_ATTEMPTS) {
-                log.warn("Too many attempts for phone={}", normalizedPhone);
+                LOG.warn("Too many attempts for phone={}", normalizedPhone);
                 return new VerificationResult("too_many_attempts", false, false, null, null, null);
             }
 
@@ -108,7 +108,7 @@ public class PhoneVerificationService {
             );
 
         } catch (Exception ex) {
-            log.error("Error while verifying code for phone={}", normalizedPhone, ex);
+            LOG.error("Error while verifying code for phone={}", normalizedPhone, ex);
             throw ex;
         }
     }
@@ -152,5 +152,6 @@ public class PhoneVerificationService {
             String token,
             Long userId,
             String username
-    ) {}
+    ) {
+    }
 }

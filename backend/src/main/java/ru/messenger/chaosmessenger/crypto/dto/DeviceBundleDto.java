@@ -10,4 +10,5 @@ public record DeviceBundleDto(
         String signingPublicKey,
         SignedPreKeyDto signedPreKey,
         OneTimePreKeyDto oneTimePreKey
-) {}
+) {
+}

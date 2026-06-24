@@ -13,4 +13,5 @@ public record CompleteSetupRequest(
         String username,
         @Size(max = 262144, message = "Avatar URL is too long")
         String avatarUrl
-) {}
+) {
+}

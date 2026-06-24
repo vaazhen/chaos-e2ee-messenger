@@ -52,7 +52,9 @@ public class UnreadService {
     }
 
     private long parseLongOrZero(String value) {
-        if (value == null) return 0L;
+        if (value == null) {
+            return 0L;
+        }
         try {
             return Long.parseLong(value);
         } catch (NumberFormatException e) {

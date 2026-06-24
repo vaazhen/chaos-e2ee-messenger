@@ -13,4 +13,5 @@ public record UpdateGroupSettingsRequest(
         String avatarUrl,
         @Size(max = 280, message = "Group bio is too long")
         String bio
-) {}
+) {
+}

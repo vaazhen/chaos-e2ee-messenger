@@ -28,7 +28,9 @@ public enum GroupRole {
     }
 
     public static GroupRole fromString(String raw) {
-        if (raw == null || raw.isBlank()) return MEMBER;
+        if (raw == null || raw.isBlank()) {
+            return MEMBER;
+        }
         try {
             return GroupRole.valueOf(raw.trim().toUpperCase());
         } catch (IllegalArgumentException e) {

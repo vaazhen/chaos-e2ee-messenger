@@ -35,7 +35,6 @@ class BundleControllerTest {
                 "bob", List.of()
         );
 
-        when(authentication.getName()).thenReturn("alice");
         when(currentDeviceService.requireCurrentDevice()).thenReturn(null);
         when(preKeyService.getBundleByUsername("bob")).thenReturn(expected);
 

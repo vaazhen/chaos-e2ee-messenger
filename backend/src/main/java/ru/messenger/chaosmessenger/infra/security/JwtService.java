@@ -1,6 +1,6 @@
 package ru.messenger.chaosmessenger.infra.security;
 
-import ru.messenger.chaosmessenger.common.exception.*;
+import ru.messenger.chaosmessenger.common.exception.CryptoException;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;

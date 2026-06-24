@@ -8,4 +8,5 @@ public record UserProfileResponse(
         String lastName,
         String bio,
         String avatarUrl
-) {}
+) {
+}

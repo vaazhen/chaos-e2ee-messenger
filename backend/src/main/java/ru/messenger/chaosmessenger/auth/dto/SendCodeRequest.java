@@ -6,4 +6,5 @@ public record SendCodeRequest(
         @NotBlank(message = "Phone number is required")
         String phone,
         String via
-) {}
+) {
+}

@@ -126,7 +126,9 @@ public class MessageReceiptService {
         switch (newStatus) {
             case DELIVERED -> markReceiptDelivered(message, user.getId(), deviceId);
             case READ -> markReceiptRead(message, user.getId(), deviceId);
-            case SENT -> { return; }
+            case SENT -> {
+                return;
+            }
         }
 
         updateAggregateStatus(message);
@@ -196,8 +198,12 @@ public class MessageReceiptService {
             anyDelivered = anyDelivered || userDelivered;
         }
 
-        if (allRead) return Message.MessageStatus.READ;
-        if (anyDelivered) return Message.MessageStatus.DELIVERED;
+        if (allRead) {
+            return Message.MessageStatus.READ;
+        }
+        if (anyDelivered) {
+            return Message.MessageStatus.DELIVERED;
+        }
         return Message.MessageStatus.SENT;
     }
 }

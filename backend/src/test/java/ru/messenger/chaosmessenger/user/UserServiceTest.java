@@ -11,6 +11,7 @@ import ru.messenger.chaosmessenger.user.domain.User;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import ru.messenger.chaosmessenger.chat.repository.ChatParticipantRepository;
 import ru.messenger.chaosmessenger.infra.security.JwtService;
+import ru.messenger.chaosmessenger.outbox.OutboxService;
 import ru.messenger.chaosmessenger.user.dto.UpdateProfileRequest;
 import ru.messenger.chaosmessenger.user.repository.UserRepository;
 import ru.messenger.chaosmessenger.user.service.UserIdentityService;
@@ -33,6 +34,7 @@ class UserServiceTest {
     @Mock JwtService jwtService;
     @Mock ChatParticipantRepository participantRepository;
     @Mock SimpMessagingTemplate messagingTemplate;
+    @Mock OutboxService outboxService;
 
     @InjectMocks UserService userService;
 

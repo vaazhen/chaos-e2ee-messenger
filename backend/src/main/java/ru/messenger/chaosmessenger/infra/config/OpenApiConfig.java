@@ -24,12 +24,12 @@ public class OpenApiConfig {
                         .title("Chaos Messenger API")
                         .description("""
                                 E2EE messenger backend based on the X3DH key-agreement protocol + Symmetric Ratchet (inspired by Signal).
-                                
+
                                 **Authentication:** all protected endpoints require a JWT token in the header:
                                 `Authorization: Bearer <token>`
-                                
+
                                 **Device:** most endpoints require the `X-Device-Id` header containing the registered device UUID.
-                                
+
                                 Obtain a token via `/api/auth/login` or `/api/auth/phone/verify`.
                                 """)
                         .version("1.0.0")

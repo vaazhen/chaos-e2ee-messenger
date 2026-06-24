@@ -5,4 +5,5 @@ public record BackupInfoResponse(
         Integer latestVersion,
         Integer backupCount,
         String createdAt
-) {}
+) {
+}

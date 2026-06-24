@@ -15,7 +15,7 @@ import java.util.UUID;
 
 @Component
 public class RequestLoggingFilter extends OncePerRequestFilter {
-    private static final Logger log = LoggerFactory.getLogger(RequestLoggingFilter.class);
+    private static final Logger LOG = LoggerFactory.getLogger(RequestLoggingFilter.class);
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
@@ -26,12 +26,12 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
             // suppress noisy logging for Prometheus scrapes and static assets
             if (uri != null && (uri.contains("/actuator/prometheus") || uri.endsWith(".css") || uri.endsWith(".js") || uri.endsWith(".png") || uri.endsWith(".ico") || uri.endsWith(".svg"))) {
                 // debug only for noisy endpoints
-                log.debug("Request {} {} from {} (suppressed)", request.getMethod(), uri, request.getRemoteAddr());
+                LOG.debug("Request {} {} from {} (suppressed)", request.getMethod(), uri, request.getRemoteAddr());
                 filterChain.doFilter(request, response);
             } else {
-                log.info("Incoming request {} {} from {}", request.getMethod(), uri, request.getRemoteAddr());
+                LOG.info("Incoming request {} {} from {}", request.getMethod(), uri, request.getRemoteAddr());
                 filterChain.doFilter(request, response);
-                log.info("Completed request {} {} -> {}", request.getMethod(), uri, response.getStatus());
+                LOG.info("Completed request {} {} -> {}", request.getMethod(), uri, response.getStatus());
             }
         } finally {
             MDC.remove("requestId");

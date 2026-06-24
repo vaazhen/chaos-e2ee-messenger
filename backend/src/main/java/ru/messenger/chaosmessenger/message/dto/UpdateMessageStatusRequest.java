@@ -10,4 +10,5 @@ public record UpdateMessageStatusRequest(
         @NotBlank(message = "Status is required")
         @Pattern(regexp = "DELIVERED|READ", message = "Status must be DELIVERED or READ")
         String status
-) {}
+) {
+}

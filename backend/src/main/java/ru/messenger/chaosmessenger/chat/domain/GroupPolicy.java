@@ -30,7 +30,9 @@ public enum GroupPolicy {
     }
 
     public static GroupPolicy fromString(String raw, GroupPolicy fallback) {
-        if (raw == null || raw.isBlank()) return fallback;
+        if (raw == null || raw.isBlank()) {
+            return fallback;
+        }
         try {
             return GroupPolicy.valueOf(raw.trim().toUpperCase());
         } catch (IllegalArgumentException e) {

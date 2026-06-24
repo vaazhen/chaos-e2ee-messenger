@@ -28,11 +28,15 @@ public class OutboxPublisher {
     @Transactional
     public void publishPendingEvents() {
         List<OutboxEvent> unpublished = outboxRepository.findAllUnpublished();
-        if (unpublished.isEmpty()) return;
+        if (unpublished.isEmpty()) {
+            return;
+        }
 
         int count = 0;
         for (OutboxEvent event : unpublished) {
-            if (count >= batchSize) break;
+            if (count >= batchSize) {
+                break;
+            }
 
             DomainEvent domainEvent = DomainEvent.from(event);
             try {

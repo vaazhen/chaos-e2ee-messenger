@@ -15,4 +15,5 @@ public record GroupParticipantInfo(
         String role,
         LocalDateTime mutedUntil,
         boolean banned
-) {}
+) {
+}

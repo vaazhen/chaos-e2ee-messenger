@@ -58,6 +58,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.StreamSupport;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -194,14 +195,20 @@ class MessageServiceAdvancedTest {
         assertThat(saved.getContent()).isEqualTo("[encrypted]");
         assertThat(saved.getStatus()).isEqualTo(Message.MessageStatus.SENT);
 
-        ArgumentCaptor<MessageEnvelope> envelopeCaptor = ArgumentCaptor.forClass(MessageEnvelope.class);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Iterable<MessageEnvelope>> envelopeCaptor = ArgumentCaptor.forClass(Iterable.class);
         verify(messageEnvelopeRepository, atLeastOnce()).saveAll(envelopeCaptor.capture());
 
-        assertThat(envelopeCaptor.getAllValues())
+        List<MessageEnvelope> savedEnvelopes = StreamSupport.stream(
+                envelopeCaptor.getValue().spliterator(),
+                false
+        ).toList();
+
+        assertThat(savedEnvelopes)
                 .extracting(MessageEnvelope::getTargetDeviceId)
                 .containsExactlyInAnyOrder("alice-phone", "bob-phone");
 
-        assertThat(envelopeCaptor.getAllValues())
+        assertThat(savedEnvelopes)
                 .allSatisfy(env -> {
                     assertThat(env.getMessageId()).isEqualTo(500L);
                     assertThat(env.getChatId()).isEqualTo(100L);

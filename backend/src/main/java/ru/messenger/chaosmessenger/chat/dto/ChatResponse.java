@@ -113,7 +113,8 @@ public record ChatResponse(
             Long lastMessageSenderId,
             List<Long> participants,
             long unreadCount
-    ) {}
+    ) {
+    }
 
     public record GroupParams(
             Long chatId,
@@ -132,7 +133,8 @@ public record ChatResponse(
             String whoCanInvite,
             String myRole,
             List<GroupParticipantInfo> groupParticipants
-    ) {}
+    ) {
+    }
 
     public record DirectParams(
             Long chatId,
@@ -153,5 +155,6 @@ public record ChatResponse(
             LocalDateTime lastSeen,
             String directStatus,
             Long directRequestedBy
-    ) {}
+    ) {
+    }
 }

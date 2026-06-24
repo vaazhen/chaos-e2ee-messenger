@@ -9,4 +9,5 @@ public record CurrentUserResponse(
         String bio,
         String avatarUrl,
         String publicKey
-) {}
+) {
+}

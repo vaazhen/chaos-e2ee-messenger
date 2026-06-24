@@ -1,8 +1,8 @@
 package ru.messenger.chaosmessenger.crypto.device;
 
-
 import ru.messenger.chaosmessenger.user.service.UserIdentityService;
-import ru.messenger.chaosmessenger.common.exception.*;
+import ru.messenger.chaosmessenger.common.exception.AuthException;
+import ru.messenger.chaosmessenger.common.exception.CryptoException;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -24,6 +24,7 @@ import java.util.Arrays;
 import java.util.Base64;
 import java.time.LocalDateTime;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -106,7 +107,6 @@ public class DeviceService {
         return new DeviceRegistrationResponse(device.getDeviceId(), device.getId());
     }
 
-
     @Transactional(readOnly = true)
     public java.util.List<UserDeviceResponse> listMyDevices(String username, String currentDeviceId) {
         User user = userIdentityService.require(username);
@@ -156,15 +156,18 @@ public class DeviceService {
                 device.getCreatedAt()
         );
     }
+
     private void upsertSignedPreKey(UserDevice device, DeviceRegistrationRequest request) {
         Integer preKeyId  = request.signedPreKey().preKeyId();
         String publicKey  = request.signedPreKey().publicKey();
         String signature  = request.signedPreKey().signature();
 
-        if (publicKey == null || publicKey.isBlank())
+        if (publicKey == null || publicKey.isBlank()) {
             throw new IllegalArgumentException("signedPreKey.publicKey is required");
-        if (signature == null || signature.isBlank())
+        }
+        if (signature == null || signature.isBlank()) {
             throw new IllegalArgumentException("signedPreKey.signature is required");
+        }
         verifySignedPreKeySignature(device.getSigningPublicKey(), publicKey, signature);
 
         Optional<SignedPreKey> existingOpt = signedPreKeyRepository.findByDeviceIdAndPreKeyId(device.getId(), preKeyId);
@@ -172,7 +175,9 @@ public class DeviceService {
             SignedPreKey existing = existingOpt.get();
             boolean sameMaterial = publicKey.equals(existing.getPublicKey())
                     && signature.equals(existing.getSignature());
-            if (sameMaterial) return;
+            if (sameMaterial) {
+                return;
+            }
             signedPreKeyRepository.delete(existing);
             signedPreKeyRepository.flush();
         }

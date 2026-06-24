@@ -9,4 +9,5 @@ public record UpdateGroupPermissionsRequest(
         String whoCanWrite,
         String whoCanEditInfo,
         String whoCanInvite
-) {}
+) {
+}

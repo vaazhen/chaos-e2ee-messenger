@@ -1,8 +1,7 @@
 package ru.messenger.chaosmessenger.crypto.device;
 
-
 import ru.messenger.chaosmessenger.user.service.UserIdentityService;
-import ru.messenger.chaosmessenger.common.exception.*;
+import ru.messenger.chaosmessenger.common.exception.AuthException;
 
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;

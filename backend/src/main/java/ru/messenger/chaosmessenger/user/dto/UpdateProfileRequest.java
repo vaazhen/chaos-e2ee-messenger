@@ -15,4 +15,5 @@ public record UpdateProfileRequest(
         @Size(min = 3, max = 32, message = "Username must be between 3 and 32 characters")
         @Pattern(regexp = "^[a-zA-Z0-9_]+$", message = "Username may only contain letters, digits and underscores")
         String username
-) {}
+) {
+}
