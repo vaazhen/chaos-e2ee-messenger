@@ -13,6 +13,7 @@ import ru.messenger.chaosmessenger.chat.access.ChatAccessService;
 import ru.messenger.chaosmessenger.chat.domain.Chat;
 import ru.messenger.chaosmessenger.chat.repository.ChatParticipantRepository;
 import ru.messenger.chaosmessenger.chat.repository.ChatRepository;
+import ru.messenger.chaosmessenger.chat.service.ChatOutboxService;
 import ru.messenger.chaosmessenger.chat.service.DirectChatService;
 import ru.messenger.chaosmessenger.common.exception.ChatException;
 import ru.messenger.chaosmessenger.user.domain.User;
@@ -33,6 +34,7 @@ class DirectChatServiceTest {
     @Mock ChatRepository chatRepository;
     @Mock ChatParticipantRepository participantRepository;
     @Mock ChatAccessService chatAccessService;
+    @Mock ChatOutboxService chatOutboxService;
 
     @InjectMocks DirectChatService directChatService;
 

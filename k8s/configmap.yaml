@@ -11,3 +11,10 @@ data:
   CHAOS_CORS_ALLOWED_ORIGINS: "https://chaos.example.com"
   CHAOS_ATTACHMENTS_STORAGE_PATH: "/app/attachments"
   VAPID_PUBLIC_KEY: ""
+  # Kafka is expected to be provided by Strimzi/Redpanda/MSK/etc. in production.
+  CHAOS_KAFKA_ENABLED: "true"
+  KAFKA_BOOTSTRAP_SERVERS: "chaos-kafka-bootstrap:9092"
+  CHAOS_KAFKA_CONSUMER_GROUP: "chaos-workers"
+  # Must be unique per backend pod. Override with Downward API or Helm in real deployments.
+  CHAOS_KAFKA_REALTIME_GROUP_ID: "chaos-realtime-$(HOSTNAME)"
+  CHAOS_KAFKA_TOPIC_REPLICAS: "3"

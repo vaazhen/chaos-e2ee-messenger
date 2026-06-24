@@ -15,12 +15,7 @@ import ru.messenger.chaosmessenger.chat.dto.ChatListUpdateEvent;
 import ru.messenger.chaosmessenger.chat.repository.ChatParticipantRepository;
 import ru.messenger.chaosmessenger.chat.repository.ChatRepository;
 import ru.messenger.chaosmessenger.common.exception.ChatException;
-import ru.messenger.chaosmessenger.outbox.OutboxService;
-import java.util.List;
-import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @Service
@@ -31,7 +26,6 @@ public class ChatAccessService {
     private final ChatParticipantRepository participantRepository;
     private final SimpMessagingTemplate messagingTemplate;
     private final MessageSource messageSource;
-    private final OutboxService outboxService;
 
     @Value("${chaos.kafka.enabled:false}")
     private boolean kafkaEnabled;
@@ -157,8 +151,6 @@ public class ChatAccessService {
         return messageSource.getMessage("chat.saved.name", null, "Saved Messages", LocaleContextHolder.getLocale());
     }
 
-    private final Set<String> seenOutboxEvents = ConcurrentHashMap.newKeySet();
-
     public void notifyChatListUpdated(String username, Long chatId, String reason) {
         if (!kafkaEnabled) {
             messagingTemplate.convertAndSend(
@@ -166,7 +158,6 @@ public class ChatAccessService {
                     ChatListUpdateEvent.forChat(chatId, reason)
             );
         }
-        writeChatOutboxEvent(chatId, reason, false);
     }
 
     public void notifyRequestsUpdated(String username, Long chatId, String reason) {
@@ -175,27 +166,6 @@ public class ChatAccessService {
                     "/topic/users/" + username + "/requests",
                     ChatListUpdateEvent.forChat(chatId, reason)
             );
-        }
-        writeChatOutboxEvent(chatId, reason, true);
-    }
-
-    private void writeChatOutboxEvent(Long chatId, String reason, boolean isRequest) {
-        String dedupKey = chatId + ":" + reason;
-        if (!seenOutboxEvents.add(dedupKey)) {
-            return;
-        }
-
-        try {
-            List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
-            String aggregateType = isRequest ? "request" : "chat";
-            outboxService.write(aggregateType, String.valueOf(chatId), reason.toUpperCase(), Map.of(
-                    "chatId", chatId,
-                    "eventType", reason.toUpperCase(),
-                    "reason", reason,
-                    "participantUsernames", participantUsernames
-            ));
-        } catch (Exception e) {
-            log.warn("Failed to write outbox event for chat {}: {}", chatId, reason, e);
         }
     }
 }

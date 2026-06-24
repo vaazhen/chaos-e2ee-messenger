@@ -21,6 +21,13 @@ spec:
         - name: backend
           image: ${REGISTRY:-ghcr.io}/${REPOSITORY:-chaos-messenger}/backend:${TAG:-latest}
           imagePullPolicy: Always
+          env:
+            - name: HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: CHAOS_KAFKA_REALTIME_GROUP_ID
+              value: "chaos-realtime-$(HOSTNAME)"
           envFrom:
             - configMapRef:
                 name: chaos-messenger-config
@@ -57,7 +64,19 @@ spec:
               cpu: "1000m"
       volumes:
         - name: attachments
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: chaos-attachments
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: chaos-attachments
+  namespace: chaos-messenger
+spec:
+  accessModes: ["ReadWriteMany"]
+  resources:
+    requests:
+      storage: 10Gi
 ---
 apiVersion: v1
 kind: Service

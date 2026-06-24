@@ -23,7 +23,6 @@ import ru.messenger.chaosmessenger.message.dto.ReactionEvent;
 import ru.messenger.chaosmessenger.message.dto.TimelineEnvelopeDto;
 import ru.messenger.chaosmessenger.message.repository.MessageEventRepository;
 import ru.messenger.chaosmessenger.message.repository.MessageReactionRepository;
-import ru.messenger.chaosmessenger.outbox.OutboxService;
 import ru.messenger.chaosmessenger.push.service.PushNotificationService;
 import ru.messenger.chaosmessenger.user.domain.User;
 import ru.messenger.chaosmessenger.user.repository.UserRepository;
@@ -31,7 +30,6 @@ import ru.messenger.chaosmessenger.user.service.UserIdentityService;
 
 import java.time.LocalDateTime;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -57,7 +55,6 @@ public class MessageFanoutService {
     private final PushNotificationService pushNotificationService;
     private final UserIdentityService userIdentityService;
     private final UserRepository userRepository;
-    private final OutboxService outboxService;
 
     @Value("${chaos.kafka.enabled:false}")
     private boolean kafkaEnabled;
@@ -75,7 +72,6 @@ public class MessageFanoutService {
                     toDeviceEvent("MESSAGE_CREATED", message, envelope, Map.of(), Set.of())
             ));
         }
-        writeOutboxEvent("message", String.valueOf(message.getChatId()), "MESSAGE_CREATED", message, byDevice);
     }
 
     public void fanoutEditedEvent(Message message, Map<String, MessageEnvelope> byDevice) {
@@ -85,7 +81,6 @@ public class MessageFanoutService {
                     toDeviceEvent("MESSAGE_EDITED", message, envelope, envelope.getTargetUserId())
             ));
         }
-        writeOutboxEvent("message", String.valueOf(message.getChatId()), "MESSAGE_EDITED", message, byDevice);
     }
 
     public void fanoutDeleteEvent(Message message) {
@@ -102,7 +97,6 @@ public class MessageFanoutService {
                 );
             }
         }
-        writeOutboxEvent("message", String.valueOf(message.getChatId()), "MESSAGE_DELETED", message, Map.of());
     }
 
     public void fanoutReactionEvent(Long chatId, ReactionEvent event) {
@@ -120,7 +114,6 @@ public class MessageFanoutService {
             }
         }
         notifyChatListUpdated(chatId, "message_reaction");
-        writeOutboxEvent("message", String.valueOf(chatId), "MESSAGE_REACTION", event, Map.of());
     }
 
     public void sendStatusToSenderDevices(Message message, String status) {
@@ -132,13 +125,6 @@ public class MessageFanoutService {
                 );
             }
         }
-        var payload = Map.of(
-                "messageId", message.getId(),
-                "chatId", message.getChatId(),
-                "status", status,
-                "senderId", message.getSenderId()
-        );
-        outboxService.write("message", String.valueOf(message.getChatId()), "MESSAGE_STATUS", payload);
     }
 
     public void sendBulkStatusToSenderDevices(Collection<Long> senderIds, Long chatId, String status, Long actorUserId) {
@@ -155,13 +141,6 @@ public class MessageFanoutService {
                     )
             );
         }
-        var payload = Map.of(
-                "chatId", chatId,
-                "status", status,
-                "actorUserId", actorUserId,
-                "senderIds", senderIds
-        );
-        outboxService.write("message", String.valueOf(chatId), "MESSAGE_BULK_STATUS", payload);
     }
 
     public void saveMessageEvent(Message message, Long actorUserId, String eventType, Map<String, Object> payload) {
@@ -187,7 +166,6 @@ public class MessageFanoutService {
                     messagingTemplate.convertAndSend("/topic/users/" + username + "/chats", payload)
             );
         }
-        writeOutboxEvent("chat", String.valueOf(chatId), reason.toUpperCase(), Map.of("chatId", chatId, "reason", reason), Map.of());
     }
 
     public void notifyOfflineUsersViaPush(Message message, User sender) {
@@ -293,39 +271,6 @@ public class MessageFanoutService {
         try {
             meterRegistry.counter(name).increment(amount);
         } catch (Exception ignored) {
-        }
-    }
-
-    private void writeOutboxEvent(String aggregateType, String aggregateId, String eventType, Object mainPayload, Map<String, MessageEnvelope> byDevice) {
-        try {
-            var payload = new HashMap<String, Object>();
-            if (mainPayload instanceof Message message) {
-                payload.put("chatId", message.getChatId());
-                payload.put("messageId", message.getId());
-                payload.put("senderId", message.getSenderId());
-                payload.put("senderDeviceId", message.getSenderDeviceId());
-                payload.put("deviceIds", byDevice.keySet());
-                payload.put("participantDeviceIds", userDeviceRepository.findActiveByUserIdsWithUser(
-                        participantRepository.findUserIdsByChatId(message.getChatId())
-                ).stream().map(UserDevice::getDeviceId).toList());
-                payload.put("participantUsernames", participantRepository.findDistinctUsernamesByChatId(message.getChatId()));
-            } else if (mainPayload instanceof ReactionEvent re) {
-                payload.put("chatId", re.chatId());
-                payload.put("messageId", re.messageId());
-                payload.put("participantDeviceIds", userDeviceRepository.findActiveByUserIdsWithUser(
-                        participantRepository.findUserIdsByChatId(re.chatId())
-                ).stream().map(UserDevice::getDeviceId).toList());
-                payload.put("participantUsernames", participantRepository.findDistinctUsernamesByChatId(re.chatId()));
-            } else if (mainPayload instanceof Map<?, ?> map && !map.containsKey("participantUsernames")) {
-                map.forEach((key, value) -> {
-                    if (key instanceof String stringKey) {
-                        payload.put(stringKey, value);
-                    }
-                });
-            }
-            outboxService.write(aggregateType, aggregateId, eventType, payload);
-        } catch (Exception e) {
-            log.warn("Failed to write outbox event for {}:{} type={}", aggregateType, aggregateId, eventType, e);
         }
     }
 

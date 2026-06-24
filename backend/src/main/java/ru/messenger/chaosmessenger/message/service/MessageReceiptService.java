@@ -29,6 +29,7 @@ public class MessageReceiptService {
     private final MessageReceiptRepository messageReceiptRepository;
     private final MessageAccessService messageAccessService;
     private final MessageFanoutService messageFanoutService;
+    private final MessageOutboxService messageOutboxService;
     private final UnreadService unreadService;
 
     @Transactional
@@ -58,6 +59,15 @@ public class MessageReceiptService {
         messageRepository.recalculateAggregateStatusesForChat(chatId, user.getId());
 
         messageFanoutService.incrementCounter("messages_read_total", Math.max(receiptRows, 0));
+        if (directOrSavedChat) {
+            messageOutboxService.bulkMessageStatus(
+                    affectedSenderIds,
+                    chatId,
+                    Message.MessageStatus.READ.name(),
+                    user.getId()
+            );
+        }
+        messageOutboxService.chatListUpdated(chatId, "chat_read");
 
         TransactionUtils.afterCommit(() -> {
             try {
@@ -95,6 +105,13 @@ public class MessageReceiptService {
         messageRepository.recalculateAggregateStatusesForChat(chatId, user.getId());
 
         messageFanoutService.incrementCounter("messages_delivered_total", Math.max(receiptRows, 0));
+        messageOutboxService.bulkMessageStatus(
+                affectedSenderIds,
+                chatId,
+                Message.MessageStatus.DELIVERED.name(),
+                user.getId()
+        );
+        messageOutboxService.chatListUpdated(chatId, "chat_delivered");
 
         TransactionUtils.afterCommit(() -> {
             try {
@@ -133,6 +150,7 @@ public class MessageReceiptService {
 
         updateAggregateStatus(message);
         String aggregateStatus = message.getStatus().name();
+        messageOutboxService.messageStatus(message, aggregateStatus);
         TransactionUtils.afterCommit(() -> {
             try {
                 messageFanoutService.sendStatusToSenderDevices(message, aggregateStatus);

@@ -34,6 +34,7 @@ public class MessageReactionService {
     private final MessageReactionRepository messageReactionRepository;
     private final MessageAccessService messageAccessService;
     private final MessageFanoutService messageFanoutService;
+    private final MessageOutboxService messageOutboxService;
 
     private final Set<String> allowedEmojis = Set.of("👍", "❤️", "😂", "😮", "😢", "🔥");
 
@@ -87,6 +88,8 @@ public class MessageReactionService {
         );
 
         messageFanoutService.saveMessageEvent(message, user.getId(), "REACTION", Map.of("emoji", cleanEmoji, "active", active));
+        messageOutboxService.messageReaction(message.getChatId(), event);
+        messageOutboxService.chatListUpdated(message.getChatId(), "message_reaction");
 
         TransactionUtils.afterCommit(() -> {
             try {

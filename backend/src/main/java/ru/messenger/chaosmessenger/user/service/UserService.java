@@ -120,6 +120,7 @@ public class UserService {
         String token = jwtService.generateToken(updated.username());
 
         Long updatedUserId = updated.id();
+        writeProfileUpdatedOutboxEvent(updatedUserId);
         TransactionUtils.afterCommit(() -> notifySharedChatsAboutProfileUpdate(updatedUserId));
 
         return new UpdateProfileResponse(
@@ -161,6 +162,9 @@ public class UserService {
                             payload
                     ));
         }
+    }
+
+    private void writeProfileUpdatedOutboxEvent(Long updatedUserId) {
         try {
             var participantUsernames = participantRepository.findDistinctUsernamesSharingChatsWithUserId(updatedUserId);
             outboxService.write("user", String.valueOf(updatedUserId), "PROFILE_UPDATED", Map.of(

@@ -24,6 +24,7 @@ public class SavedMessagesService {
     private final ChatParticipantRepository participantRepository;
     private final UserRepository userRepository;
     private final ChatAccessService chatAccessService;
+    private final ChatOutboxService chatOutboxService;
 
     @Transactional
     public Long createOrGetSavedMessagesChat(String currentUsername) {
@@ -34,6 +35,7 @@ public class SavedMessagesService {
         if (existing.isPresent()) {
             Long chatId = existing.get();
             String username = user.getUsername();
+            chatOutboxService.chatListUpdated(chatId, "saved_chat_exists");
             TransactionUtils.afterCommit(() -> chatAccessService.notifyChatListUpdated(username, chatId, "saved_chat_exists"));
             return chatId;
         }
@@ -48,6 +50,7 @@ public class SavedMessagesService {
 
         Long chatId = chat.getId();
         String username = user.getUsername();
+        chatOutboxService.chatListUpdated(chatId, "saved_chat_created");
         TransactionUtils.afterCommit(() -> chatAccessService.notifyChatListUpdated(username, chatId, "saved_chat_created"));
 
         return chatId;

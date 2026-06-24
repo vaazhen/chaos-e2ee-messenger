@@ -27,6 +27,12 @@ public class EncryptedAttachment {
     @Column(name = "uploader_id", nullable = false)
     private Long uploaderId;
 
+    @Column(name = "chat_id")
+    private Long chatId;
+
+    @Column(name = "message_id")
+    private Long messageId;
+
     @Column(name = "file_size", nullable = false)
     private Long fileSize;
 

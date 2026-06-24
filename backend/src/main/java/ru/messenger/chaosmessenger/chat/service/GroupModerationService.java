@@ -37,6 +37,7 @@ public class GroupModerationService {
     private final UserRepository userRepository;
     private final ChatAccessService chatAccessService;
     private final ChatQueryService chatQueryService;
+    private final ChatOutboxService chatOutboxService;
 
     @Transactional
     public Long createGroupChat(String currentUsername, String name, List<Long> memberIds) {
@@ -92,6 +93,7 @@ public class GroupModerationService {
                 .collect(Collectors.toCollection(ArrayList::new));
         notifyUsers.add(creator.getUsername());
         final List<String> distinctNotifyUsers = notifyUsers.stream().distinct().toList();
+        chatOutboxService.chatListUpdated(chatId, "chat_created");
         TransactionUtils.afterCommit(() ->
                 distinctNotifyUsers.forEach(u -> chatAccessService.notifyChatListUpdated(u, chatId, "chat_created")));
 
@@ -140,6 +142,7 @@ public class GroupModerationService {
                 .toList();
         participantRepository.saveAll(added);
         List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
+        chatOutboxService.chatListUpdated(chatId, "group_participants_invited");
 
         TransactionUtils.afterCommit(() -> {
             chatAccessService.notifyChatListUpdated(username, chatId, "group_participants_invited");
@@ -177,6 +180,8 @@ public class GroupModerationService {
         chatRepository.save(chat);
         List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
 
+        chatOutboxService.chatListUpdated(chatId, "group_settings_updated");
+
         TransactionUtils.afterCommit(() ->
                 participantUsernames.forEach(u ->
                         chatAccessService.notifyChatListUpdated(u, chatId, "group_settings_updated")));
@@ -202,6 +207,8 @@ public class GroupModerationService {
         targetParticipant.setGroupRole(targetRole);
         participantRepository.save(targetParticipant);
         List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
+
+        chatOutboxService.chatListUpdated(chatId, "group_role_updated");
 
         TransactionUtils.afterCommit(() ->
                 participantUsernames.forEach(u ->
@@ -231,6 +238,8 @@ public class GroupModerationService {
         chatRepository.save(chat);
         List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
 
+        chatOutboxService.chatListUpdated(chatId, "group_permissions_updated");
+
         TransactionUtils.afterCommit(() ->
                 participantUsernames.forEach(u ->
                         chatAccessService.notifyChatListUpdated(u, chatId, "group_permissions_updated")));
@@ -249,6 +258,7 @@ public class GroupModerationService {
 
         participantRepository.delete(targetParticipant);
         List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
+        chatOutboxService.chatListUpdated(chatId, "group_participant_removed");
         TransactionUtils.afterCommit(() -> {
             chatAccessService.notifyChatListUpdated(username, chatId, "group_participant_removed");
             participantUsernames.forEach(u ->
@@ -267,6 +277,8 @@ public class GroupModerationService {
         chat.setDeletedAt(LocalDateTime.now());
         chatRepository.save(chat);
         List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
+
+        chatOutboxService.chatListUpdated(chatId, "group_archived");
 
         TransactionUtils.afterCommit(() ->
                 participantUsernames.forEach(u ->
@@ -296,6 +308,8 @@ public class GroupModerationService {
         chatRepository.save(chat);
 
         List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
+        chatOutboxService.chatListUpdated(chatId, "chat_deleted_for_everyone");
+
         TransactionUtils.afterCommit(() ->
                 participantUsernames.forEach(u ->
                         chatAccessService.notifyChatListUpdated(u, chatId, "chat_deleted_for_everyone")));
@@ -316,6 +330,8 @@ public class GroupModerationService {
         participantRepository.save(targetParticipant);
         List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
 
+        chatOutboxService.chatListUpdated(chatId, "group_participant_muted");
+
         TransactionUtils.afterCommit(() ->
                 participantUsernames.forEach(u ->
                         chatAccessService.notifyChatListUpdated(u, chatId, "group_participant_muted")));
@@ -333,6 +349,8 @@ public class GroupModerationService {
         targetParticipant.setMutedUntil(null);
         participantRepository.save(targetParticipant);
         List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
+        chatOutboxService.chatListUpdated(chatId, "group_participant_unmuted");
+
         TransactionUtils.afterCommit(() ->
                 participantUsernames.forEach(u ->
                         chatAccessService.notifyChatListUpdated(u, chatId, "group_participant_unmuted")));
@@ -353,6 +371,8 @@ public class GroupModerationService {
         targetParticipant.setMutedUntil(null);
         participantRepository.save(targetParticipant);
         List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
+        chatOutboxService.chatListUpdated(chatId, "group_participant_banned");
+
         TransactionUtils.afterCommit(() ->
                 participantUsernames.forEach(u ->
                         chatAccessService.notifyChatListUpdated(u, chatId, "group_participant_banned")));
@@ -372,6 +392,8 @@ public class GroupModerationService {
         targetParticipant.setBanReason(null);
         participantRepository.save(targetParticipant);
         List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
+        chatOutboxService.chatListUpdated(chatId, "group_participant_unbanned");
+
         TransactionUtils.afterCommit(() ->
                 participantUsernames.forEach(u ->
                         chatAccessService.notifyChatListUpdated(u, chatId, "group_participant_unbanned")));
