@@ -37,13 +37,17 @@ public class RefreshTokenService {
      * @return username the token belongs to, or {@code null} if invalid/expired.
      */
     public String consumeAndGetUsername(String token) {
-        if (token == null || token.isBlank()) return null;
+        if (token == null || token.isBlank()) {
+            return null;
+        }
         return redisTemplate.opsForValue().getAndDelete(PREFIX + token);
     }
 
     /** Explicitly revoke a token (logout). */
     public void revoke(String token) {
-        if (token == null || token.isBlank()) return;
+        if (token == null || token.isBlank()) {
+            return;
+        }
         redisTemplate.delete(PREFIX + token);
     }
 }

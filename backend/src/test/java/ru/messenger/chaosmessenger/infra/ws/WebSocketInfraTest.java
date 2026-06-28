@@ -18,6 +18,7 @@ import ru.messenger.chaosmessenger.crypto.device.UserDeviceRepository;
 import ru.messenger.chaosmessenger.infra.presence.OnlineService;
 import ru.messenger.chaosmessenger.infra.presence.UserStatusEvent;
 import ru.messenger.chaosmessenger.infra.security.JwtService;
+import ru.messenger.chaosmessenger.realtime.WebSocketSessionRegistry;
 import ru.messenger.chaosmessenger.user.domain.User;
 import ru.messenger.chaosmessenger.user.repository.UserRepository;
 
@@ -40,6 +41,7 @@ class WebSocketInfraTest {
     private UserRepository userRepository;
     private ChatParticipantRepository participantRepository;
     private MessageChannel channel;
+    private WebSocketSessionRegistry sessionRegistry;
     private WebSocketAuthChannelInterceptor interceptor;
 
     @BeforeEach
@@ -49,12 +51,14 @@ class WebSocketInfraTest {
         userRepository = mock(UserRepository.class);
         participantRepository = mock(ChatParticipantRepository.class);
         channel = mock(MessageChannel.class);
+        sessionRegistry = new WebSocketSessionRegistry();
 
         interceptor = new WebSocketAuthChannelInterceptor(
                 jwtService,
                 userDeviceRepository,
                 userRepository,
-                participantRepository
+                participantRepository,
+                sessionRegistry
         );
     }
 

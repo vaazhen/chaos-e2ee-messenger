@@ -112,10 +112,13 @@ class DeviceServiceTest {
             verify(oneTimePreKeyRepository).deleteByDeviceId(10L);
             verify(oneTimePreKeyRepository).flush();
 
-            ArgumentCaptor<OneTimePreKey> otpCaptor = ArgumentCaptor.forClass(OneTimePreKey.class);
-            verify(oneTimePreKeyRepository).save(otpCaptor.capture());
+            ArgumentCaptor<Iterable> otpCaptor = ArgumentCaptor.forClass(Iterable.class);
+            verify(oneTimePreKeyRepository).saveAll(otpCaptor.capture());
 
-            OneTimePreKey otp = otpCaptor.getValue();
+            List<OneTimePreKey> capturedPreKeys = new java.util.ArrayList<>();
+            otpCaptor.getValue().forEach(value -> capturedPreKeys.add((OneTimePreKey) value));
+            assertThat(capturedPreKeys).hasSize(1);
+            OneTimePreKey otp = capturedPreKeys.get(0);
             assertThat(otp.getDevice()).isSameAs(savedDevice);
             assertThat(otp.getPreKeyId()).isEqualTo(101);
             assertThat(otp.getPublicKey()).isEqualTo(request.oneTimePreKeys().get(0).publicKey());

@@ -47,7 +47,9 @@ public class DeviceRegistrationTokenService {
      *         token is unknown / already used / expired.
      */
     public String consumeAndGetUsername(String token) {
-        if (token == null || token.isBlank()) return null;
+        if (token == null || token.isBlank()) {
+            return null;
+        }
         return redisTemplate.opsForValue().getAndDelete(PREFIX + token);
     }
 }

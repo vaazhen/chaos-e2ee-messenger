@@ -10,4 +10,5 @@ public record CreateGroupRequest(
         String name,
         @NotEmpty(message = "Group must have at least one other member")
         List<Long> memberIds
-) {}
+) {
+}

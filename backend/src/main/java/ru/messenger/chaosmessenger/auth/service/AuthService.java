@@ -196,11 +196,18 @@ public class AuthService {
     }
 
     private String normalizePhone(String raw) {
-        if (raw == null) throw new IllegalArgumentException("Phone number is required");
+        if (raw == null) {
+            throw new IllegalArgumentException("Phone number is required");
+        }
         String digits = raw.replaceAll("\\D", "");
-        if (digits.isBlank()) throw new IllegalArgumentException("Phone number is required");
-        if (digits.length() == 11 && digits.startsWith("8")) digits = "7" + digits.substring(1);
-        else if (digits.length() == 10) digits = "7" + digits;
+        if (digits.isBlank()) {
+            throw new IllegalArgumentException("Phone number is required");
+        }
+        if (digits.length() == 11 && digits.startsWith("8")) {
+            digits = "7" + digits.substring(1);
+        } else if (digits.length() == 10) {
+            digits = "7" + digits;
+        }
         return "+" + digits;
     }
 
@@ -223,18 +230,26 @@ public class AuthService {
     }
 
     private String trimToNull(String value) {
-        if (value == null) return null;
+        if (value == null) {
+            return null;
+        }
         String t = value.trim();
         return t.isEmpty() ? null : t;
     }
 
     private String chooseUsername(String requested, String email) {
         String base = trimToNull(requested);
-        if (base == null) base = email.substring(0, email.indexOf('@'));
+        if (base == null) {
+            base = email.substring(0, email.indexOf('@'));
+        }
         base = base.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_]", "_");
         base = base.replaceAll("_+", "_").replaceAll("^_+|_+$", "");
-        if (base.length() < 3) base = "user";
-        if (base.length() > 24) base = base.substring(0, 24);
+        if (base.length() < 3) {
+            base = "user";
+        }
+        if (base.length() > 24) {
+            base = base.substring(0, 24);
+        }
 
         String candidate = base;
         int i = 1;
@@ -243,7 +258,9 @@ public class AuthService {
             candidate = base.substring(0, Math.min(base.length(), 32 - suffix.length())) + suffix;
             if (i > 100) {
                 candidate = "user_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
-                if (!userRepository.existsByUsername(candidate)) return candidate;
+                if (!userRepository.existsByUsername(candidate)) {
+                    return candidate;
+                }
             }
         }
         return candidate;

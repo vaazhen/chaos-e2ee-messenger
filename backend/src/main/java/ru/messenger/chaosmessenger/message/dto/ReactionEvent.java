@@ -12,4 +12,5 @@ public record ReactionEvent(
         boolean active,
         Map<String, Long> reactions,
         long timestamp
-) {}
+) {
+}

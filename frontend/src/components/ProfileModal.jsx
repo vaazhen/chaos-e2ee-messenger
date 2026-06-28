@@ -675,7 +675,7 @@ const [devices, setDevices] = useState([]);
                     try {
                       const info = await api.getBackupInfo();
                       setBackupInfo(info);
-                    } catch {}
+                    } catch { /* ignore optional failure */ }
                   }}
                 >
                   {l("Импорт", "Import")}

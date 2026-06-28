@@ -38,7 +38,7 @@ function readJson(key, fallback) {
 function writeJson(key, value) {
   try {
     localStorage.setItem(key, JSON.stringify(value));
-  } catch (_) {}
+  } catch (_) { /* ignore optional failure */ }
 }
 
 function rememberKey({ userId, deviceId }, key) {
@@ -74,8 +74,8 @@ export function clearPreviewCacheForUser(userId, deviceId = getOrCreateDeviceId(
   const keys = readJson(idxKey, []);
   if (Array.isArray(keys)) {
     keys.forEach(key => {
-      try { localStorage.removeItem(key); } catch (_) {}
+      try { localStorage.removeItem(key); } catch (_) { /* ignore optional failure */ }
     });
   }
-  try { localStorage.removeItem(idxKey); } catch (_) {}
+  try { localStorage.removeItem(idxKey); } catch (_) { /* ignore optional failure */ }
 }

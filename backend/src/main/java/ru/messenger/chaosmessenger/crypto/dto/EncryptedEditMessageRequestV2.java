@@ -15,4 +15,5 @@ public record EncryptedEditMessageRequestV2(
         @NotEmpty(message = "At least one encrypted envelope is required")
         @Size(max = 1000, message = "Too many encrypted envelopes")
         List<EncryptedMessageEnvelopeInput> envelopes
-) {}
+) {
+}

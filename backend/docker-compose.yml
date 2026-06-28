@@ -35,6 +35,33 @@ services:
     ports:
       - "6379:6379"
 
+
+  redpanda:
+    image: redpandadata/redpanda:v24.3.7
+    command:
+      - redpanda
+      - start
+      - --mode
+      - dev-container
+      - --smp
+      - "1"
+      - --memory
+      - 512M
+      - --reserve-memory
+      - 0M
+      - --overprovisioned
+      - --node-id
+      - "0"
+      - --check=false
+      - --kafka-addr
+      - internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr
+      - internal://redpanda:9092,external://localhost:19092
+    ports:
+      - "19092:19092"
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+
   app:
     build: .
     ports:
@@ -45,11 +72,15 @@ services:
       - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       - SPRING_DATA_REDIS_HOST=redis
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
+      - CHAOS_KAFKA_ENABLED=${CHAOS_KAFKA_ENABLED:-true}
+      - KAFKA_BOOTSTRAP_SERVERS=redpanda:9092
     depends_on:
       - postgres
       - redis
+      - redpanda
 
 volumes:
   grafana-data:
   prometheus-data:
+  redpanda-data:
   postgres-data:

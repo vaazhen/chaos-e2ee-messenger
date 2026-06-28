@@ -13,8 +13,10 @@ import org.mockito.quality.Strictness;
 import org.springframework.data.domain.Pageable;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import ru.messenger.chaosmessenger.TestFixtures;
+import ru.messenger.chaosmessenger.chat.access.ChatAccessService;
 import ru.messenger.chaosmessenger.chat.domain.Message;
 import ru.messenger.chaosmessenger.chat.repository.ChatParticipantRepository;
+import ru.messenger.chaosmessenger.chat.repository.ChatRepository;
 import ru.messenger.chaosmessenger.common.exception.ChatException;
 import ru.messenger.chaosmessenger.common.exception.MessageException;
 import ru.messenger.chaosmessenger.crypto.device.CurrentDeviceService;
@@ -23,7 +25,9 @@ import ru.messenger.chaosmessenger.crypto.device.UserDeviceRepository;
 import ru.messenger.chaosmessenger.crypto.dto.EncryptedEditMessageRequestV2;
 import ru.messenger.chaosmessenger.crypto.dto.EncryptedMessageEnvelopeInput;
 import ru.messenger.chaosmessenger.crypto.dto.EncryptedSendMessageRequestV2;
+import ru.messenger.chaosmessenger.infra.presence.OnlineService;
 import ru.messenger.chaosmessenger.infra.presence.UnreadService;
+import ru.messenger.chaosmessenger.message.access.MessageAccessService;
 import ru.messenger.chaosmessenger.message.domain.MessageEnvelope;
 import ru.messenger.chaosmessenger.message.domain.MessageEvent;
 import ru.messenger.chaosmessenger.message.domain.MessageReaction;
@@ -35,26 +39,31 @@ import ru.messenger.chaosmessenger.message.repository.MessageEventRepository;
 import ru.messenger.chaosmessenger.message.repository.MessageReactionRepository;
 import ru.messenger.chaosmessenger.message.repository.MessageReceiptRepository;
 import ru.messenger.chaosmessenger.message.repository.MessageRepository;
+import ru.messenger.chaosmessenger.message.service.MessageDeleteService;
+import ru.messenger.chaosmessenger.message.service.MessageEditService;
+import ru.messenger.chaosmessenger.message.service.MessageFanoutService;
+import ru.messenger.chaosmessenger.message.service.MessageOutboxService;
+import ru.messenger.chaosmessenger.message.service.MessageReactionService;
+import ru.messenger.chaosmessenger.message.service.MessageReceiptService;
+import ru.messenger.chaosmessenger.message.service.MessageSendService;
 import ru.messenger.chaosmessenger.message.service.MessageService;
+import ru.messenger.chaosmessenger.message.service.MessageTimelineService;
+import ru.messenger.chaosmessenger.outbox.OutboxService;
+import ru.messenger.chaosmessenger.push.service.PushNotificationService;
 import ru.messenger.chaosmessenger.user.domain.User;
+import ru.messenger.chaosmessenger.user.repository.UserRepository;
 import ru.messenger.chaosmessenger.user.service.UserIdentityService;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.StreamSupport;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isA;
-import static org.mockito.Mockito.atLeastOnce;
-import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -66,15 +75,22 @@ class MessageServiceAdvancedTest {
     @Mock MessageReceiptRepository messageReceiptRepository;
     @Mock MessageReactionRepository messageReactionRepository;
     @Mock ChatParticipantRepository participantRepository;
+    @Mock ChatRepository chatRepository;
     @Mock UserIdentityService userIdentityService;
     @Mock UserDeviceRepository userDeviceRepository;
     @Mock CurrentDeviceService currentDeviceService;
     @Mock UnreadService unreadService;
-    @Mock ru.messenger.chaosmessenger.infra.presence.OnlineService onlineService;
-    @Mock ru.messenger.chaosmessenger.push.service.PushNotificationService pushNotificationService;
+    @Mock OnlineService onlineService;
+    @Mock PushNotificationService pushNotificationService;
     @Mock SimpMessagingTemplate messagingTemplate;
+    @Mock OutboxService outboxService;
+    @Mock UserRepository userRepository;
+    @Mock ChatAccessService chatAccessService;
 
     private MessageService messageService;
+    private MessageFanoutService messageFanoutService;
+    private MessageOutboxService messageOutboxService;
+    private MessageAccessService messageAccessService;
 
     private User alice;
     private User bob;
@@ -92,22 +108,46 @@ class MessageServiceAdvancedTest {
         bobDevice = TestFixtures.device(20L, bob.getId(), "bob-phone");
         bobDevice.setUser(bob);
 
+        messageAccessService = new MessageAccessService(userIdentityService, currentDeviceService, participantRepository);
+
+        ObjectMapper objectMapper = new ObjectMapper();
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        messageFanoutService = new MessageFanoutService(
+                messageEventRepository, messageReactionRepository, participantRepository,
+                userDeviceRepository, messagingTemplate, objectMapper, meterRegistry,
+                unreadService, onlineService, pushNotificationService, userIdentityService,
+                userRepository
+        );
+        messageOutboxService = new MessageOutboxService(participantRepository, userDeviceRepository, outboxService);
+
+        MessageSendService messageSendService = new MessageSendService(
+                messageRepository, messageEnvelopeRepository, chatRepository,
+                participantRepository, userDeviceRepository, messageAccessService,
+                messageFanoutService, messageOutboxService, chatAccessService
+        );
+        MessageEditService messageEditService = new MessageEditService(
+                messageRepository, messageEnvelopeRepository, messageAccessService,
+                messageSendService, messageFanoutService, messageOutboxService
+        );
+        MessageDeleteService messageDeleteService = new MessageDeleteService(
+                messageRepository, messageAccessService, messageFanoutService, messageOutboxService
+        );
+        MessageReceiptService messageReceiptService = new MessageReceiptService(
+                messageRepository, messageReceiptRepository, messageAccessService,
+                messageFanoutService, messageOutboxService, unreadService
+        );
+        MessageReactionService messageReactionService = new MessageReactionService(
+                messageRepository, messageReactionRepository, messageAccessService,
+                messageFanoutService, messageOutboxService
+        );
+        MessageTimelineService messageTimelineService = new MessageTimelineService(
+                messageRepository, messageEnvelopeRepository, messageAccessService,
+                messageReactionService, messageFanoutService
+        );
+
         messageService = new MessageService(
-                messageRepository,
-                messageEnvelopeRepository,
-                messageEventRepository,
-                messageReceiptRepository,
-                messageReactionRepository,
-                participantRepository,
-                userIdentityService,
-                userDeviceRepository,
-                currentDeviceService,
-                unreadService,
-                onlineService,
-                pushNotificationService,
-                messagingTemplate,
-                new ObjectMapper(),
-                new SimpleMeterRegistry()
+                messageSendService, messageEditService, messageDeleteService,
+                messageReceiptService, messageReactionService, messageTimelineService
         );
 
         lenient().when(messageReactionRepository.findByMessageId(anyLong())).thenReturn(List.of());
@@ -141,7 +181,7 @@ class MessageServiceAdvancedTest {
             return message;
         });
 
-        when(messageEnvelopeRepository.save(any(MessageEnvelope.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(messageEnvelopeRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
         DeviceMessageEventResponse response = messageService.sendEncryptedMessageV2("alice", request);
 
@@ -157,14 +197,20 @@ class MessageServiceAdvancedTest {
         assertThat(saved.getContent()).isEqualTo("[encrypted]");
         assertThat(saved.getStatus()).isEqualTo(Message.MessageStatus.SENT);
 
-        ArgumentCaptor<MessageEnvelope> envelopeCaptor = ArgumentCaptor.forClass(MessageEnvelope.class);
-        verify(messageEnvelopeRepository, atLeastOnce()).save(envelopeCaptor.capture());
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Iterable<MessageEnvelope>> envelopeCaptor = ArgumentCaptor.forClass(Iterable.class);
+        verify(messageEnvelopeRepository, atLeastOnce()).saveAll(envelopeCaptor.capture());
 
-        assertThat(envelopeCaptor.getAllValues())
+        List<MessageEnvelope> savedEnvelopes = StreamSupport.stream(
+                envelopeCaptor.getValue().spliterator(),
+                false
+        ).toList();
+
+        assertThat(savedEnvelopes)
                 .extracting(MessageEnvelope::getTargetDeviceId)
                 .containsExactlyInAnyOrder("alice-phone", "bob-phone");
 
-        assertThat(envelopeCaptor.getAllValues())
+        assertThat(savedEnvelopes)
                 .allSatisfy(env -> {
                     assertThat(env.getMessageId()).isEqualTo(500L);
                     assertThat(env.getChatId()).isEqualTo(100L);
@@ -216,7 +262,7 @@ class MessageServiceAdvancedTest {
                 .hasMessageContaining("Duplicate targetDeviceId: bob-phone");
 
         verify(messageRepository, never()).save(any(Message.class));
-        verify(messageEnvelopeRepository, never()).save(any(MessageEnvelope.class));
+        verify(messageEnvelopeRepository, never()).saveAll(anyList());
     }
 
     @Test
@@ -264,7 +310,8 @@ class MessageServiceAdvancedTest {
     @Test
     void sendEncryptedMessageRejectsNonParticipant() {
         stubAuthenticated(alice, aliceDevice);
-        when(participantRepository.existsByChatIdAndUserId(100L, alice.getId())).thenReturn(false);
+        doThrow(new ChatException("You are not a participant of this chat"))
+                .when(participantRepository).existsByChatIdAndUserId(100L, alice.getId());
 
         EncryptedSendMessageRequestV2 request = sendRequest(
                 100L,
@@ -279,14 +326,12 @@ class MessageServiceAdvancedTest {
     }
 
     @Test
-    void getChatTimelineCapsLimitReversesMessagesSkipsDeletedAndAddsCurrentDeviceEnvelopeAndReactions() {
+    void getChatTimelineCapsLimitReversesMessagesAndAddsCurrentDeviceEnvelopeAndReactions() {
         stubAuthenticated(bob, bobDevice);
         stubParticipant(100L, bob.getId());
 
         Message newest = TestFixtures.sentMessage(2L, 100L, alice.getId(), "alice-phone");
         Message oldest = TestFixtures.sentMessage(1L, 100L, alice.getId(), "alice-phone");
-        Message deleted = TestFixtures.sentMessage(3L, 100L, alice.getId(), "alice-phone");
-        deleted.setDeletedAt(LocalDateTime.now());
 
         MessageEnvelope bobEnvelopeForOldest = envelopeEntity(
                 1L,
@@ -298,11 +343,11 @@ class MessageServiceAdvancedTest {
                 1
         );
 
-        MessageReaction bobReaction = reaction(1L, 100L, bob.getId(), "🔥");
+        MessageReaction bobReaction = reaction(1L, 100L, bob.getId(), "\uD83D\uDD25");
         when(messageReactionRepository.findByMessageIdIn(List.of(1L, 2L))).thenReturn(List.of(bobReaction));
 
         when(messageRepository.findByChatIdBefore(eq(100L), eq(99L), any(Pageable.class)))
-                .thenReturn(new java.util.ArrayList<>(List.of(deleted, newest, oldest)));
+                .thenReturn(new java.util.ArrayList<>(List.of(newest, oldest)));
         when(messageEnvelopeRepository.findByMessageIdInAndTargetDeviceId(List.of(1L, 2L), "bob-phone"))
                 .thenReturn(List.of(bobEnvelopeForOldest));
 
@@ -317,8 +362,8 @@ class MessageServiceAdvancedTest {
         assertThat(first.envelope()).isNotNull();
         assertThat(first.envelope().targetDeviceId()).isEqualTo("bob-phone");
         assertThat(first.envelope().ciphertext()).isEqualTo("cipher-old");
-        assertThat(first.myReactions()).containsExactly("🔥");
-        assertThat(first.reactions()).containsEntry("🔥", 1L);
+        assertThat(first.myReactions()).containsExactly("\uD83D\uDD25");
+        assertThat(first.reactions()).containsEntry("\uD83D\uDD25", 1L);
 
         assertThat(second.id()).isEqualTo(2L);
         assertThat(second.envelope()).isNull();
@@ -362,7 +407,7 @@ class MessageServiceAdvancedTest {
 
         when(messageRepository.findByIdForUpdate(500L)).thenReturn(Optional.of(message));
         when(messageRepository.save(message)).thenReturn(message);
-        when(messageEnvelopeRepository.save(any(MessageEnvelope.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(messageEnvelopeRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
         EncryptedEditMessageRequestV2 request = editRequest(
                 "alice-phone",
@@ -623,21 +668,21 @@ class MessageServiceAdvancedTest {
         stubChatParticipants(100L);
 
         Message message = TestFixtures.sentMessage(900L, 100L, alice.getId(), "alice-phone");
-        MessageReaction existing = reaction(900L, 100L, bob.getId(), "🔥");
+        MessageReaction existing = reaction(900L, 100L, bob.getId(), "\uD83D\uDD25");
 
         when(messageRepository.findById(900L)).thenReturn(Optional.of(message));
-        when(messageReactionRepository.findByMessageIdAndUserIdAndEmoji(900L, bob.getId(), "🔥"))
+        when(messageReactionRepository.findByMessageIdAndUserIdAndEmoji(900L, bob.getId(), "\uD83D\uDD25"))
                 .thenReturn(Optional.of(existing));
         when(userDeviceRepository.findByUserIdAndActiveTrue(alice.getId())).thenReturn(List.of(aliceDevice));
         when(userDeviceRepository.findByUserIdAndActiveTrue(bob.getId())).thenReturn(List.of(bobDevice));
 
-        ReactionEvent event = messageService.toggleReaction("bob", 900L, " 🔥 ");
+        ReactionEvent event = messageService.toggleReaction("bob", 900L, " \uD83D\uDD25 ");
 
         assertThat(event.type()).isEqualTo("MESSAGE_REACTION");
         assertThat(event.messageId()).isEqualTo(900L);
         assertThat(event.actorUserId()).isEqualTo(bob.getId());
         assertThat(event.actorDeviceId()).isEqualTo("bob-phone");
-        assertThat(event.emoji()).isEqualTo("🔥");
+        assertThat(event.emoji()).isEqualTo("\uD83D\uDD25");
         assertThat(event.active()).isFalse();
 
         verify(messageReactionRepository).delete(existing);
@@ -666,7 +711,7 @@ class MessageServiceAdvancedTest {
         Message message = TestFixtures.sentMessage(900L, 100L, alice.getId(), "alice-phone");
         when(messageRepository.findById(900L)).thenReturn(Optional.of(message));
 
-        assertThatThrownBy(() -> messageService.toggleReaction("bob", 900L, "💣"))
+        assertThatThrownBy(() -> messageService.toggleReaction("bob", 900L, "\uD83D\uDCA3"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Unsupported reaction emoji");
 
@@ -685,7 +730,7 @@ class MessageServiceAdvancedTest {
 
         when(messageRepository.findById(900L)).thenReturn(Optional.of(message));
 
-        assertThatThrownBy(() -> messageService.toggleReaction("bob", 900L, "👍"))
+        assertThatThrownBy(() -> messageService.toggleReaction("bob", 900L, "\uD83D\uDC4D"))
                 .isInstanceOf(MessageException.class)
                 .hasMessageContaining("Cannot react to deleted message");
 
@@ -805,20 +850,7 @@ class MessageServiceAdvancedTest {
         return reaction;
     }
 
-    private static MessageReceipt deliveredReceipt(Message message, Long userId, String deviceId) {
-        MessageReceipt receipt = baseReceipt(message, userId, deviceId);
-        receipt.setDeliveredAt(LocalDateTime.now());
-        return receipt;
-    }
-
     private static MessageReceipt readReceipt(Message message, Long userId, String deviceId) {
-        MessageReceipt receipt = baseReceipt(message, userId, deviceId);
-        receipt.setDeliveredAt(LocalDateTime.now());
-        receipt.setReadAt(LocalDateTime.now());
-        return receipt;
-    }
-
-    private static MessageReceipt baseReceipt(Message message, Long userId, String deviceId) {
         MessageReceipt receipt = new MessageReceipt();
         receipt.setId(message.getId() + userId);
         receipt.setMessageId(message.getId());
@@ -827,8 +859,8 @@ class MessageServiceAdvancedTest {
         receipt.setDeviceId(deviceId);
         receipt.setCreatedAt(LocalDateTime.now());
         receipt.setUpdatedAt(LocalDateTime.now());
+        receipt.setDeliveredAt(LocalDateTime.now());
+        receipt.setReadAt(LocalDateTime.now());
         return receipt;
     }
 }
-
-

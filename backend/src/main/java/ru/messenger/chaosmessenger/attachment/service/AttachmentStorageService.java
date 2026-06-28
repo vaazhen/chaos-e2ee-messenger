@@ -35,7 +35,7 @@ public class AttachmentStorageService {
     }
 
     @Transactional
-    public String upload(Long uploaderId, byte[] encryptedData, String contentType) throws IOException {
+    public String upload(Long uploaderId, Long chatId, byte[] encryptedData, String contentType) throws IOException {
         String attachmentId = UUID.randomUUID().toString();
 
         Path filePath = Path.of(storagePath, attachmentId);
@@ -44,6 +44,7 @@ public class AttachmentStorageService {
         EncryptedAttachment attachment = new EncryptedAttachment();
         attachment.setAttachmentId(attachmentId);
         attachment.setUploaderId(uploaderId);
+        attachment.setChatId(chatId);
         attachment.setFileSize((long) encryptedData.length);
         attachment.setContentType(contentType);
         attachment.setCreatedAt(LocalDateTime.now());

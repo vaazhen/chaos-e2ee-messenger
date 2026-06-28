@@ -73,8 +73,8 @@ export function useMessages(myId) {
         setMsgs(prev => ({ ...prev, [chatId]: decrypted }));
       }
       if (fromApi) {
-        try { await api.markRead(chatId); } catch (_) {}
-        try { await api.markDelivered(chatId); } catch (_) {}
+        try { await api.markRead(chatId); } catch (_) { /* ignore optional failure */ }
+        try { await api.markDelivered(chatId); } catch (_) { /* ignore optional failure */ }
       }
     } catch (e) {
       console.error("loadMessages:", e);
@@ -85,7 +85,9 @@ export function useMessages(myId) {
 
   // ── Handle incoming WS event ─────────────────────────────────────────────────
   const handleIncomingEvent = useCallback(async (event, chatId) => {
-    if (event.type === "MESSAGE_REACTION") {
+    const eventType = event.type || event.eventType;
+
+    if (eventType === "MESSAGE_REACTION") {
       let updatedMyReactions;
       setMsgs(prev => {
         const updated = updateMessageReactions(prev, chatId, event.messageId, event.reactions, event.actorUserId, event.emoji, event.active, myId);
@@ -96,15 +98,19 @@ export function useMessages(myId) {
       if (updatedMyReactions) {
         localStore.updateMessageReactions(event.messageId, event.reactions, updatedMyReactions).catch(() => {});
       }
-      return { type: event.type, isOut: Number(event.actorUserId) === Number(myId) };
+      return { type: eventType, isOut: Number(event.actorUserId) === Number(myId) };
     }
 
     const messageId = event.id || event.messageId;
+    if (!eventType && !event.envelope && !event.content) {
+      console.warn("[WS] ignored non-message event without payload", event);
+      return null;
+    }
     if (messageId && loadHiddenMessageIds(myId).has(String(messageId))) {
       return null;
     }
 
-    if (event.type === "MESSAGE_DELETED") {
+    if (eventType === "MESSAGE_DELETED") {
       setMsgs(prev => ({
         ...prev,
         [chatId]: (prev[chatId] || []).filter(m => String(m.id) !== String(event.messageId)),
@@ -199,14 +205,16 @@ export function useMessages(myId) {
       const withoutTemp = isOut ? arr.filter(m => !(m._temp && m._clientMessageId === event.clientMessageId)) : arr;
       const idx         = withoutTemp.findIndex(m => String(m.id) === String(msg.id));
       const updated     = idx >= 0
-        ? withoutTemp.map((m, i) => i === idx ? { ...m, ...msg } : m)
+        ? withoutTemp.map((m, i) => i === idx ? mergeIncomingMessage(m, msg) : m)
         : [...withoutTemp, msg];
       return { ...prev, [chatId]: updated };
     });
 
-    localStore.saveMessage(msg).catch(() => {});
+    if (!isEncryptedPlaceholder(msg)) {
+      localStore.saveMessage(msg).catch(() => {});
+    }
 
-    return { isOut, text: preview, type: event.type, messageId };
+    return { isOut, text: preview, type: eventType, messageId };
   }, [myId]);
 
   // ── Update delivery/read status ─────────────────────────────────────────────
@@ -251,7 +259,7 @@ export function useMessages(myId) {
 
     try {
       if (generalFile) {
-        const attachment = await encryptAndUploadFile(generalFile);
+        const attachment = await encryptAndUploadFile(generalFile, chatId);
         parsedPayload = {
           text,
           img: null,
@@ -269,7 +277,7 @@ export function useMessages(myId) {
         if (estimateBase64Bytes(image.dataUrl) > ATTACHMENT_THRESHOLD_BYTES && window.e2ee?.encryptFile) {
           const buf = dataUrlToArrayBuffer(image.dataUrl);
           const { encrypted, fileKey } = await window.e2ee.encryptFile(buf);
-          const uploadResult = await api.uploadAttachment(encrypted);
+          const uploadResult = await api.uploadAttachment(encrypted, chatId);
           const attachment = {
             attachmentId: uploadResult.id || uploadResult.attachmentId,
             fileKey,
@@ -298,7 +306,7 @@ export function useMessages(myId) {
         if (estimateBase64Bytes(voice.dataUrl) > ATTACHMENT_THRESHOLD_BYTES && window.e2ee?.encryptFile) {
           const buf = dataUrlToArrayBuffer(voice.dataUrl);
           const { encrypted, fileKey } = await window.e2ee.encryptFile(buf);
-          const uploadResult = await api.uploadAttachment(encrypted);
+          const uploadResult = await api.uploadAttachment(encrypted, chatId);
           const attachment = {
             attachmentId: uploadResult.id || uploadResult.attachmentId,
             fileKey,
@@ -653,6 +661,39 @@ async function decryptMsg(msg, myId, fallbackChatId) {
   };
 }
 
+function mergeIncomingMessage(existing, incoming) {
+  if (!existing) return incoming;
+
+  const incomingEncrypted = isEncryptedPlaceholder(incoming);
+  const existingPlain = hasRenderablePlaintext(existing);
+  if (incomingEncrypted && existingPlain) {
+    return {
+      ...incoming,
+      content: existing.content,
+      _text: existing._text,
+      _img: existing._img,
+      _voice: existing._voice,
+      _payload: existing._payload,
+      _attachment: existing._attachment,
+      _ttl: existing._ttl,
+      expiresAt: existing.expiresAt,
+      _time: existing._time,
+    };
+  }
+
+  return { ...existing, ...incoming };
+}
+
+function isEncryptedPlaceholder(msg) {
+  return !msg || msg.content === "[encrypted]" || msg._text === "[encrypted]";
+}
+
+function hasRenderablePlaintext(msg) {
+  if (!msg) return false;
+  if (msg._img || msg._voice || msg._attachment) return true;
+  return Boolean(msg._text && msg._text !== "[encrypted]");
+}
+
 function updateMessageReactions(prev, chatId, messageId, reactions, actorUserId, emoji, active, myId) {
   return {
     ...prev,
@@ -840,7 +881,7 @@ function addHiddenMessageId(myId, messageId) {
   ids.add(String(messageId));
   try {
     localStorage.setItem(hiddenKey(myId), JSON.stringify([...ids].slice(-2000)));
-  } catch (_) {}
+  } catch (_) { /* ignore optional failure */ }
 }
 
 async function compressImageFile(file) {
@@ -895,10 +936,10 @@ function dataUrlToArrayBuffer(dataUrl) {
   return bytes.buffer;
 }
 
-async function encryptAndUploadFile(file) {
+async function encryptAndUploadFile(file, chatId) {
   const buf = await file.arrayBuffer();
   const { encrypted, fileKey } = await window.e2ee.encryptFile(buf);
-  const uploadResult = await api.uploadAttachment(encrypted);
+  const uploadResult = await api.uploadAttachment(encrypted, chatId);
   return {
     attachmentId: uploadResult.id || uploadResult.attachmentId,
     fileKey,

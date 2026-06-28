@@ -14,12 +14,12 @@ import ru.messenger.chaosmessenger.crypto.device.UserDevice;
 import ru.messenger.chaosmessenger.crypto.device.UserDeviceRepository;
 import ru.messenger.chaosmessenger.infra.security.JwtService;
 import ru.messenger.chaosmessenger.user.domain.User;
+import ru.messenger.chaosmessenger.realtime.WebSocketSessionRegistry;
 import ru.messenger.chaosmessenger.user.repository.UserRepository;
 
 import java.security.Principal;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @Component
@@ -30,9 +30,7 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
     private final UserDeviceRepository userDeviceRepository;
     private final UserRepository userRepository;
     private final ChatParticipantRepository participantRepository;
-
-    private final ConcurrentHashMap<String, String> sessionUserMap = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, String> sessionDeviceMap = new ConcurrentHashMap<>();
+    private final WebSocketSessionRegistry sessionRegistry;
 
     @Override
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
@@ -48,14 +46,13 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
 
         if (StompCommand.DISCONNECT.equals(accessor.getCommand())) {
             String sessionId = accessor.getSessionId();
-            sessionUserMap.remove(sessionId);
-            sessionDeviceMap.remove(sessionId);
+            sessionRegistry.unregister(sessionId);
             log.info("WebSocket DISCONNECT sessionId={}", sessionId);
             return message;
         }
 
         if (accessor.getUser() == null) {
-            String username = sessionUserMap.get(accessor.getSessionId());
+            String username = sessionRegistry.username(accessor.getSessionId());
             if (username != null) {
                 accessor.setUser(() -> username);
                 return MessageBuilder.createMessage(message.getPayload(), accessor.getMessageHeaders());
@@ -100,8 +97,7 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
             String sessionId = accessor.getSessionId();
             Principal userPrincipal = () -> username;
 
-            sessionUserMap.put(sessionId, username);
-            sessionDeviceMap.put(sessionId, deviceId);
+            sessionRegistry.register(sessionId, username, deviceId);
 
             accessor.setUser(userPrincipal);
             accessor.getSessionAttributes().put("username", username);
@@ -143,7 +139,7 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
     private boolean isSubscriptionAllowed(String username, String sessionId, String dest) {
         if (dest.startsWith("/topic/devices/")) {
             String deviceId = pathSegment(dest, 3);
-            String sessionDeviceId = sessionDeviceMap.get(sessionId);
+            String sessionDeviceId = sessionRegistry.deviceId(sessionId);
 
             return deviceId != null
                     && deviceId.equals(sessionDeviceId)
@@ -176,7 +172,7 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
 
     private boolean isSessionDeviceActive(StompHeaderAccessor accessor) {
         String username = resolveUsername(accessor);
-        String deviceId = sessionDeviceMap.get(accessor.getSessionId());
+        String deviceId = sessionRegistry.deviceId(accessor.getSessionId());
 
         return username != null
                 && deviceId != null
@@ -187,7 +183,7 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
         if (accessor.getUser() != null) {
             return accessor.getUser().getName();
         }
-        return sessionUserMap.get(accessor.getSessionId());
+        return sessionRegistry.username(accessor.getSessionId());
     }
 
     private String extractBearerToken(List<String> authHeaders) {
@@ -215,6 +211,6 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
     }
 
     public String getUsernameBySessionId(String sessionId) {
-        return sessionUserMap.get(sessionId);
+        return sessionRegistry.username(sessionId);
     }
 }

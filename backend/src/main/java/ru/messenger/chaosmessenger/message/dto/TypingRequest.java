@@ -6,4 +6,5 @@ public record TypingRequest(
         @NotNull(message = "Chat ID is required")
         Long chatId,
         boolean typing
-) {}
+) {
+}

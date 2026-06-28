@@ -134,11 +134,12 @@ export const api = {
   toggleReaction: (id, emoji)          => call(`/messages/${id}/reactions`, { method: "PUT", body: JSON.stringify({ emoji }) }),
 
   // ── Attachments ──────────────────────────────────────────────────────────
-  uploadAttachment: async (encryptedBlob) => {
+  uploadAttachment: async (encryptedBlob, chatId = null) => {
     const token = getToken();
     const deviceId = getCurrentDeviceId();
     const form = new FormData();
     form.append("file", new Blob([encryptedBlob]), "encrypted.bin");
+    if (chatId !== null && chatId !== undefined) form.append("chatId", String(chatId));
     const res = await fetch(API_BASE + "/attachments/upload", {
       method: "POST",
       headers: {

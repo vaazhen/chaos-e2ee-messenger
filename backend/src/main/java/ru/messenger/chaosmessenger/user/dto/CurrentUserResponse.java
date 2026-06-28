@@ -8,4 +8,5 @@ public record CurrentUserResponse(
         String lastName,
         String avatarUrl,
         String publicKey
-) {}
+) {
+}

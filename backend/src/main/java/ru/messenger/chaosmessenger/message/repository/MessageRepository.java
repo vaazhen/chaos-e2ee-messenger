@@ -42,7 +42,6 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
                                       @Param("beforeId") Long beforeId,
                                       Pageable pageable);
 
-
     @Query("""
             select distinct m.senderId
             from Message m

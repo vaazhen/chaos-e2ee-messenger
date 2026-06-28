@@ -8,14 +8,13 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.core.Authentication;
-import ru.messenger.chaosmessenger.TestFixtures;
-import ru.messenger.chaosmessenger.chat.repository.ChatParticipantRepository;
 import ru.messenger.chaosmessenger.crypto.device.CurrentDeviceService;
 import ru.messenger.chaosmessenger.crypto.device.UserDevice;
 import ru.messenger.chaosmessenger.crypto.dto.EncryptedEditMessageRequestV2;
 import ru.messenger.chaosmessenger.crypto.dto.EncryptedMessageEnvelopeInput;
 import ru.messenger.chaosmessenger.crypto.dto.EncryptedSendMessageRequestV2;
 import ru.messenger.chaosmessenger.infra.ws.WebSocketAuthChannelInterceptor;
+import ru.messenger.chaosmessenger.message.application.TypingService;
 import ru.messenger.chaosmessenger.message.dto.DeviceMessageEventResponse;
 import ru.messenger.chaosmessenger.message.dto.MessageTimelineItemResponse;
 import ru.messenger.chaosmessenger.message.dto.ReactionEvent;
@@ -24,12 +23,10 @@ import ru.messenger.chaosmessenger.message.dto.TypingEvent;
 import ru.messenger.chaosmessenger.message.dto.TypingRequest;
 import ru.messenger.chaosmessenger.message.dto.UpdateMessageStatusRequest;
 import ru.messenger.chaosmessenger.message.service.MessageService;
-import ru.messenger.chaosmessenger.user.service.UserIdentityService;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -46,8 +43,7 @@ class MessageControllerTest {
     @Mock Authentication authentication;
     @Mock SimpMessagingTemplate messagingTemplate;
     @Mock WebSocketAuthChannelInterceptor authInterceptor;
-    @Mock UserIdentityService userIdentityService;
-    @Mock ChatParticipantRepository participantRepository;
+    @Mock TypingService typingService;
 
     @InjectMocks MessageController messageController;
     @InjectMocks TypingController typingController;
@@ -172,11 +168,9 @@ class MessageControllerTest {
     @Test
     void typingSendsEventWhenSessionIsAuthenticatedAndUserIsParticipant() {
         TypingRequest request = new TypingRequest(100L, true);
-        var alice = TestFixtures.user(1L, "alice");
 
         when(authInterceptor.getUsernameBySessionId("session-1")).thenReturn("alice");
-        when(userIdentityService.resolve("alice")).thenReturn(Optional.of(alice));
-        when(participantRepository.existsByChatIdAndUserId(100L, 1L)).thenReturn(true);
+        when(typingService.isTypingAllowed("alice", 100L)).thenReturn(true);
 
         typingController.typing(request, "session-1");
 
@@ -204,11 +198,9 @@ class MessageControllerTest {
     @Test
     void typingDoesNotSendWhenUserIsNotChatParticipant() {
         TypingRequest request = new TypingRequest(100L, true);
-        var alice = TestFixtures.user(1L, "alice");
 
         when(authInterceptor.getUsernameBySessionId("session-1")).thenReturn("alice");
-        when(userIdentityService.resolve("alice")).thenReturn(Optional.of(alice));
-        when(participantRepository.existsByChatIdAndUserId(100L, 1L)).thenReturn(false);
+        when(typingService.isTypingAllowed("alice", 100L)).thenReturn(false);
 
         typingController.typing(request, "session-1");
 

@@ -77,7 +77,7 @@ export function useI18n() {
 
     try {
       await api.setLang(normalized);
-    } catch (_) {}
+    } catch (_) { /* ignore optional failure */ }
 
     await loadTranslations(normalized);
   }, [lang, loadTranslations]);
