@@ -11,6 +11,7 @@
 [![Java](https://img.shields.io/badge/Java-17-orange?logo=openjdk&logoColor=white)](https://openjdk.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7-red?logo=redis&logoColor=white)](https://redis.io/)
+[![Kafka](https://img.shields.io/badge/Kafka%2FRedpanda-outbox-231F20?logo=apachekafka&logoColor=white)](https://redpanda.com/)
 [![Docker](https://img.shields.io/badge/docker-ready-blue?logo=docker)](https://www.docker.com/)
 [![Kubernetes](https://img.shields.io/badge/k8s-manifests-326CE5?logo=kubernetes&logoColor=white)](k8s/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
@@ -18,537 +19,647 @@
 </div>
 
 ---
+
 # Chaos Messenger
 
-**Chaos Messenger** is an open-source E2EE messenger and full-stack engineering project where the server delivers messages without being able to read them.
+**Chaos Messenger** is an open-source full-stack E2EE messenger and engineering project. The browser encrypts every message using the Signal protocol (X3DH + Double Ratchet), the backend routes encrypted envelopes per device, and PostgreSQL stores only ciphertext. **The server never sees plaintext.**
 
-The core idea is simple: **the server should know as little as possible, while clients own the cryptographic state**. The browser encrypts messages, the backend routes encrypted envelopes, PostgreSQL stores ciphertext, and realtime delivery scales through transactional outbox + Kafka/Redpanda.
+```json
+// What the server stores per message
+{ "ciphertext": "qzgHSg7z...", "nonce": "6KPcVjbp...", "messageIndex": 42 }
+// What appears in chat previews
+{ "lastMessage": "[encrypted]" }
+```
 
-> ⚠️ This is not a Signal replacement and not an audited secure messenger. It is an open-source engineering project that implements a production-like E2EE messenger architecture: cryptography, realtime delivery, multi-device support, desktop client, observability and infrastructure.
+> ⚠️ This is not a Signal replacement and has not been independently audited. It is an engineering project implementing a production-like E2EE architecture: cryptography, realtime delivery, multi-device support, desktop client, Kafka backbone, observability and infrastructure.
+
+**Available as:** Web app · Desktop (Electron) for Windows / macOS / Linux · Docker Compose · Kubernetes
 
 ---
 
-## What is inside
+## Table of Contents
 
-- **End-to-end encryption**: X3DH-like bootstrap, signed prekeys, one-time prekeys, DH Ratchet / Double Ratchet-like message flow.
-- **Multi-device delivery**: every device receives its own encrypted envelope.
-- **Kafka/Redpanda realtime backbone**: durable event delivery through transactional outbox.
-- **Spring SimpleBroker is only a local WebSocket transport**, not the center of the architecture.
-- **PostgreSQL as source of truth**: messages, envelopes, devices, prekeys, attachments and outbox events.
-- **Redis**: presence, sessions, rate limits, refresh tokens and runtime counters/cache flows.
-- **React + WebCrypto frontend**: keys, encryption and decryption run on the client.
-- **Electron desktop client**: desktop shell over the web client.
-- **Observability**: Prometheus, Grafana, Loki and Actuator.
-- **Docker / Kubernetes**: dev compose, production compose and k8s manifests.
+- [Stack](#stack)
+- [High-Level Architecture](#high-level-architecture)
+- [Message Path: End to End](#message-path-end-to-end)
+- [E2EE Protocol](#e2ee-protocol)
+- [Transactional Outbox + Kafka](#transactional-outbox--kafka)
+- [Realtime Delivery Model](#realtime-delivery-model)
+- [Multi-Device Delivery](#multi-device-delivery)
+- [Desktop Client (Electron)](#desktop-client-electron)
+- [Features](#features)
+- [Quick Start](#quick-start)
+- [Local Services](#local-services)
+- [Load Testing Results](#load-testing-results)
+- [Backend Module Map](#backend-module-map)
+- [API Reference](#api-reference)
+- [Key Design Decisions](#key-design-decisions)
+- [Known Limitations](#known-limitations)
+- [Roadmap](#roadmap)
+- [Articles](#articles)
 
 ---
 
 ## Stack
 
-| Layer | Tech |
+| Layer | Technology |
 |---|---|
-| Frontend | React 18, JavaScript, WebCrypto, IndexedDB, STOMP/WebSocket |
-| Desktop | Electron 33 |
-| Backend | Java 17, Spring Boot 3.5, Spring Security, Spring Data JPA |
-| Realtime | WebSocket/STOMP, Kafka/Redpanda, local SimpleBroker |
-| Storage | PostgreSQL 16, Flyway migrations |
-| Cache / runtime state | Redis 7 |
-| Messaging backbone | Kafka-compatible Redpanda |
-| Observability | Prometheus, Grafana, Loki, Spring Boot Actuator |
-| Infrastructure | Docker Compose, Caddy, Nginx, Kubernetes |
-| Crypto | WebCrypto, X25519-style ECDH flow, ECDSA P-256 signatures, HKDF-SHA256, AES-256-GCM |
+| Frontend | React 18, JavaScript, WebCrypto API, IndexedDB, STOMP/WebSocket |
+| Desktop | Electron 33 (Windows / macOS / Linux) |
+| Backend | Java 17, Spring Boot 3.5, Spring Security, Spring Data JPA, Hibernate |
+| Realtime backbone | Apache Kafka / Redpanda, Transactional Outbox |
+| Local delivery | WebSocket/STOMP, Spring SimpleBroker |
+| Storage | PostgreSQL 16, 38 Flyway migrations |
+| Cache / runtime state | Redis 7 (tokens, presence, rate limits, unread counters) |
+| Reverse proxy | Caddy v2 (auto-HTTPS), Nginx |
+| Observability | Prometheus, Grafana, Loki, Promtail, Spring Boot Actuator |
+| Infrastructure | Docker Compose (13 services), Kubernetes (Kustomize), GitHub Actions CI/CD |
+| Cryptography | WebCrypto API, X25519 ECDH, ECDSA P-256, HKDF-SHA256, AES-256-GCM |
 
 ---
 
-## High-level architecture
+## High-Level Architecture
 
 ```mermaid
 flowchart TB
-    subgraph Client[Client Layer]
-        Web[React Web Client]
-        Electron[Electron Desktop]
-        Crypto[WebCrypto Engine]
-        IDB[(IndexedDB)]
+    subgraph Clients["Client Layer"]
+        Web["React 18\nWeb App"]
+        Electron["Electron 33\nDesktop"]
+        Crypto["WebCrypto Engine\n(X3DH + Double Ratchet)"]
+        IDB[("IndexedDB\nlocal cache")]
         Web --> Crypto
         Electron --> Web
         Crypto --> IDB
     end
 
-    subgraph API[Backend API Layer]
-        REST[REST Controllers]
-        WS[WebSocket/STOMP Endpoint]
-        Auth[Spring Security / JWT / Device Context]
+    subgraph Proxy["Reverse Proxy"]
+        Caddy["Caddy v2\nauto-HTTPS"]
+        Nginx["Nginx\nstatic + proxy"]
     end
 
-    subgraph App[Application Services]
-        Chat[Chat Services]
-        Message[Message Services]
-        Device[Device / PreKey Services]
-        Attach[Attachment Services]
-        Access[Access / Permission Services]
-        OutboxWriter[Transactional Outbox Writers]
+    subgraph Backend["Backend (Spring Boot 3.5 / Java 17)"]
+        REST["REST Controllers"]
+        WS["WebSocket / STOMP"]
+        Auth["Spring Security\nJWT + Device Context"]
+        Services["Application Services\n(chat, message, crypto, backup…)"]
+        OutboxW["Outbox Writers\n(same transaction)"]
     end
 
-    subgraph Data[Persistence]
-        PG[(PostgreSQL)]
-        Redis[(Redis)]
-        Outbox[(outbox_events)]
+    subgraph Persistence["Persistence"]
+        PG[("PostgreSQL 16\nmessages, envelopes,\ndevices, prekeys,\noutbox_events")]
+        Redis[("Redis 7\ntokens, presence,\nrate limits")]
     end
 
-    subgraph Events[Event Backbone]
-        Publisher[Outbox Publisher]
-        Kafka[(Kafka / Redpanda)]
-        Realtime[Realtime Event Consumer]
-        Push[Push / Audit / Security Consumers]
+    subgraph EventBus["Event Bus"]
+        Publisher["OutboxPublisher\n(scheduled poller)"]
+        Kafka[("Kafka / Redpanda\n8 topics")]
+        RealtimeConsumer["RealtimeEventConsumer\n(unique group per instance)"]
+        BgConsumers["Push / Audit / Security\n(shared groups)"]
     end
 
-    subgraph LocalDelivery[Local Realtime Delivery]
-        Registry[WebSocket Session Registry]
-        Broker[Spring SimpleBroker]
-        Stomp[STOMP Fanout]
+    subgraph LocalDelivery["Local Realtime Delivery"]
+        Registry["WebSocketSessionRegistry"]
+        Broker["Spring SimpleBroker"]
+        Stomp["STOMP fanout\nper device topic"]
     end
 
-    Web --> REST
-    Web --> WS
-    REST --> Auth
+    subgraph Monitoring["Observability"]
+        Prometheus["Prometheus"]
+        Loki["Loki"]
+        Grafana["Grafana\ndashboards"]
+    end
+
+    Web --> Caddy --> Nginx
+    Nginx --> REST & WS
+    REST --> Auth --> Services
     WS --> Auth
-    REST --> Chat
-    REST --> Message
-    REST --> Device
-    REST --> Attach
-    Message --> OutboxWriter
-    Chat --> OutboxWriter
-    OutboxWriter --> PG
-    OutboxWriter --> Outbox
-    Chat --> PG
-    Message --> PG
-    Device --> PG
-    Attach --> PG
-    App --> Redis
-    Outbox --> Publisher
-    Publisher --> Kafka
-    Kafka --> Realtime
-    Kafka --> Push
-    Realtime --> Registry
-    Realtime --> Broker
-    Broker --> Stomp
-    Stomp --> WS
-    WS --> Web
+    Services --> OutboxW --> PG
+    Services --> PG & Redis
+    PG --> Publisher --> Kafka
+    Kafka --> RealtimeConsumer --> Registry --> Broker --> Stomp --> WS --> Web
+    Kafka --> BgConsumers
+    Prometheus --> Grafana
+    Loki --> Grafana
 ```
 
 ---
 
-## Kafka is not a checkbox here
+## Message Path: End to End
 
-Spring SimpleBroker is convenient for development and single-instance deployments, but it is in-memory and does not solve cross-instance delivery.
-
-Chaos Messenger uses Kafka/Redpanda as a **durable event backbone**:
+This is the complete journey of a message from Alice's browser to Bob's device.
 
 ```mermaid
 sequenceDiagram
-    participant API as Message API
-    participant DB as PostgreSQL
+    participant Alice as Alice's Browser
+    participant API as Backend API
+    participant PG as PostgreSQL
     participant OUT as outbox_events
-    participant PUB as Outbox Publisher
+    participant PUB as OutboxPublisher
     participant K as Kafka / Redpanda
-    participant C1 as Backend #1 Realtime Consumer
-    participant C2 as Backend #2 Realtime Consumer
-    participant WS1 as Local WS Sessions #1
-    participant WS2 as Local WS Sessions #2
+    participant Consumer as RealtimeEventConsumer
+    participant BobWS as Bob's WebSocket
 
-    API->>DB: save message + encrypted envelopes
-    API->>OUT: write MESSAGE_CREATED event in same transaction
-    DB-->>API: commit
-    PUB->>OUT: poll PENDING events FOR UPDATE SKIP LOCKED
-    PUB->>K: publish by topic/key
-    PUB->>OUT: mark PUBLISHED
-    K-->>C1: MESSAGE_CREATED
-    K-->>C2: MESSAGE_CREATED
-    C1->>WS1: deliver only to local connected devices
-    C2->>WS2: deliver only to local connected devices
+    Alice->>API: POST /api/crypto/resolve-chat-devices
+    API-->>Alice: Bob's public identity key + signed prekey + one-time prekey
+
+    Note over Alice: Verify ECDSA signature on signed prekey
+    Note over Alice: Compute X3DH: DH1‖DH2‖DH3‖DH4 → HKDF → shared secret
+    Note over Alice: Init Double Ratchet, encrypt per device → ciphertext
+
+    Alice->>API: POST /api/messages/encrypted/v2 {envelopes per device}
+    API->>PG: INSERT message + encrypted envelopes (one transaction)
+    API->>OUT: INSERT MESSAGE_CREATED event (same transaction)
+    PG-->>API: COMMIT
+
+    PUB->>OUT: SELECT PENDING FOR UPDATE SKIP LOCKED (batch 100)
+    PUB->>K: produce to chaos.message.events (key = chatId)
+    PUB->>OUT: UPDATE status = PUBLISHED
+
+    K-->>Consumer: MESSAGE_CREATED event
+    Consumer->>Consumer: dedup check (eventId cache, max 100K)
+    Consumer->>Registry: find Bob's device sessions on this instance
+    Consumer->>Broker: publish to /topic/devices/{deviceId}/chats/{chatId}
+    Broker-->>BobWS: deliver envelope for Bob's device only
+
+    Note over BobWS: Decrypt with Double Ratchet → plaintext
+    Note over BobWS: Store in IndexedDB
 ```
 
-The main principle:
-
-> **PostgreSQL commits the business fact, outbox persists the event, Kafka distributes it across instances, and WebSocket delivers it to local clients only.**
+**Core principle:** PostgreSQL commits the business fact and the event atomically. Kafka distributes to all backend instances. Each instance delivers only to locally connected devices.
 
 ---
 
-## Transactional Outbox
+## E2EE Protocol
 
-### Outbox lifecycle
+### Device Registration
+
+On first launch, the browser generates via WebCrypto API:
+
+| Key material | Algorithm | Stored |
+|---|---|---|
+| Identity keypair | X25519 ECDH | Private → localStorage only |
+| Signing keypair | ECDSA P-256 | Private → localStorage only |
+| Signed prekey | X25519, signed by signing key | Public → server |
+| 50 one-time prekeys | X25519 | Public → server |
+
+The backend stores **only public key material and encrypted envelopes** — never private keys.
+
+### Session Establishment (X3DH)
+
+When Alice sends the first message to Bob:
+
+```
+1. Fetch Bob's devices: POST /api/crypto/resolve-chat-devices
+2. Atomically reserve a one-time prekey (FOR UPDATE)
+3. Verify signed prekey ECDSA P-256 signature
+4. Compute 3–4 X25519 DH operations
+5. Derive shared secret: HKDF-SHA256(DH1 ‖ DH2 ‖ DH3 ‖ DH4)
+6. Initialize Double Ratchet
+```
+
+### Double Ratchet
+
+Per the Signal specification:
+
+```
+Symmetric ratchet:
+  messageKey   = HMAC-SHA256(chainKey, 0x01)
+  nextChainKey = HMAC-SHA256(chainKey, 0x02)
+
+DH ratchet (on direction change):
+  new X25519 keypair → DH exchange → HKDF-SHA256(rootKey, dhOutput) → newRootKey + newChainKey
+
+Encryption:
+  ciphertext = AES-256-GCM(plaintext, messageKey, randomNonce)
+
+Out-of-order delivery:
+  skipped message keys cached: up to 2000 per step, 4000 total
+```
+
+```mermaid
+graph LR
+    subgraph "Double Ratchet — single message"
+        CK["Chain Key"] -->|"HMAC-SHA256(ck, 0x01)"| MK["Message Key"]
+        CK -->|"HMAC-SHA256(ck, 0x02)"| CK2["Next Chain Key"]
+        MK -->|"AES-256-GCM + random nonce"| CT["Ciphertext"]
+        DH["DH Ratchet step\n(direction change)"] -->|"HKDF-SHA256"| RK2["New Root Key"]
+        RK2 --> CK2
+    end
+```
+
+---
+
+## Transactional Outbox + Kafka
+
+### Why Outbox
+
+Spring SimpleBroker works for single-instance deployments but is in-memory and doesn't solve cross-instance delivery. The transactional outbox pattern guarantees that every committed business event eventually reaches Kafka — even if the broker is temporarily unavailable.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> PENDING
-    PENDING --> PROCESSING: locked by publisher
-    PROCESSING --> PUBLISHED: Kafka ack received
-    PROCESSING --> FAILED: publish failed
-    FAILED --> PENDING: retry after backoff
-    FAILED --> DEAD: max attempts exceeded
+    [*] --> PENDING : business transaction committed
+    PENDING --> PROCESSING : claimed by publisher (FOR UPDATE SKIP LOCKED)
+    PROCESSING --> PUBLISHED : Kafka ack received
+    PROCESSING --> FAILED : publish error
+    FAILED --> PENDING : backoff via next_attempt_at
+    FAILED --> DEAD : max_attempts exceeded
     DEAD --> [*]
     PUBLISHED --> [*]
 ```
 
-Outbox records include:
+### Outbox Event Fields
 
-- `event_id`
-- `aggregate_type`
-- `aggregate_id`
-- `event_type`
-- `event_version`
-- `schema_version`
-- `payload jsonb`
-- `status`
-- `attempts`
-- `max_attempts`
-- `next_attempt_at`
-- `locked_at`
-- `locked_by`
-- `last_error`
-- `correlation_id`
-- `idempotency_key`
-- `occurred_at`
-- `published_at`
+| Field | Purpose |
+|---|---|
+| `event_id` | Idempotency key for dedup |
+| `aggregate_type` | `message`, `chat`, `user`, `request` |
+| `aggregate_id` | Entity ID (used as Kafka partition key) |
+| `event_type` | `MESSAGE_CREATED`, `CHAT_UPDATED`, etc. |
+| `payload jsonb` | Full event data |
+| `status` | `PENDING → PROCESSING → PUBLISHED / FAILED / DEAD` |
+| `attempts / max_attempts` | Retry tracking |
+| `next_attempt_at` | Exponential backoff schedule |
+| `locked_by` | Instance lock owner (hostname:pid) |
+| `last_error` | Last failure reason |
+
+### Kafka Topics
+
+| Topic | Partitions | Purpose |
+|---|---|---|
+| `chaos.message.events` | 6 | Messages: send, edit, delete, reaction, status |
+| `chaos.chat.events` | 6 | Chat created/updated, members, moderation |
+| `chaos.receipt.events` | 6 | Delivered / read receipts |
+| `chaos.user.events` | 3 | Profile and avatar updates |
+| `chaos.push.events` | 6 | Push notification requests |
+| `chaos.security.events` | 3 | Device/prekey/security events |
+| `chaos.audit.events` | 3 | Audit trail |
+| `chaos.dead-letter.events` | 3 | Failed events |
+
+Kafka partition key = `chatId` for message/chat events → ordering preserved per chat.
+
+### Kafka Failure Handling
+
+```mermaid
+flowchart TD
+    A["Business transaction\ncommitted"] --> B["PENDING in outbox"]
+    B --> C["OutboxPublisher\nattempts publish"]
+    C -->|Kafka available| D["PUBLISHED ✓"]
+    C -->|Kafka down| E["FAILED\nattempts++"]
+    E -->|backoff| C
+    E -->|max attempts exceeded| F["DEAD → DLQ topic"]
+    F --> G["Grafana alert\nmanual inspection"]
+```
 
 ---
 
-## Realtime delivery model
-
-Realtime delivery now works like this:
+## Realtime Delivery Model
 
 ```mermaid
 flowchart TB
-    Kafka[(Kafka topics)] --> Consumer[RealtimeEventConsumer]
-    Consumer --> Resolver[Device envelope resolver]
-    Resolver --> Registry[WebSocketSessionRegistry]
-    Registry --> LocalOnly{Device connected locally?}
-    LocalOnly -->|yes| Stomp[SimpMessagingTemplate]
-    LocalOnly -->|no| Skip[Skip on this instance]
-    Stomp --> Client[Client WebSocket subscription]
+    Kafka[("Kafka topics")] --> Consumer["RealtimeEventConsumer"]
+    Consumer --> Dedup["Dedup cache\n(100K eventIds in-memory)"]
+    Dedup --> Router["Event router\nby aggregateType"]
+    Router --> Registry["WebSocketSessionRegistry"]
+    Registry --> Check{"Device session\nlocal to this instance?"}
+    Check -->|yes| Stomp["SimpMessagingTemplate\n→ STOMP topic"]
+    Check -->|no| Skip["Skip — another\ninstance will deliver"]
+    Stomp --> Client["Client WebSocket\nsubscription"]
 ```
 
-For realtime delivery, every backend instance must receive the event. Therefore realtime consumers use a **unique consumer group per backend instance**.
+### Consumer Group Strategy
 
-```text
-backend-1: chaos-realtime-backend-1
-backend-2: chaos-realtime-backend-2
-backend-3: chaos-realtime-backend-3
+Realtime consumers use a **unique group per backend instance** so every instance receives every event:
+
+```
+backend-1  →  group: chaos-realtime-a1b2c3
+backend-2  →  group: chaos-realtime-d4e5f6
+backend-3  →  group: chaos-realtime-g7h8i9
 ```
 
-Background consumers use shared groups instead:
-
-```text
-push workers:  chaos-push-workers
-audit workers: chaos-audit-workers
-```
-
-Otherwise push/audit events could be processed multiple times.
+Background consumers use **shared groups** (push, audit, security) — processed exactly once across the fleet.
 
 ---
 
-## E2EE message flow
+## Multi-Device Delivery
 
-```mermaid
-sequenceDiagram
-    participant Alice as Alice Device
-    participant API as Chaos Backend
-    participant PG as PostgreSQL
-    participant OUT as Outbox
-    participant K as Kafka
-    participant Bob1 as Bob Device #1
-    participant Bob2 as Bob Device #2
-
-    Alice->>API: resolve chat devices
-    API-->>Alice: public identity keys + signed prekeys + one-time prekeys
-    Alice->>Alice: verify signatures + derive sessions
-    Alice->>Alice: encrypt per recipient device
-    Alice->>API: POST encrypted message + envelopes
-    API->>PG: save message metadata + encrypted envelopes
-    API->>OUT: write MESSAGE_CREATED event
-    OUT->>K: publish after commit
-    K-->>Bob1: realtime event with Bob1 envelope
-    K-->>Bob2: realtime event with Bob2 envelope
-    Bob1->>Bob1: decrypt locally
-    Bob2->>Bob2: decrypt locally
-```
-
-The server stores and routes encrypted payloads only. Plaintext exists only on client devices.
-
----
-
-## Device registration and prekeys
-
-```mermaid
-sequenceDiagram
-    participant Client as Browser / Desktop Client
-    participant Crypto as WebCrypto
-    participant API as Device API
-    participant PG as PostgreSQL
-
-    Client->>Crypto: generate identity keypair
-    Client->>Crypto: generate signing keypair
-    Client->>Crypto: generate signed prekey
-    Client->>Crypto: generate one-time prekeys
-    Crypto-->>Client: private keys stay local
-    Client->>API: upload public identity key, signed prekey, one-time prekeys
-    API->>PG: store public device bundle
-```
-
-Private keys are client-side material. The backend stores only public key material and encrypted envelopes.
-
----
-
-## Multi-device delivery
-
-Each message is stored once as a logical message, but delivered as multiple encrypted envelopes:
+One logical message → N encrypted envelopes, one per recipient device plus sender's own devices for cross-device sync.
 
 ```mermaid
 flowchart LR
-    M[Message metadata] --> E1[Envelope for Alice device]
-    M --> E2[Envelope for Bob phone]
-    M --> E3[Envelope for Bob desktop]
-    M --> E4[Envelope for Bob browser]
+    M["Message metadata\n(stored once)"] --> E1["Envelope\nBob's phone"]
+    M --> E2["Envelope\nBob's desktop"]
+    M --> E3["Envelope\nAlice's tablet\n(cross-device sync)"]
 
-    E1 --> D1[device-a]
-    E2 --> D2[device-b]
-    E3 --> D3[device-c]
-    E4 --> D4[device-d]
+    E1 --> WS1["WS topic\n/topic/devices/phone-id/chats/42"]
+    E2 --> WS2["WS topic\n/topic/devices/desktop-id/chats/42"]
+    E3 --> WS3["WS topic\n/topic/devices/tablet-id/chats/42"]
 ```
 
-This keeps the backend transport-aware but content-blind.
+The backend is **transport-aware but content-blind** — it routes envelopes without being able to decrypt them.
 
 ---
 
-## Attachment security model
+## Local Message Cache (IndexedDB)
 
-Attachments are encrypted client-side and stored server-side as ciphertext. Access is scoped by the exact chat/message relationship.
+After decryption, every message is stored in **IndexedDB** (`chaos-messenger` DB, `messages` table):
 
-```mermaid
-flowchart TB
-    User[Authenticated user] --> Req[Download attachment]
-    Req --> Check1{Attachment has chatId/messageId?}
-    Check1 -->|no| Deny[Deny]
-    Check1 -->|yes| Check2{User is participant of exact chat?}
-    Check2 -->|no| Deny
-    Check2 -->|yes| Serve[Serve encrypted bytes]
+```
+WebSocket event → decrypt → IndexedDB + React state
+Page reload     → IndexedDB → React state   (zero API calls, zero crypto)
+Cold sync       → API → decrypt → IndexedDB + React state
 ```
 
-Even though attachments are encrypted, ciphertext is still user data. The server must not expose it outside the exact chat boundary.
+| Field | Stored | Notes |
+|---|---|---|
+| `id`, `chatId`, `senderId` | ✅ | Index key = `id` |
+| `content` (decrypted JSON) | ✅ | Full payload |
+| `reactions`, `myReactions` | ✅ | Updated via `updateMessageReactions()` |
+| `_img`, `_voice` | ❌ | Object URLs — session-only |
+| `_attachment.objectUrl` | ❌ | Stripped before saving |
 
 ---
 
-## Backend module map
+## Desktop Client (Electron)
 
-```text
-backend/src/main/java/ru/messenger/chaosmessenger
-├── auth/              # auth, login, verification, refresh tokens
-├── user/              # profile, user identity
-├── crypto/            # devices, signed prekeys, one-time prekeys, bundles
-├── chat/              # direct chats, groups, participants, moderation
-├── message/           # encrypted messages, envelopes, receipts, reactions
-├── attachment/        # encrypted attachments and access checks
-├── outbox/            # transactional outbox, publisher, Kafka config
-├── realtime/          # Kafka realtime consumers and local WS fanout
-├── push/              # web push subscriptions
-├── backup/            # encrypted backups
-└── infra/             # security, config, filters, observability
+Electron wraps the React frontend in a native Chromium window:
+
+- **System tray** — minimize to tray, background notifications
+- **Native notifications** — OS-level message alerts
+- **File dialogs** — save/open encrypted attachments natively
+- **Single instance** — prevents duplicate windows
+- **Window state** — remembers position, size, maximized
+- **Cross-platform** — Windows (NSIS), macOS (DMG), Linux (AppImage)
+
+```bash
+cd frontend
+npm install
+
+# Development (hot reload in Electron window)
+npm run electron:dev
+
+# Production build for Windows
+npm run electron:build:win
+
+# Production build for current platform
+npm run electron:build
 ```
+
+Installer output: `frontend/release/`
 
 ---
 
-## Main runtime flows
+## Features
 
-### Send encrypted message
-
-```mermaid
-flowchart TD
-    A[POST /api/messages/encrypted/v2] --> B[Authenticate JWT + device context]
-    B --> C[Validate chat access]
-    C --> D[Persist Message]
-    D --> E[Persist MessageEnvelopes]
-    E --> F[Write MESSAGE_CREATED outbox event]
-    F --> G[Commit transaction]
-    G --> H[OutboxPublisher sends to Kafka]
-    H --> I[Realtime consumer delivers per-device envelope]
-```
-
-### Update profile
-
-```mermaid
-flowchart TD
-    A[PATCH /api/users/me] --> B[Validate current user]
-    B --> C[Update user profile]
-    C --> D[Write USER_PROFILE_UPDATED outbox event]
-    D --> E[Commit]
-    E --> F[Kafka]
-    F --> G[Realtime chat list refresh]
-```
-
-### Kafka failure
-
-```mermaid
-flowchart TD
-    A[Business transaction committed] --> B[Outbox event PENDING]
-    B --> C[Publisher attempts Kafka publish]
-    C -->|Kafka down| D[FAILED + attempts increment]
-    D --> E[Backoff via next_attempt_at]
-    E --> C
-    C -->|Kafka back| F[PUBLISHED]
-    D -->|max attempts exceeded| G[DEAD]
-```
-
----
-
-## Kafka topics
-
-| Topic | Purpose |
+| Category | Features |
 |---|---|
-| `chaos.message.events` | message created/edited/deleted/reactions/status |
-| `chaos.chat.events` | chat created/updated, members, moderation |
-| `chaos.receipt.events` | delivered/read receipts |
-| `chaos.user.events` | profile/avatar updates |
-| `chaos.security.events` | device/security/prekey events |
-| `chaos.push.events` | push notification requests |
-| `chaos.audit.events` | audit events |
-| `chaos.dead-letter.events` | dead-letter events |
-
-Kafka keys should preserve ordering where it matters. Message events should generally be keyed by `chatId`.
+| **E2EE** | X3DH session establishment · Double Ratchet per message · AES-256-GCM · HKDF-SHA256 |
+| **Multi-device** | Per-device keys · per-device envelopes · device management UI |
+| **Auth** | Phone OTP · email/password · JWT · refresh token rotation · rate limits |
+| **Chats** | Direct · Saved Messages · Groups with RBAC · chat requests |
+| **Messages** | Send · edit · delete · reply · reactions · read/delivered status · typing indicator |
+| **Attachments** | AES-256-GCM encrypted · image compression · voice messages |
+| **Self-destruct** | TTL per message · scheduled cleanup · countdown UI |
+| **Realtime** | SockJS / WebSocket / STOMP · per-device topics · presence heartbeats |
+| **Calls** | WebRTC audio/video · screen share · STUN-based ICE |
+| **Desktop** | Electron · system tray · native notifications · single instance |
+| **Observability** | Spring Actuator · Prometheus · Loki · Grafana (pre-built dashboards) |
+| **Infrastructure** | Docker Compose (13 services) · Kubernetes (Kustomize) · GitHub Actions CI/CD |
 
 ---
 
-## Local development
+## Quick Start
 
-### Start infrastructure
+### 1. Docker Compose (recommended)
 
-From `backend/`:
+```bash
+git clone https://github.com/vaazhen/chaos-e2ee-messenger.git
+cd chaos-e2ee-messenger
 
-```powershell
-cd backend
+cat > .env << EOF
+POSTGRES_PASSWORD=change_this_password_123
+JWT_SECRET=change_this_jwt_secret_32_chars_minimum
+CORS_ORIGINS=http://localhost
+DOMAIN=localhost
+GRAFANA_ADMIN_PASSWORD=change_admin_password
+EOF
 
-docker compose -f docker-compose.dev.yml up -d
+docker compose up -d
 ```
 
-This starts:
+Open: [http://localhost](http://localhost)
 
-- PostgreSQL
-- Redis
-- Redpanda/Kafka
+### 2. Demo mode (test accounts)
 
-### IntelliJ / local backend environment
-
-```env
-SPRING_PROFILES_ACTIVE=dev
-SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/chaos_messenger
-SPRING_DATASOURCE_USERNAME=postgres
-SPRING_DATASOURCE_PASSWORD=postgres
-SPRING_DATA_REDIS_HOST=localhost
-SPRING_DATA_REDIS_PORT=6379
-CHAOS_KAFKA_ENABLED=true
-SPRING_KAFKA_BOOTSTRAP_SERVERS=localhost:19092
-KAFKA_BOOTSTRAP_SERVERS=localhost:19092
-JWT_SECRET=dev-chaos-local-jwt-secret-change-me-32-chars-minimum
-CHAOS_CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000
-CHAOS_CORS_ALLOWED_ORIGIN_PATTERNS=http://localhost:*,http://127.0.0.1:*,http://192.168.*.*:*
+Add to `.env`:
+```
 CHAOS_DEMO_ENABLED=true
 ```
 
-### Backend build
-
-```powershell
-cd backend
-./mvnw.cmd clean install
+Restart and seed:
+```bash
+docker compose up -d
+curl -s http://localhost/api/demo/seed
 ```
 
-### Frontend
+| User | Phone | Code |
+|---|---|---|
+| Alice | +19999999998 | 111111 |
+| Bob | +19999999999 | 000000 |
 
-```powershell
+### 3. Manual dev setup
+
+```bash
+# 1. Infrastructure (PostgreSQL + Redis + Redpanda)
+cd backend
+docker compose -f docker-compose.dev.yml up -d
+
+# 2. Backend
+./mvnw spring-boot:run
+
+# 3. Frontend (separate terminal)
 cd frontend
 npm install
 npm run dev
 ```
 
-### Check Redpanda
+Open: [http://localhost:5173](http://localhost:5173)
 
-```powershell
-docker exec -it chaos-messenger-redpanda rpk cluster info
-docker exec -it chaos-messenger-redpanda rpk topic list
+SMS codes are printed to backend logs. Test account: `+79999999999` / code `123456`.
+
+### 4. Kubernetes
+
+```bash
+kubectl apply -k k8s/
 ```
 
-### Check outbox
+### Requirements
 
-```powershell
-docker exec -it chaos-messenger-db psql -U postgres -d chaos_messenger -c "select id, aggregate_type, aggregate_id, event_type, status, attempts, last_error, created_at, published_at from outbox_events order by id desc limit 20;"
+- Java 17+, Node.js 18+, Docker, Docker Compose v2+
+
+---
+
+## Local Services
+
+| Service | URL |
+|---|---|
+| Web App | http://localhost |
+| Backend API | http://localhost:8080 |
+| Swagger UI | http://localhost:8080/swagger-ui/index.html |
+| Health check | http://localhost:8080/actuator/health |
+| Prometheus | http://localhost:9090 |
+| Grafana | http://localhost:3000 (admin / $GRAFANA_ADMIN_PASSWORD) |
+
+---
+
+## Load Testing Results
+
+Local k6 tests (8 GB RAM, Windows):
+
+| Scenario | Requests | Errors | p95 send | p95 timeline |
+|---|---:|---:|---:|---:|
+| Baseline 5 VU | 2,995 | 0 | 93 ms | 43 ms |
+| Normal 25 VU | 35,549 | 0 | 151 ms | 89 ms |
+| Spike 50 VU | 76,816 | 0 | 428 ms | 375 ms |
+| Soak 5 VU / 30 min | 250,795 | 0 | 81 ms | 44 ms |
+| **Total** | **576,719** | **0** | — | — |
+
+WebSocket: 1,000 concurrent connections, 0 errors.
+
+---
+
+## Backend Module Map
+
+```
+backend/src/main/java/ru/messenger/chaosmessenger/
+├── auth/           # phone OTP, email auth, JWT, refresh tokens, rate limiting
+├── user/           # profile, user identity, search
+├── crypto/         # device registration, signed prekeys, one-time prekeys, bundles
+├── chat/           # direct chats, groups, participants, RBAC moderation
+├── message/        # send, edit, delete, receipts, reactions, timeline, self-destruct
+├── attachment/     # encrypted attachment storage and access control
+├── outbox/         # transactional outbox, Kafka config, OutboxPublisher
+├── realtime/       # Kafka consumers, WebSocket session registry, STOMP fanout
+├── push/           # web push subscriptions
+├── backup/         # encrypted backup export/import
+├── call/           # WebRTC signaling
+└── infra/          # security config, JWT filter, device context, observability
 ```
 
 ---
 
-## Production-like guarantees
+## API Reference
 
-Chaos Messenger currently aims for these engineering properties:
+### Auth (`/api/auth/`)
 
-- message persistence and event persistence happen in the same database transaction;
-- Kafka publish failures do not silently lose events;
-- multiple backend instances can consume realtime events independently;
-- every device receives its own encrypted envelope;
-- local WebSocket sessions are only local runtime state;
-- attachment access is scoped to exact chat participation;
-- backend never needs plaintext to route messages.
+| Method | Path | Description |
+|---|---|---|
+| GET | `/exists?phone=` | Check if account exists |
+| GET | `/username-available?username=` | Check username availability |
+| POST | `/send-code` | Send SMS verification code |
+| POST | `/verify-code` | Verify SMS code |
+| POST | `/complete-setup` | Complete registration |
+| POST | `/register` | Register via email |
+| POST | `/login` | Login via email |
+| POST | `/refresh` | Refresh JWT |
+| POST | `/logout` | Logout, revoke token |
+
+### Messages (`/api/messages/`)
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/encrypted/v2` | Send E2EE message |
+| GET | `/chat/{chatId}/timeline` | Fetch message history |
+| POST | `/chat/{chatId}/read` | Mark chat as read |
+| PUT | `/{messageId}/encrypted/v2` | Edit encrypted message |
+| PUT | `/{messageId}/reactions` | Add/remove reaction |
+| DELETE | `/{messageId}` | Delete message |
+
+### Crypto / Devices (`/api/crypto/`)
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/devices/register` | Register a device |
+| GET | `/devices/my` | List my devices |
+| POST | `/devices/{id}/deactivate` | Deactivate a device |
+| GET | `/bundle/{username}` | Fetch user's public key bundle |
+| POST | `/resolve-chat-devices/{chatId}` | Resolve all devices in a chat |
+| POST | `/*/reserve-prekey` | Reserve one-time prekey |
+
+Full OpenAPI docs: `http://localhost:8080/swagger-ui/index.html`
 
 ---
 
-## Security notes
+## Key Design Decisions
 
-This project intentionally avoids claiming production-grade security.
-
-Known limitations:
-
-- no external cryptographic/security audit;
-- web delivery threat model is inherently weaker than native-only clients;
-- local key storage still needs stronger hardening;
-- safety numbers / explicit device verification are roadmap items;
-- metadata protection is limited;
-- traffic analysis resistance is out of scope;
-- multi-device edge cases need more adversarial testing.
+| Decision | Rationale |
+|---|---|
+| **WebCrypto instead of libsodium/WASM** | No native dependencies, browser-audited implementation |
+| **Per-device envelopes** | Message loss is isolated per device; no shared decryption key |
+| **Transactional Outbox + Kafka** | Guarantees event delivery even when Kafka is temporarily down; enables horizontal WebSocket scaling |
+| **Unique Kafka group per realtime consumer** | Every backend instance receives every event → no missed delivery for locally connected clients |
+| **STOMP over raw WebSocket** | Pub/sub topics, frame routing, SockJS fallback |
+| **PostgreSQL over NoSQL** | Foreign keys, Flyway migrations, JSON reactions, strong transaction model |
+| **Electron over Tauri** | WebCrypto guaranteed in Chromium, zero Rust, proven cross-platform |
+| **IndexedDB local cache** | Decrypted messages survive page reload with zero API calls |
+| **Spring SimpleBroker** | Works for single instance; replaced by Kafka fanout for multi-instance |
 
 ---
 
-## Why this project is interesting
+## Project Structure
 
-Most chat demos stop at:
-
-```text
-REST + WebSocket + database
+```
+chaos-e2ee-messenger/
+├── backend/                    # Spring Boot (Maven)
+│   ├── src/main/java/          # 12 domain packages
+│   ├── src/main/resources/     # 38 Flyway migrations, Grafana dashboards, Logback
+│   ├── src/test/               # 34 test files (unit + controller + architecture)
+│   ├── Dockerfile              # Multi-stage JRE build
+│   └── pom.xml                 # Dependencies, Checkstyle, JaCoCo
+├── frontend/                   # React 18 + Vite + Electron
+│   ├── src/                    # crypto-engine.js, hooks, components
+│   ├── src/test/               # 16 test files (Vitest + Playwright)
+│   ├── electron/               # Electron main process + preload
+│   ├── Dockerfile              # Multi-stage Nginx build
+│   └── nginx.conf              # Frontend + API proxy config
+├── infra/                      # Caddyfile, Loki, Promtail configs
+├── k8s/                        # Kubernetes manifests (Kustomize)
+├── scripts/                    # smoke-test, healthcheck, backup
+├── docker-compose.yml          # Production stack (13 services)
+├── docker-compose.override.yml # Local dev overrides
+├── .env.example                # Environment variable template
+└── .github/workflows/          # CI/CD: build → test → Docker → K8s deploy
 ```
 
-Chaos Messenger goes further:
+---
 
-```text
-E2EE + multi-device envelopes + transactional outbox + Kafka realtime fanout + observability + desktop + Docker/K8s
-```
+## Known Limitations
 
-The result is not “a Signal replacement”. The result is a serious engineering playground for building and understanding the hard parts of secure realtime systems.
+- Push notifications: endpoint exists, Web Push delivery not yet implemented
+- Attachments stored on local filesystem (not S3/GCS)
+- Spring SimpleBroker does not scale horizontally without Kafka enabled
+- No Safety Numbers / device verification UI yet
+- XSS in localStorage would compromise keys (mitigated by CSP + short-lived JWTs)
 
 ---
 
 ## Roadmap
 
-- Safety numbers and explicit device verification.
-- Stronger key storage strategy.
-- More adversarial E2EE tests.
-- Kafka DLQ dashboard and operational tooling.
-- Multi-instance realtime integration tests.
-- Push notification worker hardening.
-- External security review.
-- Android client.
-- Cleaner frontend module boundaries.
+- Safety numbers and explicit device verification UI
+- Stronger key storage strategy (e.g. non-extractable CryptoKey)
+- More adversarial E2EE and multi-device tests
+- Kafka DLQ dashboard and operational tooling
+- Multi-instance realtime integration tests
+- Push notification worker hardening
+- External security review
+- Android client
+- S3/GCS attachment storage
 
 ---
 
 ## Articles
 
-- [Building an End-to-End Encrypted Messenger with Spring Boot and WebCrypto](https://dev.to/vaazhen/i-built-an-end-to-end-encrypted-messenger-with-spring-boot-and-webcrypto-1if5)
-- [Habr article / discussion](https://habr.com/ru/articles/1030854/)
+- [Building an E2EE Messenger with Spring Boot and WebCrypto (Habr EN)](https://habr.com/ru/articles/1051406/)
+- [Habr discussion (RU)](https://habr.com/ru/articles/1030854/)
 
 ---
 
