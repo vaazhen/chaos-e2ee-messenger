@@ -1,28 +1,25 @@
 const BACKUP_VERSION = 1;
+const DEVICE_KEY_PREFIX = 'cm_device_bundle_v2';
+const SESSION_KEY_PREFIX = 'cm_e2ee_sessions_v5';
+const DEVICE_ID_KEY_PREFIX = 'cm_device_id';
 
 export async function createEncryptedBackup(passphrase) {
   const e2ee = window.e2ee;
   if (!e2ee) throw new Error('Crypto engine not loaded');
 
-  const identityKeyPair = localStorage.getItem('chaos_identityKeyPair');
-  const signingKeyPair = localStorage.getItem('chaos_signingKeyPair');
-  const signedPreKey = localStorage.getItem('chaos_signedPreKey');
-  const oneTimePreKeys = localStorage.getItem('chaos_oneTimePreKeys');
-  const deviceId = localStorage.getItem('chaos_deviceId');
-  const registrationId = localStorage.getItem('chaos_registrationId');
-
-  if (!identityKeyPair || !deviceId) {
+  const bundle = e2ee.getLocalDeviceBundle();
+  if (!bundle || !bundle.deviceId || !bundle.identity) {
     throw new Error('No local keys found to backup');
   }
 
   const plaintext = JSON.stringify({
     version: BACKUP_VERSION,
-    deviceId,
-    registrationId,
-    identityKeyPair,
-    signingKeyPair,
-    signedPreKey,
-    oneTimePreKeys,
+    deviceId: bundle.deviceId,
+    registrationId: String(bundle.registrationId),
+    identityKeyPair: JSON.stringify(bundle.identity),
+    signingKeyPair: bundle.signingKey ? JSON.stringify(bundle.signingKey) : null,
+    signedPreKey: bundle.signedPreKey ? JSON.stringify(bundle.signedPreKey) : null,
+    oneTimePreKeys: bundle.oneTimePreKeys ? JSON.stringify(bundle.oneTimePreKeys) : null,
     createdAt: new Date().toISOString(),
   });
 
@@ -115,6 +112,33 @@ export async function restoreKeysFromBackup(backupData) {
   if (signingKeyPair) localStorage.setItem('chaos_signingKeyPair', signingKeyPair);
   if (signedPreKey) localStorage.setItem('chaos_signedPreKey', signedPreKey);
   if (oneTimePreKeys) localStorage.setItem('chaos_oneTimePreKeys', oneTimePreKeys);
+
+  // Reconstruct the crypto engine bundle so restored keys actually take effect
+  if (deviceId && identityKeyPair) {
+    try {
+      const bundle = {
+        deviceId,
+        registrationId: Number(registrationId) || 0,
+        identity: JSON.parse(identityKeyPair),
+        signingKey: signingKeyPair ? JSON.parse(signingKeyPair) : null,
+        signedPreKey: signedPreKey ? JSON.parse(signedPreKey) : null,
+        oneTimePreKeys: oneTimePreKeys ? JSON.parse(oneTimePreKeys) : [],
+      };
+      localStorage.setItem(DEVICE_KEY_PREFIX, JSON.stringify(bundle));
+      localStorage.setItem(DEVICE_ID_KEY_PREFIX, deviceId);
+      // Clear sessions — they are tied to the old device identity
+      localStorage.removeItem(SESSION_KEY_PREFIX);
+      // Reset crypto engine registration state so it re-registers
+      if (window.e2ee) {
+        window.e2ee.resetLocalDeviceIdentity();
+        // Re-save the bundle after reset cleared it
+        localStorage.setItem(DEVICE_KEY_PREFIX, JSON.stringify(bundle));
+        localStorage.setItem(DEVICE_ID_KEY_PREFIX, deviceId);
+      }
+    } catch (_) {
+      // If JSON parse fails, just keep chaos_* keys for manual recovery
+    }
+  }
 
   localStorage.setItem('chaos_backupRestored', 'true');
 
