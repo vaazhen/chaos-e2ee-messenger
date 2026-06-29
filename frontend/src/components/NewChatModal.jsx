@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
-import Ava from "./Ava";
+import DirectTab from "./DirectTab";
+import GroupTab, { UserSearchResults } from "./GroupTab";
+import RequestsTab from "./RequestsTab";
 
 export default function NewChatModal({
   me,
@@ -230,184 +232,13 @@ export default function NewChatModal({
         {hint && <div className="err-bar new-chat-drawer-error">{hint}</div>}
 
         <div className="new-chat-drawer-content scroll">
-          {mode === "direct" && (
-            <>
-              <button type="button" className="new-chat-drawer-action" onClick={openSaved} disabled={loading}>
-                <span className="new-chat-drawer-action-icon">★</span>
-                <span className="new-chat-drawer-action-text">
-                  <b>{l("Избранное", "Saved Messages")}</b>
-                  <small>{l("Личные зашифрованные заметки и файлы", "Personal encrypted notes and files")}</small>
-                </span>
-                <i>›</i>
-              </button>
+          {mode === "direct" && <DirectTab l={l} openSaved={openSaved} loading={loading} setMode={setMode} />}
 
-              <button type="button" className="new-chat-drawer-action" onClick={() => setMode("group")}>
-                <span className="new-chat-drawer-action-icon">♙</span>
-                <span className="new-chat-drawer-action-text">
-                  <b>{l("Создать группу", "Create group")}</b>
-                  <small>
-                    {l("Закрытая переписка с несколькими участниками", "Private conversation with several members")}
-                  </small>
-                </span>
-                <i>›</i>
-              </button>
-            </>
-          )}
+          {mode === "group" && <GroupTab l={l} groupName={groupName} setGroupName={setGroupName} selected={selected} toggleSelect={toggleSelect} />}
 
-          {mode === "group" && (
-            <div className="new-chat-drawer-group-card">
-              <label className="field-label">{l("Название группы", "Group name")}</label>
-              <input
-                className="field-inp"
-                value={groupName}
-                onChange={e => setGroupName(e.target.value)}
-                placeholder={l("Команда, семья, проект...", "Team, family, project...")}
-              />
+          {mode === "requests" && <RequestsTab l={l} requestItems={requestItems} selectReqMode={selectReqMode} setSelectReqMode={setSelectReqMode} selectedReqIds={selectedReqIds} setSelectedReqIds={setSelectedReqIds} loadingRequests={loadingRequests} onAcceptRequest={onAcceptRequest} onDeclineRequest={onDeclineRequest} />}
 
-              {selected.length > 0 && (
-                <div className="selected-users">
-                  {selected.map(u => (
-                    <button type="button" key={u.id} onClick={() => toggleSelect(u)}>
-                      @{u.username} ×
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {mode === "requests" && (
-            <>
-              <div className="requests-head-actions">
-                <button className="mini-btn" type="button" onClick={() => setSelectReqMode(v => !v)}>
-                  {selectReqMode ? l("Отмена", "Cancel") : l("Выбрать", "Select")}
-                </button>
-                {selectReqMode && (
-                  <button
-                    className="mini-btn danger"
-                    type="button"
-                    disabled={!selectedReqIds.length}
-                    onClick={async () => {
-                      for (const id of selectedReqIds) {
-                        await onDeclineRequest?.(id);
-                      }
-                      setSelectedReqIds([]);
-                      setSelectReqMode(false);
-                    }}
-                  >
-                    {l("Удалить выбранные", "Delete selected")}
-                  </button>
-                )}
-              </div>
-
-              {loadingRequests && (
-                <div className="new-chat-drawer-loading">
-                  <div className="spinner" />
-                </div>
-              )}
-
-              {!loadingRequests && requestItems.map(chat => (
-                <div key={chat.id} className="new-chat-drawer-user selected">
-                  <Ava
-                    name={chat.name}
-                    colorIdx={chat.colorIdx}
-                    size="md"
-                    avatarUrl={chat.avatarUrl}
-                  />
-                  <span className="new-chat-drawer-user-main">
-                    <b>{chat.name}</b>
-                    <small>{chat.preview || l("Запрос на переписку", "Chat request")}</small>
-                  </span>
-                  {selectReqMode ? (
-                    <label className="req-select">
-                      <input
-                        type="checkbox"
-                        checked={selectedReqIds.includes(chat.id)}
-                        onChange={(e) => {
-                          const checked = e.target.checked;
-                          setSelectedReqIds(prev =>
-                            checked ? [...new Set([...prev, chat.id])] : prev.filter(id => id !== chat.id)
-                          );
-                        }}
-                      />
-                    </label>
-                  ) : (
-                    <div className="conversation-req-actions">
-                      <button className="req-btn accept" type="button" onClick={() => onAcceptRequest?.(chat.id)}>
-                        {l("Принять", "Accept")}
-                      </button>
-                      <button className="req-btn decline" type="button" onClick={() => onDeclineRequest?.(chat.id)}>
-                        {l("Отклонить", "Decline")}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
-
-              {!loadingRequests && requestItems.length === 0 && (
-                <div className="product-empty mini">
-                  <div className="product-empty-title">{l("Нет запросов", "No requests")}</div>
-                  <div className="product-empty-sub">
-                    {l(
-                      "Новые обращения на переписку появятся здесь.",
-                      "New chat requests will appear here."
-                    )}
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-
-          {searching && (
-            <div className="new-chat-drawer-loading">
-              <div className="spinner" />
-            </div>
-          )}
-
-          {!searching && (mode === "group" && query.trim().length < 2 ? suggestedUsers : results).map(u => {
-            const selectedUser = selected.some(s => String(s.id) === String(u.id));
-            const displayName = [u.firstName, u.lastName].filter(Boolean).join(" ") || u.username;
-
-            return (
-              <button
-                key={u.id || u.username}
-                type="button"
-                className={`new-chat-drawer-user${selectedUser ? " selected" : ""}`}
-                onClick={() => mode === "direct" ? startDirect(u.username) : toggleSelect(u)}
-              >
-                <Ava
-                  name={displayName}
-                  colorIdx={Number(u.id || 0) % 7}
-                  size="md"
-                  avatarUrl={u.avatarUrl}
-                />
-
-                <span className="new-chat-drawer-user-main">
-                  <b>{displayName}</b>
-                  <small>@{u.username}</small>
-                </span>
-
-                <i>{mode === "group" ? (selectedUser ? "✓" : "+") : "›"}</i>
-              </button>
-            );
-          })}
-
-          {!searching && query.trim().length >= 2 && results.length === 0 && (
-            <div className="product-empty mini">
-              <div className="product-empty-title">{l("Ничего не найдено", "Nothing found")}</div>
-              <div className="product-empty-sub">
-                {l("Поиск сейчас работает по username.", "Search currently works by username.")}
-              </div>
-            </div>
-          )}
-          {!searching && mode === "group" && query.trim().length < 2 && suggestedUsers.length === 0 && (
-            <div className="product-empty mini">
-              <div className="product-empty-title">{l("Нет предложений", "No suggestions")}</div>
-              <div className="product-empty-sub">
-                {l("Введите username для приглашения участников.", "Enter a username to invite members.")}
-              </div>
-            </div>
-          )}
+          <UserSearchResults l={l} searching={searching} mode={mode} query={query} results={results} suggestedUsers={suggestedUsers} selected={selected} startDirect={startDirect} toggleSelect={toggleSelect} />
         </div>
 
         {mode === "group" && (
