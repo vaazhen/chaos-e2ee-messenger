@@ -14,7 +14,7 @@ import ru.messenger.chaosmessenger.crypto.dto.EncryptedEditMessageRequestV2;
 import ru.messenger.chaosmessenger.crypto.dto.EncryptedMessageEnvelopeInput;
 import ru.messenger.chaosmessenger.crypto.dto.EncryptedSendMessageRequestV2;
 import ru.messenger.chaosmessenger.infra.ws.WebSocketAuthChannelInterceptor;
-import ru.messenger.chaosmessenger.message.application.TypingService;
+import ru.messenger.chaosmessenger.message.service.TypingService;
 import ru.messenger.chaosmessenger.message.dto.DeviceMessageEventResponse;
 import ru.messenger.chaosmessenger.message.dto.MessageTimelineItemResponse;
 import ru.messenger.chaosmessenger.message.dto.ReactionEvent;

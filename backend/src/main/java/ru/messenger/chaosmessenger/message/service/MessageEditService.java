@@ -28,7 +28,7 @@ public class MessageEditService {
     private final MessageRepository messageRepository;
     private final MessageEnvelopeRepository messageEnvelopeRepository;
     private final MessageAccessService messageAccessService;
-    private final MessageSendService messageSendService;
+    private final MessageEnvelopeService messageEnvelopeService;
     private final MessageFanoutService messageFanoutService;
     private final MessageOutboxService messageOutboxService;
 
@@ -51,7 +51,7 @@ public class MessageEditService {
             throw new MessageException("senderDeviceId must match current X-Device-Id");
         }
 
-        Map<String, UserDevice> targetDevices = messageSendService.validateEnvelopeTargets(
+        Map<String, UserDevice> targetDevices = messageEnvelopeService.validateEnvelopeTargets(
                 message.getChatId(),
                 request.envelopes(),
                 currentDevice
@@ -65,7 +65,7 @@ public class MessageEditService {
         messageEnvelopeRepository.deleteByMessageId(messageId);
         messageEnvelopeRepository.flush();
 
-        Map<String, MessageEnvelope> byDevice = messageSendService.persistEnvelopes(message, sender, request.envelopes(), targetDevices);
+        Map<String, MessageEnvelope> byDevice = messageEnvelopeService.persistEnvelopes(message, sender, request.envelopes(), targetDevices);
         messageFanoutService.saveMessageEvent(message, sender.getId(), "EDIT", Map.of("version", message.getVersion()));
 
         messageOutboxService.messageEdited(message, byDevice);

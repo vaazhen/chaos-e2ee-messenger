@@ -8,7 +8,7 @@ import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 import ru.messenger.chaosmessenger.infra.ws.WebSocketAuthChannelInterceptor;
-import ru.messenger.chaosmessenger.message.application.TypingService;
+import ru.messenger.chaosmessenger.message.service.TypingService;
 import ru.messenger.chaosmessenger.message.dto.TypingEvent;
 import ru.messenger.chaosmessenger.message.dto.TypingRequest;
 
