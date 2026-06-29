@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo } from "react";
 import { api } from "../api";
-import { mapChat, getTime } from "../helpers";
+import { mapChat } from "../helpers";
 import { getHiddenChatIds, hideChatId, unhideChatId } from "../chatVisibility";
 
 /**

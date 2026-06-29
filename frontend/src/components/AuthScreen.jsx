@@ -231,7 +231,7 @@ export default function AuthScreen({
   onSubmitPhone, onVerifyOtp, onSubmitEmail,
   loading, error, onBack,
 }) {
-  const { t, lang } = useLocalText();
+  const { t } = useLocalText();
   const [method, setMethod] = useState("email");
   const [emailMode, setEmailMode] = useState("login");
   const currentCountry = COUNTRIES.find(c => c.code === dialCode) || COUNTRIES[0];

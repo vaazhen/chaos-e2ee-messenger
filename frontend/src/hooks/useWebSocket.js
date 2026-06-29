@@ -2,12 +2,12 @@ import { useEffect, useRef } from "react";
 import { Client } from "@stomp/stompjs";
 import SockJS from "sockjs-client";
 import { WS_URL } from "../config";
-import { getToken, getCurrentDeviceId } from "../api";
+import { getToken } from "../api";
 import { getOrCreateDeviceId } from "../deviceId";
 
 export default function useWebSocket({
   me,
-  activeId,
+  _activeId,
   chatIds = [],
   onMessage,
   onChatListUpdate,
@@ -67,7 +67,7 @@ export default function useWebSocket({
     unsub("requests");
 
     const did = getOrCreateDeviceId();
-    console.log("[WS] presence subs deviceId=", did, "username=", username);
+    console.warn("[WS] presence subs deviceId=", did, "username=", username);
 
     subsRef.current["userStatus"] = client.subscribe("/topic/user/status", (msg) => {
       try { handlersRef.current.onStatusUpdate?.({ type: "user_status", ...JSON.parse(msg.body || "{}") }); }
@@ -131,13 +131,13 @@ export default function useWebSocket({
     const chatTopic   = `/topic/devices/${did}/chats/${cid}`;
     const typingTopic = `/topic/chats/${cid}/typing`;
 
-    console.log("[WS] subscribe chat:", chatTopic);
+    console.warn("[WS] subscribe chat:", chatTopic);
 
     subsRef.current[chatSubName] = client.subscribe(chatTopic, (msg) => {
       try {
         const event = JSON.parse(msg.body || "{}");
         const resolvedChatId = Number(event.chatId || cid);
-        console.log("[WS] msg event:", event.type, "chatId:", resolvedChatId);
+        console.warn("[WS] msg event:", event.type, "chatId:", resolvedChatId);
         handlersRef.current.onMessage?.(event, resolvedChatId);
       } catch (e) { console.error("[WS] parse error:", e); }
     });
@@ -184,7 +184,7 @@ export default function useWebSocket({
     });
 
     client.onConnect = () => {
-      console.log("[WS] Connected deviceId=", did);
+      console.warn("[WS] Connected deviceId=", did);
       clientRef.current = client;
       setupPresence(client, username);
       setupChatSubscriptions(client, chatIdsRef.current);

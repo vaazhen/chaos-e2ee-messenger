@@ -60,7 +60,7 @@ export function useAuth() {
       let meData;
       try {
         meData = await api.getMe();
-      } catch (firstErr) {
+      } catch (_firstErr) {
         // JWT expired but refresh token may still be valid
         const refreshed = await tryRefresh();
         if (!refreshed) { clearToken(); clearRefreshToken(); setScreen("auth"); return; }

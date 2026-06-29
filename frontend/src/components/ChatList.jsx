@@ -245,7 +245,6 @@ export default function ChatList({
         ) : (
           <div className={`conversation-list${sidebarCompact ? " conversation-list--compact" : ""}`}>
             {filtered.map(chat => {
-              const hasPreview = Boolean(chat.preview || chat.lastMessageId);
               const isEncrypted = !chat.preview && chat.lastMessageId;
               const basePreview =
                 chat.preview ||
