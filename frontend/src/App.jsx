@@ -19,10 +19,15 @@ import NewChatModal from "./components/NewChatModal";
 import Ava          from "./components/Ava";
 import UserProfileModal from "./components/UserProfileModal";
 import GroupAdminModal from "./components/GroupAdminModal";
+import SafetyNumberModal from "./components/SafetyNumberModal";
+import EditMessageModal from "./components/EditMessageModal";
+import DeleteMessageModal from "./components/DeleteMessageModal";
+import ContextMenu from "./components/ContextMenu";
+import ChatInfoPanel from "./components/ChatInfoPanel";
+import ChatSearchBar from "./components/ChatSearchBar";
 import useWebRTC from "./hooks/useWebRTC";
 import CallOverlay from "./components/CallOverlay";
 import { api } from "./api";
-import { computeSafetyNumber, formatSafetyNumber, areSafetyNumbersEqual } from "./safety-number";
 
 import { getTime, messageMatchesQuery } from "./helpers";
 import { clearPreviewCacheForUser } from "./previewCache";
@@ -429,11 +434,6 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
       requestsRefreshTimeoutRef.current = null;
     }
   }, []);
-
-  const searchCount = useMemo(() => {
-    if (!messageSearch.trim()) return 0;
-    return activeMsgs.filter(m => messageMatchesQuery(m, messageSearch)).length;
-  }, [activeMsgs, messageSearch]);
 
   const matchIds = useMemo(() => {
     const q = String(messageSearch || "").trim();
@@ -1018,44 +1018,16 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
               </div>
 
               {chatSearchOpen && (
-                <div ref={chatSearchRef} className="chat-search-bar" onClick={e => e.stopPropagation()}>
-                  <span>⌕</span>
-                  <input
-                    value={messageSearch}
-                    onChange={e => setMessageSearch(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (!matchIds.length) return;
-                      if (e.key === "ArrowUp") {
-                        e.preventDefault();
-                        goToMatch(-1);
-                      } else if (e.key === "ArrowDown") {
-                        e.preventDefault();
-                        goToMatch(1);
-                      } else if (e.key === "Enter") {
-                        e.preventDefault();
-                        goToMatch(e.shiftKey ? -1 : 1);
-                      }
-                    }}
-                    placeholder={l("Поиск по сообщениям", "Search messages")}
-                    autoFocus
-                  />
-                  <b>{messageSearch.trim() ? (matchIds.length ? `${matchIndex + 1}/${matchIds.length}` : "0") : ""}</b>
-                  <button
-                    type="button"
-                    className="chat-search-nav"
-                    title={l("К предыдущему", "Previous")}
-                    disabled={!matchIds.length}
-                    onClick={() => goToMatch(-1)}
-                  >↑</button>
-                  <button
-                    type="button"
-                    className="chat-search-nav"
-                    title={l("К следующему", "Next")}
-                    disabled={!matchIds.length}
-                    onClick={() => goToMatch(1)}
-                  >↓</button>
-                  <button onClick={resetMessageSearch}>×</button>
-                </div>
+                <ChatSearchBar
+                  chatSearchRef={chatSearchRef}
+                  messageSearch={messageSearch}
+                  setMessageSearch={setMessageSearch}
+                  matchIds={matchIds}
+                  matchIndex={matchIndex}
+                  goToMatch={goToMatch}
+                  resetMessageSearch={resetMessageSearch}
+                  l={l}
+                />
               )}
 
               {chatInfoOpen && (
@@ -1149,96 +1121,34 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
         </section>
       </div>
 
-      {ctx && (
-        <div ref={ctxMenuRef} className="ctx-menu product-menu" style={{ left: ctx.x, top: ctx.y }} onClick={e => e.stopPropagation()}>
-          <div className="ctx-reactions">
-            {["👍","❤️","😂","😮","😢","🔥"].map(em => (
-              <button key={em} className="ctx-react" type="button" onClick={() => reactToMsg(ctx.msg, em)}>{em}</button>
-            ))}
-          </div>
-          <div className="menu-line" />
-          {ctx.msg?._out && !ctx.msg?._temp && (ctx.msg?._text || ctx.msg?._img || ctx.msg?._voice) && (
-            <button className="ctx-item" onClick={() => beginEdit(ctx.msg)}>
-              <span className="ci">✎</span>{l("Изменить", "Edit")}
-            </button>
-          )}
-          <button className="ctx-item" onClick={() => { setReplyTo(ctx.msg); setCtx(null); }}>
-            <span className="ci">↩</span>{l("Ответить", "Reply")}
-          </button>
-          {ctx.msg?._text && (
-            <button className="ctx-item" onClick={() => { navigator.clipboard?.writeText(ctx.msg._text || ""); setCtx(null); }}>
-              <span className="ci">▣</span>{l("Копировать", "Copy")}
-            </button>
-          )}
-          <div className="menu-line" />
-          <button className="ctx-item danger" onClick={() => beginDelete(ctx.msg)}>
-            <span className="ci">♜</span>{l("Удалить", "Delete")}
-          </button>
-        </div>
-      )}
+      <ContextMenu
+        ctx={ctx}
+        ctxClosing={ctxClosing}
+        ctxMenuRef={ctxMenuRef}
+        onReact={reactToMsg}
+        onReply={(msg) => { setReplyTo(msg); setCtx(null); }}
+        onEdit={beginEdit}
+        onCopy={(msg) => { navigator.clipboard?.writeText(msg._text || ""); setCtx(null); }}
+        onDelete={beginDelete}
+        l={l}
+      />
 
-      {editTarget && (
-        <div className="modal-bg" onClick={() => !editLoading && setEditTarget(null)}>
-          <div className="modal small-modal glass-card" onClick={e => e.stopPropagation()}>
-            <div className="modal-title">
-              {l("Изменить сообщение", "Edit message")}
-              <button className="modal-close" onClick={() => !editLoading && setEditTarget(null)}>×</button>
-            </div>
-            <textarea
-              className="field-inp edit-textarea"
-              value={editText}
-              onChange={e => setEditText(e.target.value)}
-              autoFocus rows={4}
-              onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) submitEdit(); }}
-            />
-            {editTarget._img && (
-              <div className="field-hint">
-                {l("Будет изменена только подпись к изображению.", "Only the image caption will be changed.")}
-              </div>
-            )}
-            {editTarget._voice && (
-              <div className="field-hint">
-                {l("Будет изменена только подпись к голосовому сообщению.", "Only the voice caption will be changed.")}
-              </div>
-            )}
-            <div className="btn-row">
-              <button className="btn-sec" disabled={editLoading} onClick={() => setEditTarget(null)}>
-                {l("Отмена", "Cancel")}
-              </button>
-              <button className="btn-pri" disabled={editLoading || !editText.trim()} onClick={submitEdit}>
-                {editLoading ? l("Сохраняем...", "Saving...") : l("Сохранить", "Save")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <EditMessageModal
+        editTarget={editTarget}
+        editText={editText}
+        editLoading={editLoading}
+        setEditText={setEditText}
+        setEditTarget={setEditTarget}
+        submitEdit={submitEdit}
+        l={l}
+      />
 
-      {deleteTarget && (
-        <div className="modal-bg" onClick={() => setDeleteTarget(null)}>
-          <div className="modal small-modal glass-card" onClick={e => e.stopPropagation()}>
-            <div className="modal-title">
-              {l("Удалить сообщение", "Delete message")}
-              <button className="modal-close" onClick={() => setDeleteTarget(null)}>×</button>
-            </div>
-            <div className="confirm-text">
-              {l("Выберите способ удаления.", "Choose how to delete this message.")}
-            </div>
-            <div className="delete-actions">
-              <button className="btn-sec" onClick={() => confirmDelete("me")}>
-                {l("Удалить у меня", "Delete for me")}
-              </button>
-              {deleteTarget._out && !deleteTarget._temp && (
-                <button className="btn-pri danger-pri" onClick={() => confirmDelete("everyone")}>
-                  {l("Удалить у всех", "Delete for everyone")}
-                </button>
-              )}
-              <button className="btn-sec" onClick={() => setDeleteTarget(null)}>
-                {l("Отмена", "Cancel")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <DeleteMessageModal
+        deleteTarget={deleteTarget}
+        setDeleteTarget={setDeleteTarget}
+        confirmDelete={confirmDelete}
+        l={l}
+      />
 
       {showSettings && (
         <ProfileModal
@@ -1284,75 +1194,11 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
         />
       )}
 
-      {safetyModal.open && safetyModal.fingerprint && (
-        <div className="safety-modal-overlay" onClick={() => setSafetyModal({ open: false, fingerprint: null, display: null, error: null })}>
-          <div className="safety-modal" onClick={e => e.stopPropagation()}>
-            <div className="safety-modal-head">
-              <b>{l("Safety Number", "Safety Number")}</b>
-              <button type="button" className="safety-modal-close" onClick={() => setSafetyModal({ open: false, fingerprint: null, display: null, error: null })}>×</button>
-            </div>
-
-            <div className="safety-modal-body">
-              <div className="safety-section">
-                <div className="safety-label">{l("Цифровой отпечаток", "Numeric fingerprint")}</div>
-                <div className="safety-value safety-numeric">{safetyModal.display?.numeric || ""}</div>
-              </div>
-
-              <div className="safety-section">
-                <div className="safety-label">{l("Шестнадцатеричный", "Hex")}</div>
-                <div className="safety-value safety-hex">{safetyModal.display?.hex || ""}</div>
-              </div>
-
-              <div className="safety-section">
-                <div className="safety-label">{l("Словесный отпечаток", "Word fingerprint")}</div>
-                <pre className="safety-value safety-words">{safetyModal.fingerprint.fingerprint || ""}</pre>
-              </div>
-
-              <div className="safety-note">
-                {l("Сравните этот код с кодом на устройстве собеседника. Если коды совпадают — соединение безопасно.", "Compare this code with the one on your contact's device. If they match, the connection is secure.")}
-              </div>
-            </div>
-
-            <div className="safety-modal-actions">
-              <button
-                type="button"
-                className="btn-sec"
-                onClick={() => {
-                  const text = `Chaos Messenger Safety Number:\n\nNumeric: ${safetyModal.display?.numeric}\nHex: ${safetyModal.display?.hex}\nWords:\n${safetyModal.fingerprint.fingerprint}`;
-                  navigator.clipboard?.writeText(text).catch(() => {});
-                }}
-              >
-                {l("Копировать", "Copy")}
-              </button>
-              <button type="button" className="btn-pri" onClick={() => setSafetyModal({ open: false, fingerprint: null, display: null, error: null })}>
-                {l("Закрыть", "Close")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {safetyModal.open && safetyModal.error && !safetyModal.fingerprint && (
-        <div className="safety-modal-overlay" onClick={() => setSafetyModal({ open: false, fingerprint: null, display: null, error: null })}>
-          <div className="safety-modal" onClick={e => e.stopPropagation()}>
-            <div className="safety-modal-head">
-              <b>{l("Safety Number", "Safety Number")}</b>
-              <button type="button" className="safety-modal-close" onClick={() => setSafetyModal({ open: false, fingerprint: null, display: null, error: null })}>×</button>
-            </div>
-            <div className="safety-modal-body">
-              <div className="safety-error-state">
-                {l("Не удалось вычислить Safety Number", "Could not compute Safety Number")}
-                <small>{safetyModal.error}</small>
-              </div>
-            </div>
-            <div className="safety-modal-actions">
-              <button type="button" className="btn-pri" onClick={() => setSafetyModal({ open: false, fingerprint: null, display: null, error: null })}>
-                {l("Закрыть", "Close")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <SafetyNumberModal
+        safetyModal={safetyModal}
+        onClose={() => setSafetyModal({ open: false, fingerprint: null, display: null, error: null })}
+        l={l}
+      />
 
       <CallOverlay
         callState={call.callState}
@@ -1374,111 +1220,4 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
   );
 }
 
-function ChatInfoPanel({ chat, chatBg, auth, setSafetyModal, onChangeBg, onClose, onOpenSearch, lang, panelRef }) {
-  const effectiveLang = String(lang || "ru").toLowerCase().startsWith("en") ? "en" : "ru";
-  const l = (ru, en) => (effectiveLang === "ru" ? ru : en);
 
-  const backgrounds = [
-    { key: "clean",  label: l("Чистый", "Clean") },
-    { key: "soft",   label: l("Мягкий", "Soft") },
-    { key: "grid",   label: l("Сетка", "Grid") },
-    { key: "paper",  label: l("Бумага", "Paper") },
-  ];
-
-  return (
-    <div ref={panelRef} className="chat-tools-panel" onClick={e => e.stopPropagation()}>
-      <div className="chat-tools-head">
-        <div>
-          <b>{l("Настройки чата", "Chat settings")}</b>
-          <span>{chat?.name}</span>
-        </div>
-
-        <button
-          type="button"
-          className="chat-tools-close"
-          onClick={onClose}
-          title={l("Закрыть", "Close")}
-          aria-label={l("Закрыть", "Close")}
-        >
-          ×
-        </button>
-      </div>
-
-      <button type="button" className="tool-row" onClick={onOpenSearch}>
-        <span className="tool-icon tool-icon-search" aria-hidden="true">
-          <svg viewBox="0 0 24 24">
-            <circle cx="11" cy="11" r="6.5" />
-            <path d="M16.2 16.2L21 21" />
-          </svg>
-        </span>
-        <b>{l("Поиск сообщений", "Search messages")}</b>
-        <i>›</i>
-      </button>
-
-      <div className="tool-card">
-        <div className="tool-title">{l("Фон переписки", "Chat background")}</div>
-
-        <div className="bg-picker">
-          {backgrounds.map(item => (
-            <button
-              key={item.key}
-              type="button"
-              className={`bg-option bg-${item.key}${chatBg === item.key ? " active" : ""}`}
-              onClick={() => onChangeBg(item.key)}
-            >
-              <span />
-              <b>{item.label}</b>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="tool-card">
-        <div className="tool-title">{l("Безопасность", "Security")}</div>
-        <div className="tool-note">
-          {l(
-            "Сервер хранит только зашифрованные конверты. Сообщения расшифровываются на устройстве.",
-            "The server stores only encrypted envelopes. Messages are decrypted on device."
-          )}
-        </div>
-
-        <button
-          type="button"
-          className="tool-row"
-          onClick={async () => {
-            try {
-              const devices = await api.resolveDevicesForSafetyNumber(chat.id);
-              const ownIdentityKey = window.e2ee?.getIdentityPublicKey();
-              if (!ownIdentityKey) throw new Error("No identity key");
-
-              const theirDevice = devices?.devices?.find(d => d.userId !== auth.me?.id) || devices?.devices?.[0];
-              if (!theirDevice?.identityPublicKey) throw new Error("No identity key for this chat");
-
-              const fingerprint = await computeSafetyNumber(ownIdentityKey, theirDevice.identityPublicKey);
-              const display = formatSafetyNumber(fingerprint);
-              setSafetyModal({ open: true, fingerprint, display, error: null });
-            } catch (e) {
-              setSafetyModal({ open: true, fingerprint: null, display: null, error: e.message });
-            }
-          }}
-        >
-          <span className="tool-icon" aria-hidden="true">🔐</span>
-          <b>{l("Проверить Safety Number", "Verify Safety Number")}</b>
-          <i>›</i>
-        </button>
-      </div>
-
-      <button type="button" className="tool-row disabled" disabled>
-        <span className="tool-icon tool-icon-files" aria-hidden="true">
-          <svg viewBox="0 0 24 24">
-            <path d="M7 7.5h8.5a2.5 2.5 0 0 1 2.5 2.5v7.5A2.5 2.5 0 0 1 15.5 20H7a2.5 2.5 0 0 1-2.5-2.5V10A2.5 2.5 0 0 1 7 7.5Z" />
-            <path d="M8.5 4h8A2.5 2.5 0 0 1 19 6.5v8" />
-          </svg>
-        </span>
-        <b>{l("Медиа и файлы", "Media & files")}</b>
-        <em>{l("позже", "coming soon")}</em>
-      </button>
-
-    </div>
-  );
-}
