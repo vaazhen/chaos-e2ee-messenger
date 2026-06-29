@@ -52,7 +52,7 @@ export default function useWebRTC({ publish, onCallEnded }) {
     setRemoteUsername('');
   }, []);
 
-  const createPeerConnection = useCallback(async (stream, isCaller) => {
+  const createPeerConnection = useCallback(async (stream, _isCaller) => {
     const pc = new RTCPeerConnection(ICE_SERVERS);
 
     stream.getTracks().forEach(track => {

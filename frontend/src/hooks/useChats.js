@@ -1,14 +1,24 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { api } from "../api";
-import { mapChat, getTime } from "../helpers";
+import { mapChat } from "../helpers";
+import { getHiddenChatIds, hideChatId, unhideChatId } from "../chatVisibility";
 
 /**
  * Manages the chat list: loading, selecting, unread counters.
  */
-export function useChats(myId) {
+export function useChats(myId, lang) {
   const [chats, setChats]             = useState([]);
+  const [requests, setRequests]       = useState([]);
   const [activeId, setActiveId]       = useState(null);
   const [loadingChats, setLoadingChats] = useState(false);
+  const [loadingRequests, setLoadingRequests] = useState(false);
+
+  const mapChatLabels = useMemo(() => {
+    const en = String(lang || "ru").toLowerCase().startsWith("en");
+    return en
+      ? { contact: "Contact", saved: "Saved", group: "Group", newMessage: "New message" }
+      : { contact: "Контакт", saved: "Избранное", group: "Группа", newMessage: "Новое сообщение" };
+  }, [lang]);
 
   const loadChats = useCallback(async (id) => {
     const resolvedId = id ?? myId;
@@ -16,7 +26,11 @@ export function useChats(myId) {
     try {
       const data = await api.getChats();
       if (Array.isArray(data)) {
-        const mapped = data.map(c => mapChat(c, resolvedId));
+        const hidden = getHiddenChatIds(resolvedId);
+        const mapped = data
+          .map(c => mapChat(c, resolvedId, mapChatLabels))
+          // If chat has unread/new activity, reveal it again automatically.
+          .filter(c => !hidden.has(String(c.id)) || Number(c.unread || 0) > 0);
         setChats(prev => reconcileChats(prev, mapped));
       }
     } catch (e) {
@@ -24,12 +38,30 @@ export function useChats(myId) {
     } finally {
       setLoadingChats(false);
     }
-  }, [myId]);
+  }, [myId, mapChatLabels]);
+
+  const loadRequests = useCallback(async (id) => {
+    const resolvedId = id ?? myId;
+    if (!resolvedId) return;
+    setLoadingRequests(true);
+    try {
+      const data = await api.getRequests();
+      if (Array.isArray(data)) {
+        const mapped = data.map(c => mapChat(c, resolvedId, mapChatLabels));
+        setRequests(mapped);
+      }
+    } catch (e) {
+      console.error("loadRequests:", e);
+    } finally {
+      setLoadingRequests(false);
+    }
+  }, [myId, mapChatLabels]);
 
   const selectChat = useCallback((id) => {
+    unhideChatId(myId, id);
     setActiveId(id);
     setChats(prev => prev.map(c => c.id === id ? { ...c, unread: 0 } : c));
-  }, []);
+  }, [myId]);
 
   const updateChatPreview = useCallback((chatId, preview, isOut = false, createdAt = null, incrementUnread = false) => {
     const activityAt = normalizeChatActivityAt(createdAt);
@@ -66,14 +98,31 @@ export function useChats(myId) {
     ));
   }, []);
 
+  const deleteChatForMe = useCallback((chatId) => {
+    if (!chatId) return;
+    hideChatId(myId, chatId);
+    setChats(prev => prev.filter(c => String(c.id) !== String(chatId)));
+    setActiveId(prev => (String(prev) === String(chatId) ? null : prev));
+  }, [myId]);
+
+  const revealChat = useCallback((chatId) => {
+    if (!chatId) return;
+    unhideChatId(myId, chatId);
+  }, [myId]);
+
   return {
     chats, setChats,
+    requests, setRequests,
     activeId, setActiveId,
     loadingChats,
+    loadingRequests,
     loadChats,
+    loadRequests,
     selectChat,
     updateChatPreview,
     markChatOnlineStatus,
+    deleteChatForMe,
+    revealChat,
   };
 }
 function normalizeChatActivityAt(value) {

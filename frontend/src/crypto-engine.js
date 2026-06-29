@@ -337,7 +337,7 @@
     }
 
     function log(...args) {
-        console.log('[ChaosMessenger]', ...args);
+        console.warn('[ChaosMessenger]', ...args);
     }
 
     async function registerBundleOnServer(api, bundle, isNewDevice = false) {
