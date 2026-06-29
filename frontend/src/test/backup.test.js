@@ -20,10 +20,10 @@ const mockCrypto = {
         version: 1,
         deviceId: 'test-device',
         registrationId: '42',
-        identityKeyPair: 'id-key',
-        signingKeyPair: 'sig-key',
-        signedPreKey: 'spk',
-        oneTimePreKeys: 'otp',
+        identityKeyPair: JSON.stringify({ publicKey: 'id-pub', privateKeyPkcs8: 'id-priv' }),
+        signingKeyPair: JSON.stringify({ publicKeySpki: 'sig-pub', privateKeyPkcs8: 'sig-priv' }),
+        signedPreKey: JSON.stringify({ preKeyId: 1, publicKey: 'spk-pub', privateKeyPkcs8: 'spk-priv', signature: 'spk-sig' }),
+        oneTimePreKeys: JSON.stringify([{ preKeyId: 1000, publicKey: 'otp-pub', privateKeyPkcs8: 'otp-priv' }]),
       });
       return Promise.resolve(new TextEncoder().encode(plaintext));
     }),
@@ -34,6 +34,15 @@ const mockCrypto = {
       return Promise.resolve(hash);
     }),
   },
+};
+
+const mockBundle = {
+  deviceId: 'test-device',
+  registrationId: 42,
+  identity: { publicKey: 'id-pub', privateKeyPkcs8: 'id-priv' },
+  signingKey: { publicKeySpki: 'sig-pub', privateKeyPkcs8: 'sig-priv' },
+  signedPreKey: { preKeyId: 1, publicKey: 'spk-pub', privateKeyPkcs8: 'spk-priv', signature: 'spk-sig' },
+  oneTimePreKeys: [{ preKeyId: 1000, publicKey: 'otp-pub', privateKeyPkcs8: 'otp-priv' }],
 };
 
 beforeEach(() => {
@@ -51,16 +60,13 @@ describe('createEncryptedBackup', () => {
   });
 
   it('throws if no local keys found', async () => {
-    window.e2ee = { getOrCreateDeviceId: vi.fn() };
+    window.e2ee = { getLocalDeviceBundle: vi.fn(() => null) };
     const mod = await import('../backup');
     await expect(mod.createEncryptedBackup('pass')).rejects.toThrow('No local keys found');
   });
 
   it('returns encrypted payload when keys are present', async () => {
-    window.e2ee = { getOrCreateDeviceId: vi.fn() };
-    localStorage.setItem('chaos_identityKeyPair', 'test-id-key');
-    localStorage.setItem('chaos_deviceId', 'test-device');
-    localStorage.setItem('chaos_registrationId', '42');
+    window.e2ee = { getLocalDeviceBundle: vi.fn(() => mockBundle) };
 
     const mod = await import('../backup');
     const result = await mod.createEncryptedBackup('test-passphrase');
@@ -87,7 +93,7 @@ describe('decryptBackup', () => {
 
     expect(result).toHaveProperty('version', 1);
     expect(result).toHaveProperty('deviceId', 'test-device');
-    expect(result).toHaveProperty('identityKeyPair', 'id-key');
+    expect(result).toHaveProperty('identityKeyPair');
     expect(mockCrypto.subtle.importKey).toHaveBeenCalled();
     expect(mockCrypto.subtle.deriveKey).toHaveBeenCalled();
     expect(mockCrypto.subtle.decrypt).toHaveBeenCalled();
@@ -95,28 +101,39 @@ describe('decryptBackup', () => {
 });
 
 describe('restoreKeysFromBackup', () => {
-  it('restores all keys to localStorage', async () => {
+  it('restores all keys to localStorage and rebuilds bundle', async () => {
+    window.e2ee = { resetLocalDeviceIdentity: vi.fn() };
     const mod = await import('../backup');
     const backupData = {
       deviceId: 'restored-device',
       registrationId: '99',
-      identityKeyPair: 'restored-id',
-      signingKeyPair: 'restored-sig',
-      signedPreKey: 'restored-spk',
-      oneTimePreKeys: 'restored-otp',
+      identityKeyPair: JSON.stringify({ publicKey: 'id-pub', privateKeyPkcs8: 'id-priv' }),
+      signingKeyPair: JSON.stringify({ publicKeySpki: 'sig-pub', privateKeyPkcs8: 'sig-priv' }),
+      signedPreKey: JSON.stringify({ preKeyId: 1, publicKey: 'spk-pub', privateKeyPkcs8: 'spk-priv', signature: 'spk-sig' }),
+      oneTimePreKeys: JSON.stringify([{ preKeyId: 1000, publicKey: 'otp-pub', privateKeyPkcs8: 'otp-priv' }]),
     };
 
     const result = await mod.restoreKeysFromBackup(backupData);
 
     expect(result.restored).toBe(true);
     expect(result.deviceId).toBe('restored-device');
+    // chaos_* keys kept for backward compat
     expect(localStorage.getItem('chaos_deviceId')).toBe('restored-device');
     expect(localStorage.getItem('chaos_registrationId')).toBe('99');
-    expect(localStorage.getItem('chaos_identityKeyPair')).toBe('restored-id');
-    expect(localStorage.getItem('chaos_signingKeyPair')).toBe('restored-sig');
-    expect(localStorage.getItem('chaos_signedPreKey')).toBe('restored-spk');
-    expect(localStorage.getItem('chaos_oneTimePreKeys')).toBe('restored-otp');
+    expect(localStorage.getItem('chaos_identityKeyPair')).toBe(backupData.identityKeyPair);
     expect(localStorage.getItem('chaos_backupRestored')).toBe('true');
+
+    // cm_device_bundle_v2 reconstructed
+    const savedBundle = JSON.parse(localStorage.getItem('cm_device_bundle_v2'));
+    expect(savedBundle.deviceId).toBe('restored-device');
+    expect(savedBundle.registrationId).toBe(99);
+    expect(savedBundle.identity.publicKey).toBe('id-pub');
+    expect(savedBundle.signingKey.publicKeySpki).toBe('sig-pub');
+    expect(savedBundle.signedPreKey.preKeyId).toBe(1);
+    expect(savedBundle.oneTimePreKeys).toHaveLength(1);
+
+    // cm_device_id set
+    expect(localStorage.getItem('cm_device_id')).toBe('restored-device');
   });
 
   it('handles partial backup data gracefully', async () => {
@@ -126,5 +143,7 @@ describe('restoreKeysFromBackup', () => {
     expect(result.restored).toBe(true);
     expect(localStorage.getItem('chaos_deviceId')).toBe('partial-device');
     expect(localStorage.getItem('chaos_identityKeyPair')).toBeNull();
+    // no bundle reconstruction when identityKeyPair missing
+    expect(localStorage.getItem('cm_device_bundle_v2')).toBeNull();
   });
 });
