@@ -196,6 +196,7 @@ export function useMessages(myId) {
       _payload:  parsed.payload,
       _attachment: resolvedAttachment,
       _ttl:      parsed.ttl || null,
+      _replyTo:  parsed.replyTo || null,
       expiresAt,
       _time:     getTime(event.createdAt),
     };
@@ -247,6 +248,7 @@ export function useMessages(myId) {
     const voiceFile = typeof input === "string" ? null : input?.voiceFile;
     const generalFile = typeof input === "string" ? null : input?.generalFile;
     const ttl = typeof input === "string" ? null : input?.ttl;
+    const replyTo = typeof input === "string" ? null : input?.replyTo;
     if ((!text && !imgFile && !voiceFile && !generalFile) || !chatId) return null;
     if (!window.e2ee?.buildFanoutRequest) {
       console.error("[Send] crypto-engine is not loaded");
@@ -254,7 +256,7 @@ export function useMessages(myId) {
     }
 
     const clientMessageId = "tmp_" + Date.now();
-    let parsedPayload = { text, img: null, voice: null, payload: null };
+    let parsedPayload = { text, img: null, voice: null, payload: null, replyTo };
     let encryptedPlaintext = text;
 
     try {
@@ -337,13 +339,17 @@ export function useMessages(myId) {
       return null;
     }
 
-    if (ttl) {
+    if (ttl || replyTo) {
       try {
         const payloadObj = encryptedPlaintext.startsWith("{") ? JSON.parse(encryptedPlaintext) : { v: 1, type: "text", text: encryptedPlaintext };
-        payloadObj.ttl = ttl;
+        if (ttl) payloadObj.ttl = ttl;
+        if (replyTo) payloadObj.replyTo = replyTo;
         encryptedPlaintext = JSON.stringify(payloadObj);
       } catch (_) {
-        encryptedPlaintext = JSON.stringify({ v: 1, type: "text", text: encryptedPlaintext, ttl });
+        const base = { v: 1, type: "text", text: encryptedPlaintext };
+        if (ttl) base.ttl = ttl;
+        if (replyTo) base.replyTo = replyTo;
+        encryptedPlaintext = JSON.stringify(base);
       }
     }
 
@@ -364,6 +370,7 @@ export function useMessages(myId) {
       _payload: parsedPayload.payload,
       _attachment: parsedPayload.payload?.attachment || null,
       _ttl: ttl || null,
+      _replyTo: replyTo || null,
       expiresAt: tempExpiresAt,
       _time: getTime(),
       content: encryptedPlaintext,
@@ -737,7 +744,7 @@ function compareMessages(a, b) {
 function parseMessagePayload(raw) {
   const fallbackText = String(raw || "");
   if (!fallbackText || fallbackText === "[encrypted]") {
-    return { text: fallbackText, img: null, voice: null, payload: null, attachment: null };
+    return { text: fallbackText, img: null, voice: null, payload: null, attachment: null, replyTo: null };
   }
   try {
     const payload = JSON.parse(fallbackText);
@@ -751,6 +758,7 @@ function parseMessagePayload(raw) {
         payload,
         attachment,
         ttl: payload.ttl || null,
+        replyTo: payload.replyTo || null,
       };
     }
     if (payload?.v === 1 && payload?.type === "voice") {
@@ -763,6 +771,7 @@ function parseMessagePayload(raw) {
         payload,
         attachment,
         ttl: payload.ttl || null,
+        replyTo: payload.replyTo || null,
       };
     }
     if (payload?.v === 1 && payload?.type === "file") {
@@ -774,22 +783,24 @@ function parseMessagePayload(raw) {
         payload,
         attachment,
         ttl: payload.ttl || null,
+        replyTo: payload.replyTo || null,
       };
     }
-    if (payload?.v === 1 && payload?.ttl) {
+    if (payload?.v === 1) {
       return {
         text: String(payload.text || fallbackText),
         img: null,
         voice: null,
         payload,
         attachment: null,
-        ttl: payload.ttl,
+        ttl: payload.ttl || null,
+        replyTo: payload.replyTo || null,
       };
     }
   } catch (_) {
     // regular text message
   }
-  return { text: fallbackText, img: null, voice: null, payload: null, attachment: null };
+  return { text: fallbackText, img: null, voice: null, payload: null, attachment: null, replyTo: null };
 }
 
 function messagePreview(parsed) {
@@ -803,8 +814,10 @@ function messagePreview(parsed) {
 }
 
 function buildEditedPayload(msg, text) {
+  const replyTo = msg?._replyTo || msg?._payload?.replyTo || null;
   if (msg?._payload?.v === 1 && msg?._payload?.type === "image") {
     const payload = { ...msg._payload, text };
+    if (replyTo) payload.replyTo = replyTo;
     const image = payload.image || {};
     return {
       plaintext: JSON.stringify(payload),
@@ -813,12 +826,14 @@ function buildEditedPayload(msg, text) {
         img: image.dataUrl || payload.dataUrl || msg._img || null,
         voice: null,
         payload,
+        replyTo,
       },
     };
   }
 
   if (msg?._payload?.v === 1 && msg?._payload?.type === "voice") {
     const payload = { ...msg._payload, text };
+    if (replyTo) payload.replyTo = replyTo;
     const voice = payload.voice || {};
     return {
       plaintext: JSON.stringify(payload),
@@ -827,13 +842,23 @@ function buildEditedPayload(msg, text) {
         img: null,
         voice: voice.dataUrl ? voice : msg._voice || null,
         payload,
+        replyTo,
       },
+    };
+  }
+
+  const hasReply = !!(replyTo);
+  if (hasReply) {
+    const payload = { v: 1, type: "text", text, replyTo };
+    return {
+      plaintext: JSON.stringify(payload),
+      parsed: { text, img: null, voice: null, payload, replyTo },
     };
   }
 
   return {
     plaintext: text,
-    parsed: { text, img: null, voice: null, payload: null },
+    parsed: { text, img: null, voice: null, payload: null, replyTo: null },
   };
 }
 
