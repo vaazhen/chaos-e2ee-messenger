@@ -1,4 +1,4 @@
-package ru.messenger.chaosmessenger.message.application;
+package ru.messenger.chaosmessenger.message.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
