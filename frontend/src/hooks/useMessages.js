@@ -50,12 +50,47 @@ export function useMessages(myId) {
         console.error("syncFromApi:", e);
       }
     };
+    const rehydrateCachedAttachments = async (chatId, messages) => {
+      const needsRehydrate = messages.filter(m =>
+        m._attachment?.attachmentId && !m._img && !m._voice && !m._attachment?.objectUrl && window.e2ee?.decryptFile
+      );
+      if (needsRehydrate.length === 0) return;
+      for (const msg of needsRehydrate) {
+        try {
+          const encryptedBuf = await api.downloadAttachment(msg._attachment.attachmentId);
+          const decryptedBuf = await window.e2ee.decryptFile(encryptedBuf, msg._attachment.fileKey);
+          const blob = new Blob([decryptedBuf], { type: msg._attachment.mimeType || "application/octet-stream" });
+          const objectUrl = URL.createObjectURL(blob);
+          const type = msg._payload?.type || '';
+          if (type === 'image') {
+            msg._img = objectUrl;
+          } else if (type === 'voice') {
+            msg._voice = { dataUrl: objectUrl, durationMs: msg._attachment.durationMs || 0, mime: msg._attachment.mimeType };
+          } else {
+            msg._attachment = { ...msg._attachment, objectUrl, blob };
+          }
+          await localStore.saveMessage(msg);
+        } catch (e) {
+          console.warn('[rehydrate] failed for msg', msg.id, e);
+        }
+      }
+      setMsgs(prev => {
+        const existing = prev[chatId] || [];
+        const updated = existing.map(m => {
+          const r = needsRehydrate.find(h => h.id === m.id);
+          return r || m;
+        });
+        return { ...prev, [chatId]: updated };
+      });
+    };
+
     setLoadingMsgs(true);
     try {
       let fromApi = false;
       const cached = await localStore.getMessagesByChat(chatId);
       if (cached && cached.length > 0) {
         setMsgs(prev => ({ ...prev, [chatId]: cached }));
+        rehydrateCachedAttachments(chatId, cached);
         syncFromApi(chatId, cached);
       } else {
         fromApi = true;

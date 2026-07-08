@@ -18,7 +18,7 @@ export default function GroupAdminModal({ me, chat, l, onRefreshGroup, onClose }
   return (
     <div className="modal-bg user-profile-modal-bg" onClick={onClose} role="presentation">
       <div
-        className="user-profile-screen group-admin-modal-screen"
+        className="user-profile-screen group-admin-modal-screen glass-modal"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"

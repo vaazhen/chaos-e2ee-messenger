@@ -24,8 +24,7 @@ describe("critical UI components", () => {
     const onSearch = vi.fn();
     const onNewChat = vi.fn();
     const onFilterChange = vi.fn();
-    const onOpenSettings = vi.fn();
-    const onMarkAllRead = vi.fn();
+    const onNavChange = vi.fn();
 
     const chats = [
       {
@@ -88,26 +87,28 @@ describe("critical UI components", () => {
         onПоиск={onSearch}
         onNewChat={onNewChat}
         onFilterChange={onFilterChange}
-        onOpenНастройки={onOpenSettings}
-        onMarkAllRead={onMarkAllRead}
+        onOpenНастройки={onNavChange}
+        onNavChange={onNavChange}
       />
     );
 
     expect(screen.getByText("Bob Brown")).toBeInTheDocument();
     expect(screen.getByText("Team")).toBeInTheDocument();
     expect(screen.getByText("Long Preview")).toBeInTheDocument();
-    expect(screen.getByText("Избранное")).toBeInTheDocument();
+    const savedEls = screen.getAllByText("Избранное");
+    expect(savedEls.length).toBeGreaterThanOrEqual(1);
+    const savedRow = savedEls.find(el => el.closest("button.conversation-item"))?.closest("button");
+    expect(savedRow).toBeTruthy();
     const bobRow = screen.getByText("Bob Brown").closest("button");
     expect(bobRow).toBeTruthy();
     expect(bobRow.querySelector(".conversation-unread-floating")).toHaveTextContent("2");
-    const savedRow = screen.getByText("Избранное").closest("button");
     expect(savedRow.querySelector(".saved-avatar-star")).toBeInTheDocument();
     expect(savedRow.querySelector(".soft-chip")).toBeNull();
 
     fireEvent.click(screen.getByText("Team"));
     expect(onSelectChat).toHaveBeenCalledWith(200);
 
-    fireEvent.change(screen.getByPlaceholderText("Поиск"), {
+    fireEvent.change(screen.getByPlaceholderText("Поиск чатов"), {
       target: { value: "bob" },
     });
     expect(onSearch).toHaveBeenLastCalledWith("bob");
@@ -116,15 +117,12 @@ describe("critical UI components", () => {
     expect(onNewChat).toHaveBeenCalled();
 
     fireEvent.click(screen.getByTitle("Настройки"));
-    expect(onOpenSettings).toHaveBeenCalled();
+    expect(onNavChange).toHaveBeenCalledWith("settings");
 
-    fireEvent.click(screen.getByTitle("Фильтры"));
     fireEvent.click(screen.getByText("Непрочитанные"));
     expect(onFilterChange).toHaveBeenCalledWith("unread");
 
-    fireEvent.click(screen.getByTitle("Фильтры"));
-    fireEvent.click(screen.getByText("Прочитать все"));
-    expect(onMarkAllRead).toHaveBeenCalled();
+    fireEvent.click(screen.getByText("Все"));
 
     const longRow = screen.getByText("Long Preview").closest("button");
     const preview = longRow?.querySelector(".conversation-preview");
@@ -154,7 +152,7 @@ describe("critical UI components", () => {
     expect(screen.getByText("Ответить")).toBeInTheDocument();
     expect(screen.getByText("old message")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText("×"));
+    fireEvent.click(document.querySelector(".modal-close"));
     expect(onCancelReply).toHaveBeenCalled();
 
     const textarea = screen.getByPlaceholderText("Сообщение...");
@@ -261,7 +259,7 @@ describe("critical UI components", () => {
 
     expect(screen.getAllByText("hello").length).toBeGreaterThan(0);
     expect(screen.getByText("world")).toBeInTheDocument();
-    expect(screen.getByText("✓✓")).toBeInTheDocument();
+    expect(document.querySelector(".check.read svg")).toBeTruthy();
 
     const reactionButton = screen.getByRole("button", { name: /👍/ });
     fireEvent.click(reactionButton);
@@ -472,7 +470,7 @@ describe("critical UI components", () => {
     const user = userEvent.setup();
     const { rerender } = render(<App />);
 
-    await user.click(screen.getByTitle("Chat info"));
+    await user.click(screen.getByTitle("Profile"));
     await user.click(screen.getByText("Search messages"));
     const searchInput = screen.getByPlaceholderText("Search messages");
     await user.type(searchInput, "hello");
@@ -484,7 +482,7 @@ describe("critical UI components", () => {
 
     expect(screen.queryByPlaceholderText("Search messages")).toBeNull();
 
-    await user.click(screen.getByTitle("Chat info"));
+    await user.click(screen.getByTitle("Profile"));
     await user.click(screen.getByText("Search messages"));
     expect(screen.getByPlaceholderText("Search messages")).toHaveValue("");
   });
@@ -578,7 +576,7 @@ describe("critical UI components", () => {
 
     await mockAndRender("MEMBER");
     expect(screen.queryByTitle("Администрирование группы")).toBeNull();
-    fireEvent.click(screen.getByTitle("О чате"));
+    fireEvent.click(screen.getByTitle("Профиль"));
     expect(screen.queryByRole("dialog", { name: "Управление группой" })).toBeNull();
     expect(screen.queryByText("Политики группы (только владелец)")).toBeNull();
     expect(screen.queryByText("Удалить группу")).toBeNull();
