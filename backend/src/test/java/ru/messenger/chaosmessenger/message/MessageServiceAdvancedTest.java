@@ -41,6 +41,7 @@ import ru.messenger.chaosmessenger.message.repository.MessageReceiptRepository;
 import ru.messenger.chaosmessenger.message.repository.MessageRepository;
 import ru.messenger.chaosmessenger.message.service.MessageDeleteService;
 import ru.messenger.chaosmessenger.message.service.MessageEditService;
+import ru.messenger.chaosmessenger.message.service.MessageEnvelopeService;
 import ru.messenger.chaosmessenger.message.service.MessageFanoutService;
 import ru.messenger.chaosmessenger.message.service.MessageOutboxService;
 import ru.messenger.chaosmessenger.message.service.MessageReactionService;
@@ -120,14 +121,19 @@ class MessageServiceAdvancedTest {
         );
         messageOutboxService = new MessageOutboxService(participantRepository, userDeviceRepository, outboxService);
 
+        MessageEnvelopeService messageEnvelopeService = new MessageEnvelopeService(
+                messageEnvelopeRepository, userDeviceRepository,
+                messageAccessService, messageFanoutService
+        );
         MessageSendService messageSendService = new MessageSendService(
                 messageRepository, messageEnvelopeRepository, chatRepository,
-                participantRepository, userDeviceRepository, messageAccessService,
-                messageFanoutService, messageOutboxService, chatAccessService
+                participantRepository, messageAccessService,
+                messageFanoutService, messageOutboxService, chatAccessService,
+                messageEnvelopeService
         );
         MessageEditService messageEditService = new MessageEditService(
                 messageRepository, messageEnvelopeRepository, messageAccessService,
-                messageSendService, messageFanoutService, messageOutboxService
+                messageEnvelopeService, messageFanoutService, messageOutboxService
         );
         MessageDeleteService messageDeleteService = new MessageDeleteService(
                 messageRepository, messageAccessService, messageFanoutService, messageOutboxService
@@ -668,15 +674,15 @@ class MessageServiceAdvancedTest {
         stubChatParticipants(100L);
 
         Message message = TestFixtures.sentMessage(900L, 100L, alice.getId(), "alice-phone");
-        MessageReaction existing = reaction(900L, 100L, bob.getId(), "\uD83D\uDD25");
+        MessageReaction existing = reaction(900L, 100L, bob.getId(), "🔥");
 
         when(messageRepository.findById(900L)).thenReturn(Optional.of(message));
-        when(messageReactionRepository.findByMessageIdAndUserIdAndEmoji(900L, bob.getId(), "\uD83D\uDD25"))
+        when(messageReactionRepository.findByMessageIdAndUserIdAndEmoji(900L, bob.getId(), "🔥"))
                 .thenReturn(Optional.of(existing));
         when(userDeviceRepository.findByUserIdAndActiveTrue(alice.getId())).thenReturn(List.of(aliceDevice));
         when(userDeviceRepository.findByUserIdAndActiveTrue(bob.getId())).thenReturn(List.of(bobDevice));
 
-        ReactionEvent event = messageService.toggleReaction("bob", 900L, " \uD83D\uDD25 ");
+        ReactionEvent event = messageService.toggleReaction("bob", 900L, " 🔥 ");
 
         assertThat(event.type()).isEqualTo("MESSAGE_REACTION");
         assertThat(event.messageId()).isEqualTo(900L);

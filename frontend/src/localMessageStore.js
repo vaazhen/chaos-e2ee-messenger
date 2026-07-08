@@ -33,7 +33,25 @@ function sanitizeAttachment(attachment) {
   return clean;
 }
 
+function storeImg(img) {
+  if (!img) return null;
+  if (typeof img === 'string' && img.startsWith('data:')) return img;
+  return null;
+}
+
+function storeVoice(voice) {
+  if (!voice) return null;
+  if (voice.dataUrl && typeof voice.dataUrl === 'string' && voice.dataUrl.startsWith('data:')) {
+    return { dataUrl: voice.dataUrl, durationMs: voice.durationMs || 0, mime: voice.mime || '' };
+  }
+  if (voice.dataUrl && typeof voice.dataUrl === 'string' && voice.dataUrl.startsWith('blob:')) {
+    return null;
+  }
+  return null;
+}
+
 function toStoreRow(msg) {
+  const storePayload = msg._payload || null;
   return {
     id: msg.id,
     chatId: msg.chatId,
@@ -47,9 +65,9 @@ function toStoreRow(msg) {
     myReactions: msg.myReactions || [],
     _out: Boolean(msg._out),
     _text: msg._text || '',
-    _img: null,
-    _voice: null,
-    _payload: msg._payload || null,
+    _img: storeImg(msg._img),
+    _voice: storeVoice(msg._voice),
+    _payload: storePayload,
     _attachment: sanitizeAttachment(msg._attachment),
     _ttl: msg._ttl || null,
     expiresAt: msg.expiresAt || null,

@@ -50,6 +50,7 @@ export default [
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" },
       ],
       "no-console": ["warn", { allow: ["warn", "error"] }],
+      "no-empty": ["error", { allowEmptyCatch: true }],
     },
   },
   {

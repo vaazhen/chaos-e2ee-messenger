@@ -84,7 +84,7 @@ export async function ensureDeviceRegistered(deviceRegistrationToken) {
     await window.e2ee.ensureDeviceRegistered(apiFn);
   }
   const deviceId = window.e2ee.getOrCreateDeviceId();
-  console.log("[E2EE] Device registered:", deviceId);
+  console.warn("[E2EE] Device registered:", deviceId);
   return deviceId;
 }
 

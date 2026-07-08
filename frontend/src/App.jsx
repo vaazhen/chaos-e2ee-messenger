@@ -19,10 +19,18 @@ import NewChatModal from "./components/NewChatModal";
 import Ava          from "./components/Ava";
 import UserProfileModal from "./components/UserProfileModal";
 import GroupAdminModal from "./components/GroupAdminModal";
+import SafetyNumberModal from "./components/SafetyNumberModal";
+import EditMessageModal from "./components/EditMessageModal";
+import DeleteMessageModal from "./components/DeleteMessageModal";
+import ContextMenu from "./components/ContextMenu";
+import ChatInfoPanel from "./components/ChatInfoPanel";
+import ChatSearchBar from "./components/ChatSearchBar";
 import useWebRTC from "./hooks/useWebRTC";
 import CallOverlay from "./components/CallOverlay";
+import SettingsPage from "./components/SettingsPage";
+import BottomNav from "./components/BottomNav";
 import { api } from "./api";
-import { computeSafetyNumber, formatSafetyNumber, areSafetyNumbersEqual } from "./safety-number";
+import { ShieldIcon, BackIcon } from "./components/Icons";
 
 import { getTime, messageMatchesQuery } from "./helpers";
 import { clearPreviewCacheForUser } from "./previewCache";
@@ -142,13 +150,17 @@ export default function ChaosMessenger() {
   const [messageSearch,  setMessageSearch]  = useState("");
   const [matchIndex, setMatchIndex] = useState(0);
   const [scrollToMessageId, setScrollToMessageId] = useState(null);
-  const [chatInfoOpen,   setChatInfoOpen]   = useState(false);
   const [groupAdminOpen, setGroupAdminOpen] = useState(false);
+  const [chatInfoOpen,   setChatInfoOpen]   = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [aliasTick, setAliasTick] = useState(0);
   const [chatPrefsTick, setChatPrefsTick] = useState(0);
-  const [chatBg,         setChatBg]         = useState(() => localStorage.getItem("cm_chat_background") || "clean");
+  const [chatBgs, setChatBgs] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("cm_chat_bgs") || "{}"); }
+    catch { return {}; }
+  });
   const [chatFilter,     setChatFilter]     = useState("all");
+  const [activeTab,      setActiveTab]      = useState("chats");
   
   const ctxMenuRef = useRef(null);
   const chatSearchRef = useRef(null);
@@ -169,8 +181,8 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
   }, []);
 
   const [theme, setTheme] = useState(() => {
-    if (typeof window === "undefined") return "light";
-    return localStorage.getItem(THEME_STORAGE_KEY) || "light";
+    if (typeof window === "undefined") return "dark";
+    return localStorage.getItem(THEME_STORAGE_KEY) || "dark";
   });
 
   const [sidebarWidth, setSidebarWidth] = useState(() =>
@@ -312,6 +324,7 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
 
   const activeChat = chatStore.chats.find(c => c.id === chatStore.activeId);
   const activeMsgs = msgStore.msgs[chatStore.activeId] || [];
+  const chatMuted = activeChat ? getChatUiPrefs(auth.me?.id).muted.has(String(activeChat.id)) : false;
   const refreshTimeoutRef = useRef(null);
   const requestsRefreshTimeoutRef = useRef(null);
   const requestsRefreshAttemptsRef = useRef(0);
@@ -430,11 +443,6 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
     }
   }, []);
 
-  const searchCount = useMemo(() => {
-    if (!messageSearch.trim()) return 0;
-    return activeMsgs.filter(m => messageMatchesQuery(m, messageSearch)).length;
-  }, [activeMsgs, messageSearch]);
-
   const matchIds = useMemo(() => {
     const q = String(messageSearch || "").trim();
     if (!q) return [];
@@ -499,11 +507,10 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
       }
 
       const insideInfo =
-        isInside(chatInfoRef, target) ||
-        isInside(chatInfoBtnRef, target) ||
         isInside(groupAdminBtnRef, target);
 
       if (chatInfoOpen && !insideInfo) {
+        if (target.closest(".modal-bg > .modal")) return;
         setChatInfoOpen(false);
       }
     };
@@ -522,6 +529,10 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
     document.body.setAttribute("data-theme", theme);
     localStorage.setItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
+
+  useEffect(() => {
+    localStorage.setItem("cm_chat_bgs", JSON.stringify(chatBgs));
+  }, [chatBgs]);
 
   useEffect(() => {
     loadTranslations(lang);
@@ -844,8 +855,20 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
     );
   }
 
+  const chatBg = chatBgs[String(chatStore.activeId)] || "clean";
+
   return (
     <div className={`app mobile-product-shell${activeChat ? " has-active-chat" : ""}`} onClick={closeCtx}>
+      {activeTab === "settings" ? (
+        <SettingsPage
+          me={auth.me}
+          theme={theme}
+          l={l}
+          onToggleTheme={() => setTheme(prev => prev === "dark" ? "light" : "dark")}
+          onLogout={logout}
+          onEditProfile={() => setShowSettings(true)}
+        />
+      ) : (
       <div
         className={`app-frame${sidebarDragging ? " app-frame--sidebar-dragging" : ""}`}
         style={
@@ -870,7 +893,7 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
             setNewChatInitialTab("direct");
             setShowNewChat(true);
           }}
-          onOpenНастройки={() => setShowSettings(true)}
+          onOpenНастройки={() => setActiveTab("settings")}
           onMarkAllRead={() => {
             chatStore.chats.forEach(c => {
               api.markRead(c.id).catch(() => {});
@@ -914,6 +937,8 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
             }
           }}
           sidebarCompact={sidebarCompact}
+          activeTab={activeTab}
+          onNavChange={setActiveTab}
           sidebarResizeEnabled={sidebarDesktop}
           onSidebarResizePointerDown={onSidebarResizePointerDown}
           onSidebarResizePointerMove={onSidebarResizePointerMove}
@@ -926,7 +951,11 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
         <section className={`chat-view chat-bg-${chatBg}`}>
           {!activeChat ? (
             <div className="product-empty">
-              <div className="product-empty-icon">◯</div>
+              <div className="product-empty-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                </svg>
+              </div>
               <div className="product-empty-title">{l("Нет сообщений", "No messages")}</div>
               <div className="product-empty-sub">
                 {l("Создайте новую переписку.", "Start a new conversation.")}
@@ -935,10 +964,11 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
           ) : (
             <>
               <div className="product-chat-head">
-                <button className="round-action desktop-hidden" onClick={goBackToList} title={l("Назад", "Back")}>‹</button>
+                <button className="round-action desktop-hidden" onClick={goBackToList} title={l("Назад", "Back")}><BackIcon /></button>
+
                 <button
                   type="button"
-                  className="chat-head-user"
+                  className="chat-head-name-pill"
                   onClick={() => {
                     if (activeChat.type === "direct") setProfileOpen(true);
                     else setChatInfoOpen(true);
@@ -946,31 +976,20 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
                   }}
                   title={l("Профиль", "Profile")}
                 >
-                  <Ava name={activeChatName || activeChat.name} colorIdx={activeChat.colorIdx} size="md" online={activeChat.online} avatarUrl={activeChat.avatarUrl} />
-                </button>
-                <button
-                  type="button"
-                  className="product-chat-title chat-head-user"
-                  onClick={() => {
-                    if (activeChat.type === "direct") setProfileOpen(true);
-                    else setChatInfoOpen(true);
-                    setChatSearchOpen(false);
-                  }}
-                  title={l("Профиль", "Profile")}
-                >
-                  <div className="head-name">{activeChatName || activeChat.name}</div>
-                  <div className={`head-status${activeChat.online ? "" : " off"}`}>
+                  <b>{activeChatName || activeChat.name}</b>
+                  <small className={`${activeChat.online ? "" : "off"}`}>
                     {activeChat.type === "group"
                       ? `${activeChat.members} ${t.participants || "members"}`
                       : activeChat.online ? (t.online || "online") : (t.offline || "last seen recently")}
-                  </div>
+                  </small>
                 </button>
-                <div className="chat-head-actions">
+
+                <div className="chat-head-right">
                   {showGroupAdminBtn && (
                     <button
                       ref={groupAdminBtnRef}
                       type="button"
-                      className={`chat-head-btn chat-head-btn--admin${groupAdminOpen ? " active" : ""}`}
+                      className={`chat-head-mini-btn${groupAdminOpen ? " active" : ""}`}
                       title={l("Администрирование группы", "Group administration")}
                       aria-label={l("Администрирование группы", "Group administration")}
                       onClick={() => {
@@ -979,96 +998,46 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
                         setChatSearchOpen(false);
                       }}
                     >
-                      <svg className="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M12 3 19 6v6c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3z" />
                       </svg>
                     </button>
                   )}
                   <button
                     type="button"
-                    className="chat-head-btn chat-head-btn--call"
-                    title={l("Звонок", "Call")}
+                    className="chat-head-avatar"
                     onClick={() => {
-                      const otherUser = activeChat?.username;
-                      if (otherUser) {
-                        call.startCall(chatStore.activeId, otherUser, false);
-                      }
+                      if (activeChat.type === "direct") setProfileOpen(true);
+                      else setChatInfoOpen(true);
+                      setChatSearchOpen(false);
                     }}
-                    disabled={call.callState !== 'idle'}
+                    title={l("Фото профиля", "Profile photo")}
+                    aria-label={l("Фото профиля", "Profile photo")}
                   >
-                    <svg className="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
-                      <path d="M22 2L11 13" />
-                      <path d="M22 2L15 22l-4-9-9-4z" />
-                    </svg>
-                  </button>
-                  <button
-                    ref={chatInfoBtnRef}
-                    className={`chat-head-btn chat-head-btn--info${chatInfoOpen ? " active" : ""}`}
-                    title={l("О чате", "Chat info")}
-                    onClick={() => { setChatInfoOpen(v => !v); setChatSearchOpen(false); }}
-                    aria-label={l("О чате", "Chat info")}
-                  >
-                    <svg className="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
-                      <circle cx="12" cy="12" r="9" />
-                      <circle cx="12" cy="8" r="1.2" fill="currentColor" stroke="none" />
-                      <path d="M12 11v5" />
-                    </svg>
+                    <Ava name={activeChatName || activeChat.name} colorIdx={activeChat.colorIdx} size="md" avatarUrl={activeChat.avatarUrl} />
                   </button>
                 </div>
               </div>
 
               {chatSearchOpen && (
-                <div ref={chatSearchRef} className="chat-search-bar" onClick={e => e.stopPropagation()}>
-                  <span>⌕</span>
-                  <input
-                    value={messageSearch}
-                    onChange={e => setMessageSearch(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (!matchIds.length) return;
-                      if (e.key === "ArrowUp") {
-                        e.preventDefault();
-                        goToMatch(-1);
-                      } else if (e.key === "ArrowDown") {
-                        e.preventDefault();
-                        goToMatch(1);
-                      } else if (e.key === "Enter") {
-                        e.preventDefault();
-                        goToMatch(e.shiftKey ? -1 : 1);
-                      }
-                    }}
-                    placeholder={l("Поиск по сообщениям", "Search messages")}
-                    autoFocus
-                  />
-                  <b>{messageSearch.trim() ? (matchIds.length ? `${matchIndex + 1}/${matchIds.length}` : "0") : ""}</b>
-                  <button
-                    type="button"
-                    className="chat-search-nav"
-                    title={l("К предыдущему", "Previous")}
-                    disabled={!matchIds.length}
-                    onClick={() => goToMatch(-1)}
-                  >↑</button>
-                  <button
-                    type="button"
-                    className="chat-search-nav"
-                    title={l("К следующему", "Next")}
-                    disabled={!matchIds.length}
-                    onClick={() => goToMatch(1)}
-                  >↓</button>
-                  <button onClick={resetMessageSearch}>×</button>
-                </div>
+                <ChatSearchBar
+                  chatSearchRef={chatSearchRef}
+                  messageSearch={messageSearch}
+                  setMessageSearch={setMessageSearch}
+                  matchIds={matchIds}
+                  matchIndex={matchIndex}
+                  goToMatch={goToMatch}
+                  resetMessageSearch={resetMessageSearch}
+                  l={l}
+                />
               )}
 
-              {chatInfoOpen && (
+              {chatInfoOpen && activeChat?.type === "group" && (
                 <ChatInfoPanel
-                  panelRef={chatInfoRef}
-                  lang={lang}
                   chat={activeChat}
                   chatBg={chatBg}
-                  auth={auth}
-                  setSafetyModal={setSafetyModal}
-                  onChangeBg={setChatBg}
+                  onChangeBg={(val) => setChatBgs(prev => ({...prev, [String(activeChat.id)]: val}))}
                   onClose={() => setChatInfoOpen(false)}
-                  onOpenSearch={() => { setChatInfoOpen(false); setChatSearchOpen(true); }}
                 />
               )}
 
@@ -1091,7 +1060,21 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
                   l={l}
                   chat={{ ...activeChat, name: activeChatName || activeChat.name }}
                   onClose={() => setProfileOpen(false)}
-                  onAliasChanged={() => setAliasTick(v => v + 1)}
+                  onCall={() => {
+                    const otherUser = activeChat?.username;
+                    if (otherUser) call.startCall(chatStore.activeId, otherUser, false);
+                    setProfileOpen(false);
+                  }}
+                  onVideoCall={() => {
+                    const otherUser = activeChat?.username;
+                    if (otherUser) call.startCall(chatStore.activeId, otherUser, true);
+                    setProfileOpen(false);
+                  }}
+                  onOpenSearch={() => { setProfileOpen(false); setChatSearchOpen(true); }}
+                  chatBg={chatBg}
+                  onChangeBg={(val) => setChatBgs(prev => ({...prev, [String(chatStore.activeId)]: val}))}
+                  muted={chatMuted}
+                  onToggleMute={() => toggleMuted(auth.me?.id, chatStore.activeId)}
                 />
               )}
 
@@ -1116,11 +1099,6 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
                   )}
                 </div>
               )}
-
-              <div className="enc-notice">
-                <span>🔒</span>
-                <span>{t.encrypted_notice || "Encrypted on device"}</span>
-              </div>
 
               <MessageInput
                 onSend={sendMsg}
@@ -1148,97 +1126,46 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
           )}
         </section>
       </div>
-
-      {ctx && (
-        <div ref={ctxMenuRef} className="ctx-menu product-menu" style={{ left: ctx.x, top: ctx.y }} onClick={e => e.stopPropagation()}>
-          <div className="ctx-reactions">
-            {["👍","❤️","😂","😮","😢","🔥"].map(em => (
-              <button key={em} className="ctx-react" type="button" onClick={() => reactToMsg(ctx.msg, em)}>{em}</button>
-            ))}
-          </div>
-          <div className="menu-line" />
-          {ctx.msg?._out && !ctx.msg?._temp && (ctx.msg?._text || ctx.msg?._img || ctx.msg?._voice) && (
-            <button className="ctx-item" onClick={() => beginEdit(ctx.msg)}>
-              <span className="ci">✎</span>{l("Изменить", "Edit")}
-            </button>
-          )}
-          <button className="ctx-item" onClick={() => { setReplyTo(ctx.msg); setCtx(null); }}>
-            <span className="ci">↩</span>{l("Ответить", "Reply")}
-          </button>
-          {ctx.msg?._text && (
-            <button className="ctx-item" onClick={() => { navigator.clipboard?.writeText(ctx.msg._text || ""); setCtx(null); }}>
-              <span className="ci">▣</span>{l("Копировать", "Copy")}
-            </button>
-          )}
-          <div className="menu-line" />
-          <button className="ctx-item danger" onClick={() => beginDelete(ctx.msg)}>
-            <span className="ci">♜</span>{l("Удалить", "Delete")}
-          </button>
-        </div>
+      )}
+      {!(activeTab === "chats" && activeChat) && (
+      <BottomNav
+        me={auth.me}
+        myName={[auth.me?.firstName, auth.me?.lastName].filter(Boolean).join(" ") || auth.me?.username || l("Я", "Me")}
+        activeTab={activeTab}
+        onNavChange={setActiveTab}
+        unreadTotal={aliasedChats.filter(c => c.unread > 0).length}
+        l={l}
+      />
       )}
 
-      {editTarget && (
-        <div className="modal-bg" onClick={() => !editLoading && setEditTarget(null)}>
-          <div className="modal small-modal glass-card" onClick={e => e.stopPropagation()}>
-            <div className="modal-title">
-              {l("Изменить сообщение", "Edit message")}
-              <button className="modal-close" onClick={() => !editLoading && setEditTarget(null)}>×</button>
-            </div>
-            <textarea
-              className="field-inp edit-textarea"
-              value={editText}
-              onChange={e => setEditText(e.target.value)}
-              autoFocus rows={4}
-              onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) submitEdit(); }}
-            />
-            {editTarget._img && (
-              <div className="field-hint">
-                {l("Будет изменена только подпись к изображению.", "Only the image caption will be changed.")}
-              </div>
-            )}
-            {editTarget._voice && (
-              <div className="field-hint">
-                {l("Будет изменена только подпись к голосовому сообщению.", "Only the voice caption will be changed.")}
-              </div>
-            )}
-            <div className="btn-row">
-              <button className="btn-sec" disabled={editLoading} onClick={() => setEditTarget(null)}>
-                {l("Отмена", "Cancel")}
-              </button>
-              <button className="btn-pri" disabled={editLoading || !editText.trim()} onClick={submitEdit}>
-                {editLoading ? l("Сохраняем...", "Saving...") : l("Сохранить", "Save")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ContextMenu
+        ctx={ctx}
+        ctxClosing={ctxClosing}
+        ctxMenuRef={ctxMenuRef}
+        onReact={reactToMsg}
+        onReply={(msg) => { setReplyTo(msg); setCtx(null); }}
+        onEdit={beginEdit}
+        onCopy={(msg) => { navigator.clipboard?.writeText(msg._text || ""); setCtx(null); }}
+        onDelete={beginDelete}
+        l={l}
+      />
 
-      {deleteTarget && (
-        <div className="modal-bg" onClick={() => setDeleteTarget(null)}>
-          <div className="modal small-modal glass-card" onClick={e => e.stopPropagation()}>
-            <div className="modal-title">
-              {l("Удалить сообщение", "Delete message")}
-              <button className="modal-close" onClick={() => setDeleteTarget(null)}>×</button>
-            </div>
-            <div className="confirm-text">
-              {l("Выберите способ удаления.", "Choose how to delete this message.")}
-            </div>
-            <div className="delete-actions">
-              <button className="btn-sec" onClick={() => confirmDelete("me")}>
-                {l("Удалить у меня", "Delete for me")}
-              </button>
-              {deleteTarget._out && !deleteTarget._temp && (
-                <button className="btn-pri danger-pri" onClick={() => confirmDelete("everyone")}>
-                  {l("Удалить у всех", "Delete for everyone")}
-                </button>
-              )}
-              <button className="btn-sec" onClick={() => setDeleteTarget(null)}>
-                {l("Отмена", "Cancel")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <EditMessageModal
+        editTarget={editTarget}
+        editText={editText}
+        editLoading={editLoading}
+        setEditText={setEditText}
+        setEditTarget={setEditTarget}
+        submitEdit={submitEdit}
+        l={l}
+      />
+
+      <DeleteMessageModal
+        deleteTarget={deleteTarget}
+        setDeleteTarget={setDeleteTarget}
+        confirmDelete={confirmDelete}
+        l={l}
+      />
 
       {showSettings && (
         <ProfileModal
@@ -1250,6 +1177,7 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
           onToggleTheme={() => setTheme(prev => prev === "dark" ? "light" : "dark")}
           onSwitchLang={() => switchLang(lang === "ru" ? "en" : "ru")}
           onLogout={logout}
+          onOpenChat={onChatCreated}
         />
       )}
 
@@ -1284,75 +1212,11 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
         />
       )}
 
-      {safetyModal.open && safetyModal.fingerprint && (
-        <div className="safety-modal-overlay" onClick={() => setSafetyModal({ open: false, fingerprint: null, display: null, error: null })}>
-          <div className="safety-modal" onClick={e => e.stopPropagation()}>
-            <div className="safety-modal-head">
-              <b>{l("Safety Number", "Safety Number")}</b>
-              <button type="button" className="safety-modal-close" onClick={() => setSafetyModal({ open: false, fingerprint: null, display: null, error: null })}>×</button>
-            </div>
-
-            <div className="safety-modal-body">
-              <div className="safety-section">
-                <div className="safety-label">{l("Цифровой отпечаток", "Numeric fingerprint")}</div>
-                <div className="safety-value safety-numeric">{safetyModal.display?.numeric || ""}</div>
-              </div>
-
-              <div className="safety-section">
-                <div className="safety-label">{l("Шестнадцатеричный", "Hex")}</div>
-                <div className="safety-value safety-hex">{safetyModal.display?.hex || ""}</div>
-              </div>
-
-              <div className="safety-section">
-                <div className="safety-label">{l("Словесный отпечаток", "Word fingerprint")}</div>
-                <pre className="safety-value safety-words">{safetyModal.fingerprint.fingerprint || ""}</pre>
-              </div>
-
-              <div className="safety-note">
-                {l("Сравните этот код с кодом на устройстве собеседника. Если коды совпадают — соединение безопасно.", "Compare this code with the one on your contact's device. If they match, the connection is secure.")}
-              </div>
-            </div>
-
-            <div className="safety-modal-actions">
-              <button
-                type="button"
-                className="btn-sec"
-                onClick={() => {
-                  const text = `Chaos Messenger Safety Number:\n\nNumeric: ${safetyModal.display?.numeric}\nHex: ${safetyModal.display?.hex}\nWords:\n${safetyModal.fingerprint.fingerprint}`;
-                  navigator.clipboard?.writeText(text).catch(() => {});
-                }}
-              >
-                {l("Копировать", "Copy")}
-              </button>
-              <button type="button" className="btn-pri" onClick={() => setSafetyModal({ open: false, fingerprint: null, display: null, error: null })}>
-                {l("Закрыть", "Close")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {safetyModal.open && safetyModal.error && !safetyModal.fingerprint && (
-        <div className="safety-modal-overlay" onClick={() => setSafetyModal({ open: false, fingerprint: null, display: null, error: null })}>
-          <div className="safety-modal" onClick={e => e.stopPropagation()}>
-            <div className="safety-modal-head">
-              <b>{l("Safety Number", "Safety Number")}</b>
-              <button type="button" className="safety-modal-close" onClick={() => setSafetyModal({ open: false, fingerprint: null, display: null, error: null })}>×</button>
-            </div>
-            <div className="safety-modal-body">
-              <div className="safety-error-state">
-                {l("Не удалось вычислить Safety Number", "Could not compute Safety Number")}
-                <small>{safetyModal.error}</small>
-              </div>
-            </div>
-            <div className="safety-modal-actions">
-              <button type="button" className="btn-pri" onClick={() => setSafetyModal({ open: false, fingerprint: null, display: null, error: null })}>
-                {l("Закрыть", "Close")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <SafetyNumberModal
+        safetyModal={safetyModal}
+        onClose={() => setSafetyModal({ open: false, fingerprint: null, display: null, error: null })}
+        l={l}
+      />
 
       <CallOverlay
         callState={call.callState}
@@ -1360,6 +1224,7 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
         isVideo={call.isVideo}
         isMuted={call.isMuted}
         isScreenSharing={call.isScreenSharing}
+        callDuration={call.callDuration}
         localVideoRef={call.localVideoRef}
         remoteVideoRef={call.remoteVideoRef}
         onAnswer={call.answerCall}
@@ -1374,111 +1239,4 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
   );
 }
 
-function ChatInfoPanel({ chat, chatBg, auth, setSafetyModal, onChangeBg, onClose, onOpenSearch, lang, panelRef }) {
-  const effectiveLang = String(lang || "ru").toLowerCase().startsWith("en") ? "en" : "ru";
-  const l = (ru, en) => (effectiveLang === "ru" ? ru : en);
 
-  const backgrounds = [
-    { key: "clean",  label: l("Чистый", "Clean") },
-    { key: "soft",   label: l("Мягкий", "Soft") },
-    { key: "grid",   label: l("Сетка", "Grid") },
-    { key: "paper",  label: l("Бумага", "Paper") },
-  ];
-
-  return (
-    <div ref={panelRef} className="chat-tools-panel" onClick={e => e.stopPropagation()}>
-      <div className="chat-tools-head">
-        <div>
-          <b>{l("Настройки чата", "Chat settings")}</b>
-          <span>{chat?.name}</span>
-        </div>
-
-        <button
-          type="button"
-          className="chat-tools-close"
-          onClick={onClose}
-          title={l("Закрыть", "Close")}
-          aria-label={l("Закрыть", "Close")}
-        >
-          ×
-        </button>
-      </div>
-
-      <button type="button" className="tool-row" onClick={onOpenSearch}>
-        <span className="tool-icon tool-icon-search" aria-hidden="true">
-          <svg viewBox="0 0 24 24">
-            <circle cx="11" cy="11" r="6.5" />
-            <path d="M16.2 16.2L21 21" />
-          </svg>
-        </span>
-        <b>{l("Поиск сообщений", "Search messages")}</b>
-        <i>›</i>
-      </button>
-
-      <div className="tool-card">
-        <div className="tool-title">{l("Фон переписки", "Chat background")}</div>
-
-        <div className="bg-picker">
-          {backgrounds.map(item => (
-            <button
-              key={item.key}
-              type="button"
-              className={`bg-option bg-${item.key}${chatBg === item.key ? " active" : ""}`}
-              onClick={() => onChangeBg(item.key)}
-            >
-              <span />
-              <b>{item.label}</b>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="tool-card">
-        <div className="tool-title">{l("Безопасность", "Security")}</div>
-        <div className="tool-note">
-          {l(
-            "Сервер хранит только зашифрованные конверты. Сообщения расшифровываются на устройстве.",
-            "The server stores only encrypted envelopes. Messages are decrypted on device."
-          )}
-        </div>
-
-        <button
-          type="button"
-          className="tool-row"
-          onClick={async () => {
-            try {
-              const devices = await api.resolveDevicesForSafetyNumber(chat.id);
-              const ownIdentityKey = window.e2ee?.getIdentityPublicKey();
-              if (!ownIdentityKey) throw new Error("No identity key");
-
-              const theirDevice = devices?.devices?.find(d => d.userId !== auth.me?.id) || devices?.devices?.[0];
-              if (!theirDevice?.identityPublicKey) throw new Error("No identity key for this chat");
-
-              const fingerprint = await computeSafetyNumber(ownIdentityKey, theirDevice.identityPublicKey);
-              const display = formatSafetyNumber(fingerprint);
-              setSafetyModal({ open: true, fingerprint, display, error: null });
-            } catch (e) {
-              setSafetyModal({ open: true, fingerprint: null, display: null, error: e.message });
-            }
-          }}
-        >
-          <span className="tool-icon" aria-hidden="true">🔐</span>
-          <b>{l("Проверить Safety Number", "Verify Safety Number")}</b>
-          <i>›</i>
-        </button>
-      </div>
-
-      <button type="button" className="tool-row disabled" disabled>
-        <span className="tool-icon tool-icon-files" aria-hidden="true">
-          <svg viewBox="0 0 24 24">
-            <path d="M7 7.5h8.5a2.5 2.5 0 0 1 2.5 2.5v7.5A2.5 2.5 0 0 1 15.5 20H7a2.5 2.5 0 0 1-2.5-2.5V10A2.5 2.5 0 0 1 7 7.5Z" />
-            <path d="M8.5 4h8A2.5 2.5 0 0 1 19 6.5v8" />
-          </svg>
-        </span>
-        <b>{l("Медиа и файлы", "Media & files")}</b>
-        <em>{l("позже", "coming soon")}</em>
-      </button>
-
-    </div>
-  );
-}

@@ -1,8 +1,9 @@
 import { useMemo, useRef, useState, useEffect } from "react";
 import VoiceMessage from "./VoiceMessage";
+import EmojiPicker, { EMOJI_CATEGORIES, loadRecentEmojis, saveRecentEmojis, MAX_RECENT_EMOJIS } from "./EmojiPicker";
+import AttachmentMenu from "./AttachmentMenu";
+import { MicIcon, SendIcon, PauseIcon, PlayIcon, EmojiIcon, AttachIcon, TimerIcon, CloseIcon, ReplyIcon, FileIcon } from "./Icons";
 
-const EMOJI_STORAGE_KEY = "cm_recent_emojis";
-const MAX_RECENT_EMOJIS = 16;
 const MAX_VOICE_MS = 30_000;
 const MAX_VOICE_BYTES = 110 * 1024;
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
@@ -16,57 +17,6 @@ const TTL_OPTIONS = [
   { label: "1h", value: 3600 },
   { label: "24h", value: 86400 },
 ];
-
-const EMOJI_CATEGORIES = [
-  {
-    key: "recent",
-    icon: "🕘",
-    label: "Recent",
-    emojis: [],
-  },
-  {
-    key: "smileys",
-    icon: "😊",
-    label: "Smileys",
-    emojis: ["😀","😃","😄","😁","😆","😅","😂","🤣","😊","😇","🙂","😉","😍","🥰","😘","😋","😎","🤩","🥳","😌","🤔","😴","😭","😡"],
-  },
-  {
-    key: "gestures",
-    icon: "👍",
-    label: "Gestures",
-    emojis: ["👍","👎","👏","🙌","🤝","👋","🤙","✌️","🤞","💪","🦾","☝️","👆","👇","👈","👉","👌","🙏"],
-  },
-  {
-    key: "hearts",
-    icon: "❤️",
-    label: "Hearts",
-    emojis: ["❤️","🧡","💛","💚","💙","💜","🖤","🤍","💔","❣️","💕","💞","💓","💗","💖","💘","💝"],
-  },
-  {
-    key: "party",
-    icon: "🎉",
-    label: "Celebration",
-    emojis: ["🎉","🎊","🎈","🎁","🏆","🥇","🎯","⭐","💫","✨","💥","🔥","🌟","🚀"],
-  },
-];
-
-function loadRecentEmojis() {
-  try {
-    const raw = localStorage.getItem(EMOJI_STORAGE_KEY);
-    const parsed = JSON.parse(raw || "[]");
-    return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveRecentEmojis(list) {
-  try {
-    localStorage.setItem(EMOJI_STORAGE_KEY, JSON.stringify(list.slice(0, MAX_RECENT_EMOJIS)));
-  } catch {
-    // ignore storage errors
-  }
-}
 
 export default function MessageInput({
   onSend,
@@ -128,9 +78,8 @@ const typingTimerRef = useRef(null);
     return [recentCategory, ...EMOJI_CATEGORIES.slice(1)];
   }, [recentEmojis]);
 
-  const currentCategory = emojiCategories.find((category) => category.key === emojiCat) || emojiCategories[1] || emojiCategories[0];
+  const currentCategory = emojiCategories.find(c => c.key === emojiCat) || emojiCategories[1] || emojiCategories[0];
   const currentEmojis = currentCategory?.emojis?.length ? currentCategory.emojis : (emojiCat === "recent" ? EMOJI_CATEGORIES[1].emojis : []);
-
 
   const closeEmoji = () => {
     if (!showEmoji || emojiClosing) return;
@@ -509,7 +458,7 @@ const typingTimerRef = useRef(null);
 
   const onPrimaryClick = (e) => {
     if (recording) {
-      if (recordingLocked) stopRecording(true);
+      stopRecording(true);
       return;
     }
     if (canQuickRecord) return;
@@ -610,36 +559,34 @@ return (
     <>
       {replyTo && (
         <div className="reply-prev" onClick={e => e.stopPropagation()}>
-          <div style={{ color: "var(--acc)", fontSize: 18 }}>↩</div>
+          <span className="reply-prev-icon"><ReplyIcon /></span>
           <div className="reply-prev-inner">
             <div className="reply-prev-name">{replyPreviewTitle}</div>
             <div className="reply-prev-txt">{replyPreview(replyTo)}</div>
           </div>
-          <button className="modal-close" onClick={onОтменаОтветить}>×</button>
+          <button className="icon-btn modal-close" onClick={onОтменаОтветить}><CloseIcon /></button>
         </div>
       )}
 
       {!pendingFirstMessageOnly && imgFile && (
-        <div style={{ padding: "8px 14px 0", background: "var(--bg1)", display: "flex", alignItems: "flex-start", gap: 8 }}>
-          <div style={{ position: "relative" }}>
-            <img style={{ width: 80, height: 80, borderRadius: 8, objectFit: "cover", border: "1px solid var(--bdr2)" }} src={imgFile.src} alt="" />
-            <button style={{ position: "absolute", top: -4, right: -4, width: 20, height: 20, borderRadius: "50%", background: "var(--red)", border: "none", color: "#fff", cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center" }}
-              onClick={() => setImgFile(null)}>×</button>
+        <div className="attachment-preview-wrap">
+          <div className="attachment-preview-img">
+            <img src={imgFile.src} alt="" />
+            <button className="attachment-remove-btn" onClick={() => setImgFile(null)}><CloseIcon /></button>
           </div>
         </div>
       )}
 
       {!pendingFirstMessageOnly && generalFile && (
-        <div style={{ padding: "8px 14px 0", background: "var(--bg1)", display: "flex", alignItems: "center", gap: 8 }}>
-          <div className="msg-file" style={{ flex: 1 }}>
-            <FileTypeIcon name={generalFile.name} />
+        <div className="attachment-preview-file">
+          <div className="msg-file">
+            <span className="msg-file-icon"><FileIcon /></span>
             <div className="msg-file-info">
               <div className="msg-file-name">{generalFile.name}</div>
               <div className="msg-file-size">{formatFileSize(generalFile.size)}</div>
             </div>
           </div>
-          <button style={{ width: 20, height: 20, borderRadius: "50%", background: "var(--red)", border: "none", color: "#fff", cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center" }}
-            onClick={() => setGeneralFile(null)}>×</button>
+          <button className="attachment-remove-btn" onClick={() => setGeneralFile(null)}><CloseIcon /></button>
         </div>
       )}
 
@@ -647,19 +594,7 @@ return (
         <div className="voice-error">{voiceError}</div>
       )}
 
-      {recording && (
-        <div className={`recording-panel${recordingLocked ? " locked" : ""}`} onClick={e => e.stopPropagation()}>
-          <div className="recording-pulse" />
-          <span>{formatDuration(recordingMs)}</span>
-          <b>{recordingLocked ? "" : ""}</b>
-          {recordingLocked && (
-            <>
-              <button type="button" className="recording-cancel" onClick={cancelRecording}>Cancel</button>
-              <button type="button" className="recording-send" onClick={() => stopRecording(true)}>вћ¤</button>
-            </>
-          )}
-        </div>
-      )}
+
 
       {!pendingFirstMessageOnly && voiceFile && (
         <div className="voice-preview-wrap" onClick={e => e.stopPropagation()}>
@@ -674,45 +609,18 @@ return (
 
       <div ref={emojiRootRef} className="input-bar" onClick={e => e.stopPropagation()}>
         {!groupMuteLocksInput && showEmoji && (
-          <div className={`emoji-picker${emojiClosing ? " closing" : ""}`} onClick={e => e.stopPropagation()}>
-            <div className="emoji-cats">
-              {emojiCategories.map((cat) => (
-                <button
-                  key={cat.key}
-                  className={`emoji-cat-btn${emojiCat === cat.key ? " active" : ""}`}
-                  onClick={() => setEmojiCat(cat.key)}
-                  title={cat.label}
-                >
-                  <span>{cat.icon}</span>
-                </button>
-              ))}
-            </div>
-            <div className="emoji-section-head">
-              <span>{currentCategory?.label || "Smileys"}</span>
-              {emojiCat === "recent" && recentEmojis.length > 0 && (
-                <button
-                  type="button"
-                  className="emoji-clear-btn"
-                  onClick={() => {
-                    setRecentEmojis([]);
-                    saveRecentEmojis([]);
-                  }}
-                >
-                  Clear
-                </button>
-              )}
-            </div>
-            <div className="emoji-grid">
-              {currentEmojis.map((em) => (
-                <button key={`${emojiCat}-${em}`} className="emoji-btn" onClick={() => pickEmoji(em)}>{em}</button>
-              ))}
-              {emojiCat === "recent" && recentEmojis.length === 0 && (
-                <div className="emoji-empty">
-                  Recently used emoji will appear here.
-                </div>
-              )}
-            </div>
-          </div>
+          <EmojiPicker
+            emojiClosing={emojiClosing}
+            emojiCategories={emojiCategories}
+            emojiCat={emojiCat}
+            setEmojiCat={setEmojiCat}
+            currentEmojis={currentEmojis}
+            recentEmojis={recentEmojis}
+            setRecentEmojis={setRecentEmojis}
+            onPick={pickEmoji}
+            onClose={closeEmoji}
+            saveRecentEmojis={saveRecentEmojis}
+          />
         )}
 
         <div
@@ -721,8 +629,15 @@ return (
         >
           {recording && (
             <>
-              <button type="button" className="recording-inline-cancel" onClick={cancelRecording}>×</button>
-              <div className="recording-pulse" />
+              <button type="button" className="icon-btn recording-inline-cancel" onClick={cancelRecording}><CloseIcon /></button>
+              {recordingLocked ? (
+                <svg className="recording-lock-icon" viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                  <rect x="5" y="11" width="14" height="10" rx="2" />
+                  <path d="M8 11V7a4 4 0 0 1 8 0v4" fill="none" stroke="currentColor" strokeWidth="2" />
+                </svg>
+              ) : (
+                <div className="recording-pulse" />
+              )}
               <span className="recording-time">{formatDuration(recordingMs)}</span>
               <div className={`voice-live-wave${recordingPaused ? " paused" : ""}`}>
                 {voiceLevels.map((level, index) => (
@@ -737,7 +652,7 @@ return (
 
           {/* Attach button (inside input pill, left side) */}
           {!pendingFirstMessageOnly && !groupMuteLocksInput && !recording && (
-            <div style={{ position: "relative" }} ref={attachMenuRef}>
+            <div className="inp-btn-wrap" ref={attachMenuRef}>
               <button
                 type="button"
                 className="inp-icon-btn"
@@ -746,20 +661,15 @@ return (
               >
                 <AttachIcon />
               </button>
-              {showAttachMenu && (
-                <div className="attach-menu" onClick={e => e.stopPropagation()}>
-                  <div className="attach-menu-item" onClick={() => { setShowAttachMenu(false); fileRef.current?.click(); }}>
-                    <PhotoIcon />
-                    <span>{messagePlaceholder === "Сообщение..." ? "Фото или видео" : "Photo or video"}</span>
-                  </div>
-                  <div className="attach-menu-item" onClick={() => { setShowAttachMenu(false); generalFileRef.current?.click(); }}>
-                    <DocIcon />
-                    <span>{messagePlaceholder === "Сообщение..." ? "Документ" : "Document"}</span>
-                  </div>
-                </div>
-              )}
-              <input ref={fileRef} type="file" accept="image/*,video/*" style={{ display: "none" }} onChange={onFileChange} />
-              <input ref={generalFileRef} type="file" style={{ display: "none" }} onChange={onGeneralFileChange} />
+              <AttachmentMenu
+                showAttachMenu={showAttachMenu}
+                onClose={() => setShowAttachMenu(false)}
+                onPhotoClick={() => fileRef.current?.click()}
+                onDocClick={() => generalFileRef.current?.click()}
+                l={(ru, en) => messagePlaceholder === "Сообщение..." ? ru : en}
+              />
+              <input ref={fileRef} type="file" accept="image/*,video/*" className="hidden-inp" onChange={onFileChange} />
+              <input ref={generalFileRef} type="file" className="hidden-inp" onChange={onGeneralFileChange} />
             </div>
           )}
 
@@ -790,7 +700,7 @@ return (
 
           {/* Timer button (inside input pill, right side) */}
           {!groupMuteLocksInput && !pendingFirstMessageOnly && !recording && (
-            <div style={{ position: "relative" }} ref={ttlRef}>
+            <div className="inp-btn-wrap" ref={ttlRef}>
               <button
                 type="button"
                 className={`inp-icon-btn${ttl ? " active" : ""}`}
@@ -826,9 +736,9 @@ return (
             onPointerUp={onPrimaryPointerUp}
             onPointerCancel={pendingFirstMessageOnly ? undefined : cancelRecording}
             disabled={disabled}
-            title={recordingLocked ? "Send voice" : canQuickRecord ? "Hold to record" : "Send"}
+            title={recording ? "Send voice" : canQuickRecord ? "Hold to record" : "Send"}
           >
-            {recordingLocked ? <SendIcon /> : canQuickRecord ? <MicIcon /> : <SendIcon />}
+            {recording ? <SendIcon /> : canQuickRecord ? <MicIcon /> : <SendIcon />}
           </button>
         )}
       </div>
@@ -852,101 +762,6 @@ function replyPreview(msg) {
   if (msg?._img) return "Photo";
   if (msg?._voice) return "Voice message";
   return msg?._text || "";
-}
-
-function MicIcon() {
-  return (
-    <svg className="btn-icon mic-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <rect x="9" y="3.5" width="6" height="11" rx="3" />
-      <path d="M5.8 11.5a6.2 6.2 0 0 0 12.4 0" />
-      <path d="M12 17.7V21" />
-      <path d="M8.7 21h6.6" />
-    </svg>
-  );
-}
-
-function SendIcon() {
-  return (
-    <svg className="btn-icon send-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M4.5 12h14" />
-      <path d="M13 6.5 18.5 12 13 17.5" />
-    </svg>
-  );
-}
-
-function PauseIcon() {
-  return (
-    <svg className="btn-icon pause-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M9 7v10" />
-      <path d="M15 7v10" />
-    </svg>
-  );
-}
-
-function PlayIcon() {
-  return (
-    <svg className="btn-icon play-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M9 6.5v11l8-5.5-8-5.5Z" />
-    </svg>
-  );
-}
-
-function TimerIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="12" cy="13" r="8" />
-      <path d="M12 9v4l2 2" />
-      <path d="M10 2h4" />
-    </svg>
-  );
-}
-
-function EmojiIcon() {
-  return (
-    <svg className="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" />
-      <path d="M8.5 14.5c.8 1.2 2 2 3.5 2s2.7-.8 3.5-2" />
-      <circle cx="9" cy="10" r="0.8" fill="currentColor" stroke="none" />
-      <circle cx="15" cy="10" r="0.8" fill="currentColor" stroke="none" />
-    </svg>
-  );
-}
-
-function AttachIcon() {
-  return (
-    <svg className="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-    </svg>
-  );
-}
-
-function PhotoIcon() {
-  return (
-    <svg className="attach-menu-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <rect x="3" y="3" width="18" height="18" rx="3" />
-      <circle cx="9" cy="9" r="2" />
-      <path d="M21 15l-5-5L5 21" />
-    </svg>
-  );
-}
-
-function DocIcon() {
-  return (
-    <svg className="attach-menu-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <polyline points="14 2 14 8 20 8" />
-      <line x1="16" y1="13" x2="8" y2="13" />
-      <line x1="16" y1="17" x2="8" y2="17" />
-      <polyline points="10 9 9 9 8 9" />
-    </svg>
-  );
-}
-
-function FileTypeIcon({ name }) {
-  const ext = String(name || "").split(".").pop().toLowerCase();
-  const iconMap = { pdf: "📄", doc: "📝", docx: "📝", xls: "📊", xlsx: "📊", zip: "🗜️", rar: "🗜️", mp3: "🎵", mp4: "🎬", txt: "📃" };
-  const icon = iconMap[ext] || "📁";
-  return <div className="msg-file-icon">{icon}</div>;
 }
 
 function formatFileSize(bytes) {

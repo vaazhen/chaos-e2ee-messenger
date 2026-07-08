@@ -234,6 +234,9 @@ describe("NewChatModal critical UI flow", () => {
     expect(onCreated).toHaveBeenCalledWith(20);
 
     fireEvent.click(screen.getByText("×"));
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+    });
     expect(onClose).toHaveBeenCalled();
   });
 
@@ -247,10 +250,13 @@ describe("NewChatModal critical UI flow", () => {
         me={{ id: 1, username: "alice" }}
         onClose={vi.fn()}
         onCreated={onCreated}
+        suggestedContacts={[{ id: 2, username: "bob", firstName: "Bob Brown", avatarUrl: "" }]}
       />
     );
 
     fireEvent.click(screen.getByText("Группа"));
+
+    expect(screen.getByText("Bob Brown")).toBeInTheDocument();
 
     fireEvent.change(screen.getByPlaceholderText("Команда, семья, проект..."), {
       target: { value: "Project Team" },
@@ -374,13 +380,14 @@ describe("ProfileModal critical UI flow", () => {
     const onLogout = vi.fn();
     const onClose = vi.fn();
 
-    render(
+    const { container } = render(
       <ProfileModal
         me={{
           id: 1,
           username: "alice",
           firstName: "Alice",
           lastName: "Smith",
+          bio: "",
           avatarUrl: "",
         }}
         lang="ru"
@@ -393,8 +400,14 @@ describe("ProfileModal critical UI flow", () => {
       />
     );
 
-    expect(screen.getByText("Настройки")).toBeInTheDocument();
+    expect(screen.getByText("Параметры")).toBeInTheDocument();
     expect(screen.getByText("@alice")).toBeInTheDocument();
+    expect(screen.getByText("Нажмите, чтобы установить")).toBeInTheDocument();
+
+    const heroEl = container.querySelector(".ps-hero");
+    expect(heroEl).not.toBeNull();
+
+    fireEvent.click(screen.getByText("Изм."));
 
     fireEvent.change(screen.getByPlaceholderText("Имя"), {
       target: { value: "  Alice  " },
@@ -404,19 +417,18 @@ describe("ProfileModal critical UI flow", () => {
       target: { value: "  Updated  " },
     });
 
-    fireEvent.click(screen.getByText("Оформление"));
-    expect(onToggleTheme).toHaveBeenCalled();
+    fireEvent.change(screen.getByPlaceholderText("Несколько слов о себе"), {
+      target: { value: "  О себе коротко  " },
+    });
 
-    fireEvent.click(screen.getByText("Язык"));
-    expect(onSwitchLang).toHaveBeenCalled();
-
-    fireEvent.click(screen.getByText("Сохранить"));
+    fireEvent.click(screen.getByText("Готово"));
 
     await waitFor(() => {
       expect(mocks.api.updateProfile).toHaveBeenCalledWith({
         firstName: "Alice",
         lastName: "Updated",
         username: "alice",
+        bio: "О себе коротко",
         avatarUrl: "",
       });
     });
@@ -427,57 +439,25 @@ describe("ProfileModal critical UI flow", () => {
       lastName: "Updated",
     }));
 
-    fireEvent.click(screen.getByText("Выйти из аккаунта"));
+    fireEvent.click(screen.getByText("Тема"));
+    expect(onToggleTheme).toHaveBeenCalled();
+
+    fireEvent.click(screen.getAllByText("Язык")[1]);
+    expect(onSwitchLang).toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText("Выйти"));
     expect(onLogout).toHaveBeenCalled();
 
     fireEvent.click(screen.getByTitle("Закрыть"));
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("loads devices and deactivates non-current active device", async () => {
+  it("opens emoji status picker and selects a preset", async () => {
     const { default: ProfileModal } = await import("../components/ProfileModal");
-
-    mocks.api.listDevices
-      .mockResolvedValueOnce([
-        {
-          id: 10,
-          deviceId: "device-current",
-          deviceName: "Current browser",
-          active: true,
-          current: true,
-          lastSeen: "2026-04-28T10:00:00.000Z",
-        },
-        {
-          id: 20,
-          deviceId: "device-old",
-          deviceName: "Old browser",
-          active: true,
-          current: false,
-          lastSeen: "2026-04-27T10:00:00.000Z",
-        },
-      ])
-      .mockResolvedValueOnce([
-        {
-          id: 10,
-          deviceId: "device-current",
-          deviceName: "Current browser",
-          active: true,
-          current: true,
-          lastSeen: "2026-04-28T10:00:00.000Z",
-        },
-        {
-          id: 20,
-          deviceId: "device-old",
-          deviceName: "Old browser",
-          active: false,
-          current: false,
-          lastSeen: "2026-04-27T10:00:00.000Z",
-        },
-      ]);
 
     render(
       <ProfileModal
-        me={{ id: 1, username: "alice", firstName: "Alice" }}
+        me={{ id: 1, username: "alice", firstName: "Alice", lastName: "Smith", bio: "" }}
         lang="ru"
         theme="light"
         onClose={vi.fn()}
@@ -488,41 +468,21 @@ describe("ProfileModal critical UI flow", () => {
       />
     );
 
-    fireEvent.click(screen.getByText("Устройства"));
+    expect(screen.getByText("Нажмите, чтобы установить")).toBeInTheDocument();
 
-    await waitFor(() => {
-      expect(mocks.api.listDevices).toHaveBeenCalledTimes(1);
-      expect(screen.getByText("Current browser")).toBeInTheDocument();
-      expect(screen.getByText("Old browser")).toBeInTheDocument();
-      expect(screen.getByText("это устройство")).toBeInTheDocument();
-    });
+    fireEvent.click(screen.getByText("Статус"));
 
-    const disableButtons = screen.getAllByText("Отключить");
-    fireEvent.click(disableButtons[0]);
+    expect(screen.getByText("Онлайн")).toBeInTheDocument();
 
-    await waitFor(() => {
-      expect(window.confirm).toHaveBeenCalled();
-      expect(mocks.api.deactivateDevice).toHaveBeenCalledWith(20, false);
-      expect(mocks.api.listDevices).toHaveBeenCalledTimes(2);
-    });
+    fireEvent.click(screen.getByText("Онлайн"));
+
+    expect(screen.getByText("🟢 Онлайн")).toBeInTheDocument();
   });
 
-  it("shows profile save error and last-device deactivation error", async () => {
+  it("shows profile save error in editing mode", async () => {
     const { default: ProfileModal } = await import("../components/ProfileModal");
 
     mocks.api.updateProfile.mockRejectedValueOnce(new Error("profile failed"));
-    mocks.api.deactivateDevice.mockRejectedValueOnce(new Error("Cannot deactivate the last active device"));
-
-    mocks.api.listDevices.mockResolvedValue([
-      {
-        id: 20,
-        deviceId: "device-old",
-        deviceName: "Old browser",
-        active: true,
-        current: false,
-        lastSeen: "2026-04-27T10:00:00.000Z",
-      },
-    ]);
 
     render(
       <ProfileModal
@@ -537,22 +497,12 @@ describe("ProfileModal critical UI flow", () => {
       />
     );
 
-    fireEvent.click(screen.getByText("Сохранить"));
+    fireEvent.click(screen.getByText("Изм."));
+
+    fireEvent.click(screen.getByText("Готово"));
 
     await waitFor(() => {
       expect(screen.getByText("profile failed")).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByText("Устройства"));
-
-    await waitFor(() => {
-      expect(screen.getByText("Old browser")).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByText("Отключить"));
-
-    await waitFor(() => {
-      expect(screen.getByText("Нельзя отключить последнее активное устройство.")).toBeInTheDocument();
     });
   });
 });
