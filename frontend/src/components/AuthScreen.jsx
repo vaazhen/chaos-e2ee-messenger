@@ -108,7 +108,7 @@ function CountrySelector({ selected, onChange }) {
   };
 
   return (
-    <div ref={rootRef} style={{ position: "relative", width: 108, flexShrink: 0 }}>
+    <div ref={rootRef} className="country-selector">
       <button
         type="button"
         onClick={() => {
@@ -116,33 +116,17 @@ function CountrySelector({ selected, onChange }) {
           setTimeout(() => inputRef.current?.focus(), 40);
         }}
         aria-expanded={open}
+        className="country-selector-btn"
         style={{
-          width: "100%",
-          height: 56,
-          border: 0,
-          borderRadius: 24,
           background: isDark ? "rgba(255,255,255,.08)" : "rgba(255,255,255,.72)",
-          color: "var(--t1)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 7,
-          cursor: "pointer",
-          fontWeight: 900,
-          fontSize: 15,
           boxShadow: isDark
             ? "inset 0 0 0 1px rgba(255,255,255,.08)"
             : "inset 0 0 0 1px rgba(0,0,0,.045), 0 10px 24px rgba(0,0,0,.045)",
-          whiteSpace: "nowrap",
         }}
       >
-        <span style={{ opacity: .72, fontSize: 13, letterSpacing: ".03em" }}>
-          {shortCode(current.name)}
-        </span>
+        <span className="country-selector-abbr">{shortCode(current.name)}</span>
         <span>{current.code}</span>
-        <span style={{ opacity: .42, fontSize: 11, transform: "translateY(1px)", marginLeft: -2 }}>
-          ▾
-        </span>
+        <span className="country-selector-arrow">▾</span>
       </button>
 
       {open && (
@@ -248,7 +232,7 @@ export default function AuthScreen({
         <h1 className="auth-title">Enter the code</h1>
         <p className="auth-sub">
           The code will appear in backend logs:<br />
-          <code style={{ fontSize: 11, color: "var(--acc)" }}>OTP for {dialCode}...: XXXXXX</code>
+          <code className="otp-code-hint">OTP for {dialCode}...: XXXXXX</code>
         </p>
         <div className="otp-row">
           {otp.map((d, i) => (

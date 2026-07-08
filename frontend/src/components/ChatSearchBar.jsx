@@ -1,3 +1,5 @@
+import { SearchIcon, ChevronUpIcon, ChevronDownIcon, CloseIcon } from "./Icons";
+
 export default function ChatSearchBar({
   chatSearchRef,
   messageSearch, setMessageSearch,
@@ -7,7 +9,7 @@ export default function ChatSearchBar({
 }) {
   return (
     <div ref={chatSearchRef} className="chat-search-bar" onClick={e => e.stopPropagation()}>
-      <span>⌕</span>
+      <span className="search-bar-icon"><SearchIcon /></span>
       <input
         value={messageSearch}
         onChange={e => setMessageSearch(e.target.value)}
@@ -27,22 +29,22 @@ export default function ChatSearchBar({
         placeholder={l("Поиск по сообщениям", "Search messages")}
         autoFocus
       />
-      <b>{messageSearch.trim() ? (matchIds.length ? `${matchIndex + 1}/${matchIds.length}` : "0") : ""}</b>
+      <span className="search-bar-count">{messageSearch.trim() ? (matchIds.length ? `${matchIndex + 1}/${matchIds.length}` : "0") : ""}</span>
       <button
         type="button"
-        className="chat-search-nav"
+        className="icon-btn chat-search-nav"
         title={l("К предыдущему", "Previous")}
         disabled={!matchIds.length}
         onClick={() => goToMatch(-1)}
-      >↑</button>
+      ><ChevronUpIcon /></button>
       <button
         type="button"
-        className="chat-search-nav"
+        className="icon-btn chat-search-nav"
         title={l("К следующему", "Next")}
         disabled={!matchIds.length}
         onClick={() => goToMatch(1)}
-      >↓</button>
-      <button onClick={resetMessageSearch}>×</button>
+      ><ChevronDownIcon /></button>
+      <button className="icon-btn" onClick={resetMessageSearch} title={l("Закрыть", "Close")}><CloseIcon /></button>
     </div>
   );
 }

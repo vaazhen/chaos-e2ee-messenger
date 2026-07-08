@@ -61,13 +61,7 @@ export default function Ava(props) {
             src={avatarUrl}
             alt={name}
             draggable="false"
-            style={{
-              width: "100%",
-              height: "100%",
-              objectFit: "cover",
-              display: "block",
-              borderRadius: "inherit",
-            }}
+            className="av-img"
           />
         </div>
         {props.online && <span className="online-dot" />}
