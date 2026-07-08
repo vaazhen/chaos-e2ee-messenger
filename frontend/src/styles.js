@@ -1624,6 +1624,7 @@ button{color:inherit}
 }
 .msg-wrap{display:flex;margin-top:3px}
 .msg-wrap:first-child{margin-top:0}
+.msg-ava-spacer{width:28px;flex-shrink:0}
 .scroll-bottom-btn{
   position:absolute;bottom:80px;right:14px;
   width:34px;height:34px;border-radius:50%;

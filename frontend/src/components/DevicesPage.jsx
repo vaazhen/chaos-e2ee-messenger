@@ -15,7 +15,7 @@ export default function DevicesPage({ l, onBack }) {
       <header className="settings-header">
         <button className="sidebar-action-btn" onClick={onBack} title={l("Назад", "Back")}><ChevronLeftIcon /></button>
         <h1 className="settings-title">{l("Устройства", "Devices")}</h1>
-        <div className="settings-header-spacer" style={{ width: 40 }} />
+        <div className="settings-header-spacer" />
       </header>
 
       <div className="settings-scroll">
