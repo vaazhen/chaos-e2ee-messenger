@@ -129,7 +129,7 @@ public class ChatController {
     @PatchMapping("/{chatId}/group/permissions")
     public ChatResponse patchGroupPermissions(
             @PathVariable Long chatId,
-            @RequestBody UpdateGroupPermissionsRequest body,
+            @Valid @RequestBody UpdateGroupPermissionsRequest body,
             Authentication auth
     ) {
         return chatService.updateGroupPermissions(auth.getName(), chatId, body);

@@ -70,7 +70,7 @@ public class DemoService {
             vc.setCreatedAt(LocalDateTime.now());
             codeRepository.save(vc);
 
-            log.info("Demo user created: phone={}, code={}, username={}", acc.phone(), acc.code(), acc.username());
+            log.debug("Demo user created: username={}", acc.username());
 
             result.put(key, Map.of(
                     "message", "created",

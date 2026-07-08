@@ -67,7 +67,7 @@ public class PhoneVerificationService {
             VerificationCode vc = maybe.get();
             int attempts = vc.getAttempts() == null ? 0 : vc.getAttempts();
             if (attempts >= MAX_ATTEMPTS) {
-                LOG.warn("Too many attempts for phone={}", normalizedPhone);
+                LOG.warn("Too many attempts for phone={}", hashForLog(normalizedPhone));
                 return new VerificationResult("too_many_attempts", false, false, null, null, null);
             }
 
@@ -108,7 +108,7 @@ public class PhoneVerificationService {
             );
 
         } catch (Exception ex) {
-            LOG.error("Error while verifying code for phone={}", normalizedPhone, ex);
+            LOG.error("Error while verifying code for phone={}", hashForLog(normalizedPhone), ex);
             throw ex;
         }
     }
@@ -143,6 +143,11 @@ public class PhoneVerificationService {
             }
         }
         return "user_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+    }
+
+    private static String hashForLog(String phone) {
+        if (phone == null) return "null";
+        return phone.substring(0, Math.min(4, phone.length())) + "***";
     }
 
     public record VerificationResult(

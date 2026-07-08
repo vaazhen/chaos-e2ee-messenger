@@ -10,6 +10,6 @@ public class NoopSmsSender implements SmsSender {
 
     @Override
     public void sendSms(String phone, String text) {
-        LOG.info("(NOOP SMS) To {}: {}", phone, text);
+        LOG.debug("(NOOP SMS) To {}: {}", phone, text);
     }
 }
