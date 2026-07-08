@@ -26,20 +26,20 @@ export default function RequestsTab({ l, requestItems, selectReqMode, setSelectR
       </div>
 
       {loadingRequests && (
-        <div className="new-chat-drawer-loading">
+        <div className="new-chat-loading">
           <div className="spinner" />
         </div>
       )}
 
       {!loadingRequests && requestItems.map(chat => (
-        <div key={chat.id} className="new-chat-drawer-user selected">
+        <div key={chat.id} className="new-chat-user selected">
           <Ava
             name={chat.name}
             colorIdx={chat.colorIdx}
             size="md"
             avatarUrl={chat.avatarUrl}
           />
-          <span className="new-chat-drawer-user-main">
+          <span className="new-chat-user-main">
             <b>{chat.name}</b>
             <small>{chat.preview || l("Запрос на переписку", "Chat request")}</small>
           </span>

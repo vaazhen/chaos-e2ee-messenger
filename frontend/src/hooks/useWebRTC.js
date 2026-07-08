@@ -8,11 +8,12 @@ const ICE_SERVERS = {
 };
 
 export default function useWebRTC({ publish, onCallEnded }) {
-  const [callState, setCallState] = useState('idle'); // idle | ringing | connecting | connected
+  const [callState, setCallState] = useState('idle');
   const [remoteUsername, setRemoteUsername] = useState('');
   const [isVideo, setIsVideo] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [callDuration, setCallDuration] = useState(0);
 
   const peerRef = useRef(null);
   const localStreamRef = useRef(null);
@@ -22,12 +23,17 @@ export default function useWebRTC({ publish, onCallEnded }) {
   const currentChatIdRef = useRef(null);
   const currentTargetRef = useRef(null);
   const screenStreamRef = useRef(null);
-
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const currentOfferRef = useRef(null);
+  const preConnectionCandidatesRef = useRef([]);
+  const durationIntervalRef = useRef(null);
 
   const cleanupCall = useCallback(() => {
+    if (durationIntervalRef.current) {
+      clearInterval(durationIntervalRef.current);
+      durationIntervalRef.current = null;
+    }
     if (peerRef.current) {
       peerRef.current.close();
       peerRef.current = null;
@@ -40,7 +46,9 @@ export default function useWebRTC({ publish, onCallEnded }) {
       screenStreamRef.current.getTracks().forEach(t => t.stop());
       screenStreamRef.current = null;
     }
+    remoteStreamRef.current = null;
     pendingCandidatesRef.current = [];
+    preConnectionCandidatesRef.current = [];
     callStartTimeRef.current = null;
     currentChatIdRef.current = null;
     currentTargetRef.current = null;
@@ -48,8 +56,17 @@ export default function useWebRTC({ publish, onCallEnded }) {
     setIsScreenSharing(false);
     setIsMuted(false);
     setIsVideo(false);
+    setCallDuration(0);
     setCallState('idle');
     setRemoteUsername('');
+  }, []);
+
+  const startDurationTimer = useCallback(() => {
+    callStartTimeRef.current = Date.now();
+    if (durationIntervalRef.current) clearInterval(durationIntervalRef.current);
+    durationIntervalRef.current = setInterval(() => {
+      setCallDuration(Date.now() - callStartTimeRef.current);
+    }, 1000);
   }, []);
 
   const createPeerConnection = useCallback(async (stream, _isCaller) => {
@@ -71,10 +88,11 @@ export default function useWebRTC({ publish, onCallEnded }) {
     };
 
     pc.ontrack = (e) => {
+      const incoming = e.streams[0];
       if (remoteStreamRef.current) {
-        e.streams[0].getTracks().forEach(t => remoteStreamRef.current.addTrack(t));
+        incoming.getTracks().forEach(t => remoteStreamRef.current.addTrack(t));
       } else {
-        remoteStreamRef.current = e.streams[0];
+        remoteStreamRef.current = incoming;
       }
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = remoteStreamRef.current;
@@ -88,13 +106,23 @@ export default function useWebRTC({ publish, onCallEnded }) {
       }
     };
 
+    pc.oniceconnectionstatechange = () => {
+      if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
+        onCallEnded?.();
+        cleanupCall();
+      }
+    };
+
     peerRef.current = pc;
     return pc;
   }, [publish, cleanupCall, onCallEnded]);
 
   const startCall = useCallback(async (chatId, targetUsername, video = false) => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video, audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      if (!video) {
+        stream.getVideoTracks().forEach(t => { t.enabled = false; });
+      }
       localStreamRef.current = stream;
       if (localVideoRef.current) localVideoRef.current.srcObject = stream;
 
@@ -104,7 +132,7 @@ export default function useWebRTC({ publish, onCallEnded }) {
       setCallState('connecting');
 
       const pc = await createPeerConnection(stream, true);
-      const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: video });
+      const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
       await pc.setLocalDescription(offer);
 
       if (publish) {
@@ -125,7 +153,7 @@ export default function useWebRTC({ publish, onCallEnded }) {
     if (!offerMsg) return;
     const { sdp: offer, chatId, fromUsername } = offerMsg;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: isVideo, audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       localStreamRef.current = stream;
       if (localVideoRef.current) localVideoRef.current.srcObject = stream;
 
@@ -138,6 +166,20 @@ export default function useWebRTC({ publish, onCallEnded }) {
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
+      for (const candidate of preConnectionCandidatesRef.current) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch { /* ignore optional failure */ }
+      }
+      preConnectionCandidatesRef.current = [];
+
+      for (const candidate of pendingCandidatesRef.current) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch { /* ignore optional failure */ }
+      }
+      pendingCandidatesRef.current = [];
+
       currentOfferRef.current = null;
 
       if (publish) {
@@ -146,21 +188,15 @@ export default function useWebRTC({ publish, onCallEnded }) {
           chatId,
           sdp: answer.sdp,
         });
-
-        for (const candidate of pendingCandidatesRef.current) {
-          try {
-            await pc.addIceCandidate(new RTCIceCandidate(candidate));
-          } catch { /* ignore optional failure */ }
-        }
-        pendingCandidatesRef.current = [];
       }
 
       setCallState('connected');
+      startDurationTimer();
     } catch (e) {
       console.warn('[WebRTC] answerCall error:', e.message);
       cleanupCall();
     }
-  }, [publish, createPeerConnection, cleanupCall, isVideo]);
+  }, [publish, createPeerConnection, cleanupCall, startDurationTimer]);
 
   const handleSignalingMessage = useCallback(async (msg) => {
     const pc = peerRef.current;
@@ -176,7 +212,7 @@ export default function useWebRTC({ publish, onCallEnded }) {
         if (pc && msg.sdp) {
           await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: msg.sdp }));
           setCallState('connected');
-          callStartTimeRef.current = Date.now();
+          startDurationTimer();
 
           for (const candidate of pendingCandidatesRef.current) {
             try {
@@ -192,8 +228,8 @@ export default function useWebRTC({ publish, onCallEnded }) {
           try {
             await pc.addIceCandidate(new RTCIceCandidate({ candidate: msg.candidate, sdpMid: msg.mid }));
           } catch { /* ignore optional failure */ }
-        } else if (pc) {
-          pendingCandidatesRef.current.push({ candidate: msg.candidate, sdpMid: msg.mid });
+        } else {
+          preConnectionCandidatesRef.current.push({ candidate: msg.candidate, sdpMid: msg.mid });
         }
         break;
 
@@ -201,7 +237,7 @@ export default function useWebRTC({ publish, onCallEnded }) {
         cleanupCall();
         break;
     }
-  }, [cleanupCall]);
+  }, [cleanupCall, startDurationTimer]);
 
   const endCall = useCallback(() => {
     if (publish && currentTargetRef.current) {
@@ -222,28 +258,13 @@ export default function useWebRTC({ publish, onCallEnded }) {
     }
   }, []);
 
-  const toggleVideo = useCallback(async () => {
+  const toggleVideo = useCallback(() => {
     if (localStreamRef.current) {
       const videoTrack = localStreamRef.current.getVideoTracks()[0];
       if (videoTrack) {
-        videoTrack.enabled = !videoTrack.enabled;
-        setIsVideo(v => !v);
-      } else {
-        try {
-          const newStream = await navigator.mediaDevices.getUserMedia({ video: true });
-          const newTrack = newStream.getVideoTracks()[0];
-          if (peerRef.current) {
-            const sender = peerRef.current.getSenders().find(s => s.track?.kind === 'video');
-            if (sender) {
-              await sender.replaceTrack(newTrack);
-            } else {
-              peerRef.current.addTrack(newTrack, localStreamRef.current);
-            }
-          }
-          localStreamRef.current.addTrack(newTrack);
-          if (localVideoRef.current) localVideoRef.current.srcObject = localStreamRef.current;
-          setIsVideo(true);
-        } catch { /* ignore optional failure */ }
+        const next = !videoTrack.enabled;
+        videoTrack.enabled = next;
+        setIsVideo(next);
       }
     }
   }, []);
@@ -298,9 +319,9 @@ export default function useWebRTC({ publish, onCallEnded }) {
     isVideo,
     isMuted,
     isScreenSharing,
+    callDuration,
     localVideoRef,
     remoteVideoRef,
-    callDuration: callStartTimeRef.current ? Date.now() - callStartTimeRef.current : 0,
     startCall,
     answerCall,
     endCall,

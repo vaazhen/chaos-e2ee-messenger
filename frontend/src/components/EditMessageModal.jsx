@@ -1,9 +1,15 @@
+import { useRef } from "react";
+import useSwipeDown from "../hooks/useSwipeDown";
+
 export default function EditMessageModal({ editTarget, editText, editLoading, setEditText, setEditTarget, submitEdit, l }) {
+  const modalRef = useRef(null);
+  useSwipeDown(modalRef, () => !editLoading && setEditTarget(null), { enabled: !editLoading });
+
   if (!editTarget) return null;
 
   return (
     <div className="modal-bg" onClick={() => !editLoading && setEditTarget(null)}>
-      <div className="modal small-modal glass-card" onClick={e => e.stopPropagation()}>
+      <div ref={modalRef} className="modal small-modal glass-card" onClick={e => e.stopPropagation()}>
         <div className="modal-title">
           {l("Изменить сообщение", "Edit message")}
           <button className="modal-close" onClick={() => !editLoading && setEditTarget(null)}>×</button>

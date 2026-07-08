@@ -311,7 +311,7 @@ describe("MessageInput — extended scenarios", () => {
     expect(screen.getByText("Ответить")).toBeInTheDocument();
     expect(screen.getByText("original message")).toBeInTheDocument();
 
-    fireEvent.click(screen.getAllByText("×")[0]);
+    fireEvent.click(document.querySelector(".modal-close"));
     expect(onCancelReply).toHaveBeenCalled();
   });
 
@@ -388,10 +388,13 @@ describe("MessageList — extended scenarios", () => {
     expect(screen.getByText("read msg")).toBeInTheDocument();
     expect(screen.getByText("failed msg")).toBeInTheDocument();
 
-    // SENT and DELIVERED show "✓", FAILED shows "✓", READ shows "✓✓"
-    const singleCheck = screen.getAllByText("✓");
-    expect(singleCheck.length).toBe(3);
-    expect(screen.getByText("✓✓")).toBeInTheDocument();
+    // SENT and DELIVERED show CheckIcon, FAILED shows CheckIcon, READ shows DoubleCheckIcon
+    const checkIcons = document.querySelectorAll(".check svg");
+    expect(checkIcons.length).toBe(4);
+    const readCheck = document.querySelector(".check.read svg");
+    expect(readCheck).toBeTruthy();
+    // DoubleCheckIcon has two path elements
+    expect(readCheck.querySelectorAll("path").length).toBe(2);
   });
 
   it("renders reactions on message bubbles", async () => {

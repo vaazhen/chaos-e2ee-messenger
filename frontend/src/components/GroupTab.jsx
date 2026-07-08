@@ -2,7 +2,7 @@ import Ava from "./Ava";
 
 export default function GroupTab({ l, groupName, setGroupName, selected, toggleSelect }) {
   return (
-    <div className="new-chat-drawer-group-card">
+    <div className="new-chat-group-card">
       <label className="field-label">{l("Название группы", "Group name")}</label>
       <input
         className="field-inp"
@@ -28,7 +28,7 @@ export function UserSearchResults({ l, searching, mode, query, results, suggeste
   return (
     <>
       {searching && (
-        <div className="new-chat-drawer-loading">
+        <div className="new-chat-loading">
           <div className="spinner" />
         </div>
       )}
@@ -41,7 +41,7 @@ export function UserSearchResults({ l, searching, mode, query, results, suggeste
           <button
             key={u.id || u.username}
             type="button"
-            className={`new-chat-drawer-user${selectedUser ? " selected" : ""}`}
+            className={`new-chat-user${selectedUser ? " selected" : ""}`}
             onClick={() => mode === "direct" ? startDirect(u.username) : toggleSelect(u)}
           >
             <Ava
@@ -51,7 +51,7 @@ export function UserSearchResults({ l, searching, mode, query, results, suggeste
               avatarUrl={u.avatarUrl}
             />
 
-            <span className="new-chat-drawer-user-main">
+            <span className="new-chat-user-main">
               <b>{displayName}</b>
               <small>@{u.username}</small>
             </span>
