@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { CloseIcon } from "./Icons";
 
 const WAVE_BARS = 32;
 const PLAY_EVENT = "cm:voice:play";
@@ -199,11 +200,11 @@ export default function VoiceMessage({ src, durationMs = 0, variant = "in", onCa
       {isPreview && onCancel && (
         <button
           type="button"
-          className="voice-msg-cancel"
+          className="voice-msg-cancel icon-btn"
           onClick={onCancel}
           aria-label="Cancel voice message"
         >
-          ×
+          <CloseIcon />
         </button>
       )}
 
