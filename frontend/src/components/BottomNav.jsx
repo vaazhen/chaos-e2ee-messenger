@@ -1,6 +1,11 @@
 import Ava from "./Ava";
 import { PhoneIcon, UsersIcon, ChatIcon } from "./Icons";
 
+/**
+ * Apple Liquid Glass bottom navigation dock.
+ * Fixed on mobile, absolute in desktop sidebar.
+ * Tabs: Calls | Contacts | Chats (with unread badge) | Settings (with avatar).
+ */
 export default function BottomNav({ me, myName, activeTab, onNavChange, unreadTotal, requestsCount, l = (ru) => ru }) {
   return (
     <nav className="bottom-nav">

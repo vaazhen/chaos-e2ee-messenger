@@ -4,6 +4,11 @@ import DevicesPage from "./DevicesPage";
 import { SettingsRow, SettingsSection, SettingsToggle } from "./settings/SettingsRow";
 import { DeviceIcon, DownloadIcon, StarIcon, FolderIcon, BellIcon, DatabaseIcon, SunIcon, GlobeIcon, HelpIcon, InfoIcon, LogoutIcon, PhoneIcon } from "./Icons";
 
+/**
+ * Full settings screen with profile block, themed sections (calls, system, chats,
+ * notifications, data, appearance, language, support), theme toggle, and logout.
+ * Sub-navigates to DevicesPage internally.
+ */
 export default function SettingsPage({ me, theme, l, onToggleTheme, onLogout, onEditProfile }) {
   const [page, setPage] = useState("main");
   const myName = [me?.firstName, me?.lastName].filter(Boolean).join(" ") || me?.username || "User";
