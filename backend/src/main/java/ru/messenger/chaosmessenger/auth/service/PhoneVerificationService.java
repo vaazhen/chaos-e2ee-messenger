@@ -146,7 +146,9 @@ public class PhoneVerificationService {
     }
 
     private static String hashForLog(String phone) {
-        if (phone == null) return "null";
+        if (phone == null) {
+            return "null";
+        }
         return phone.substring(0, Math.min(4, phone.length())) + "***";
     }
 
