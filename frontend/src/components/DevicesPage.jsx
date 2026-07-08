@@ -1,5 +1,9 @@
 import { ChevronLeftIcon, DeviceIcon } from "./Icons";
 
+/**
+ * Inline sub-page within Settings flow. Lists connected devices with
+ * status badges (Current/Off) and back navigation.
+ */
 export default function DevicesPage({ l, onBack }) {
   const devices = [
     { id: 1, name: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 YaBrowser/26.4.0.0 Safari/537.36", date: l("Был(а) 01.07.2026", "Last seen 01.07.2026"), current: true },
