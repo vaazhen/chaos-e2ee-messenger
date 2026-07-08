@@ -1,7 +1,10 @@
-import { useRef, useEffect, useLayoutEffect, useState } from "react";
+import { useRef, useEffect, useLayoutEffect, useState, useCallback } from "react";
 import Ava from "./Ava";
 import VoiceMessage from "./VoiceMessage";
+import { FileIcon, CheckIcon, DoubleCheckIcon, ChevronDownIcon } from "./Icons";
 import { findWordStartMatches, getTime } from "../helpers";
+
+const chatScrollStore = new Map();
 
 export default function MessageList({
   msgs,
@@ -17,25 +20,49 @@ export default function MessageList({
 }) {
   const endRef = useRef(null);
   const listRef = useRef(null);
-  const initialScrollDoneRef = useRef(false);
   const prevChatIdRef = useRef(null);
   const prevLenRef = useRef(0);
   const prevLastIdRef = useRef(null);
+  const restoredRef = useRef(false);
+  const [showDownBtn, setShowDownBtn] = useState(false);
+
+  useLayoutEffect(() => {
+    if (loadingMsgs || !msgs?.length || restoredRef.current) return;
+    const el = listRef.current;
+    if (!el) return;
+    const chatId = activeChat?.id;
+    if (!chatId) return;
+    restoredRef.current = true;
+    const saved = chatScrollStore.get(chatId);
+    el.scrollTop = saved?.top != null
+      ? Math.min(saved.top, el.scrollHeight - el.clientHeight)
+      : el.scrollHeight;
+  });
 
   useEffect(() => {
     const chatId = activeChat?.id ?? null;
     if (prevChatIdRef.current !== chatId) {
+      if (prevChatIdRef.current != null) {
+        const el = listRef.current;
+        if (el) chatScrollStore.set(prevChatIdRef.current, { top: el.scrollTop, height: el.scrollHeight });
+      }
       prevChatIdRef.current = chatId;
-      initialScrollDoneRef.current = false;
+      restoredRef.current = false;
       prevLenRef.current = 0;
       prevLastIdRef.current = null;
     }
+    return () => {
+      const el = listRef.current;
+      const cid = activeChat?.id ?? null;
+      if (el && cid != null) chatScrollStore.set(cid, { top: el.scrollTop, height: el.scrollHeight });
+    };
   }, [activeChat?.id]);
 
   useLayoutEffect(() => {
     const el = listRef.current;
     if (!el) return;
     if (!msgs?.length) return;
+    if (!restoredRef.current) return;
 
     const bottomGap = el.scrollHeight - el.scrollTop - el.clientHeight;
     const nearBottom = bottomGap < 140;
@@ -46,16 +73,7 @@ export default function MessageList({
     const newTail = prevLastIdRef.current != null && lastId !== prevLastIdRef.current;
     const appended = grew && newTail;
 
-    // First render for a chat: jump to bottom without animation to avoid visible "teleport".
-    if (!initialScrollDoneRef.current) {
-      initialScrollDoneRef.current = true;
-      // Ensure layout is ready (images/voice blocks may affect height).
-      requestAnimationFrame(() => {
-        const node = listRef.current;
-        if (!node) return;
-        node.scrollTo({ top: node.scrollHeight, behavior: "auto" });
-      });
-    } else if (nearBottom && appended) {
+    if (nearBottom && appended) {
       endRef.current?.scrollIntoView({ behavior: "smooth" });
     }
 
@@ -73,6 +91,19 @@ export default function MessageList({
     }
   }, [scrollToMessageId]);
 
+  const onScroll = useCallback(() => {
+    const el = listRef.current;
+    if (!el) return;
+    const gapBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setShowDownBtn(gapBottom > 200);
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
+    const el = listRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, []);
+
   if (loadingMsgs) {
     return (
       <div ref={listRef} className="msgs scroll">
@@ -85,7 +116,11 @@ export default function MessageList({
     return (
       <div ref={listRef} className="msgs scroll">
         <div className="product-empty">
-          <div className="product-empty-icon">◯</div>
+          <div className="product-empty-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>
+        </div>
           <div className="product-empty-title">Нет сообщений</div>
           <div className="product-empty-sub">Создайте новую переписку.</div>
         </div>
@@ -94,7 +129,8 @@ export default function MessageList({
   }
 
   return (
-    <div ref={listRef} className="msgs scroll">
+    <>
+    <div ref={listRef} className="msgs scroll" onScroll={onScroll}>
       <div className="date-div">today</div>
 
       {msgs.map((msg, idx) => {
@@ -142,6 +178,12 @@ export default function MessageList({
 
       <div ref={endRef} />
     </div>
+    {showDownBtn && (
+      <button className="scroll-bottom-btn" onClick={scrollToBottom} aria-label="Scroll to bottom">
+        <ChevronDownIcon />
+      </button>
+    )}
+    </>
   );
 }
 
@@ -246,7 +288,7 @@ function MsgRow({
           <span>{time}</span>
           {isOut && (
             <span className={`check${msg.status === "READ" ? " read" : ""}`}>
-              {msg.status === "READ" ? "✓✓" : "✓"}
+              {msg.status === "READ" ? <DoubleCheckIcon /> : <CheckIcon />}
             </span>
           )}
         </div>
@@ -275,9 +317,7 @@ function MsgRow({
 }
 
 function MsgFileIcon({ name }) {
-  const ext = String(name || "").split(".").pop().toLowerCase();
-  const iconMap = { pdf: "📄", doc: "📝", docx: "📝", xls: "📊", xlsx: "📊", zip: "🗜️", rar: "🗜️", mp3: "🎵", mp4: "🎬", txt: "📃" };
-  return <div className="msg-file-icon">{iconMap[ext] || "📁"}</div>;
+  return <div className="msg-file-icon"><FileIcon /></div>;
 }
 
 function fmtSize(bytes) {

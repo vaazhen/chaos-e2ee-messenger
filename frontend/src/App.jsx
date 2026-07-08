@@ -27,7 +27,10 @@ import ChatInfoPanel from "./components/ChatInfoPanel";
 import ChatSearchBar from "./components/ChatSearchBar";
 import useWebRTC from "./hooks/useWebRTC";
 import CallOverlay from "./components/CallOverlay";
+import SettingsPage from "./components/SettingsPage";
+import BottomNav from "./components/BottomNav";
 import { api } from "./api";
+import { ShieldIcon, BackIcon } from "./components/Icons";
 
 import { getTime, messageMatchesQuery } from "./helpers";
 import { clearPreviewCacheForUser } from "./previewCache";
@@ -147,13 +150,17 @@ export default function ChaosMessenger() {
   const [messageSearch,  setMessageSearch]  = useState("");
   const [matchIndex, setMatchIndex] = useState(0);
   const [scrollToMessageId, setScrollToMessageId] = useState(null);
-  const [chatInfoOpen,   setChatInfoOpen]   = useState(false);
   const [groupAdminOpen, setGroupAdminOpen] = useState(false);
+  const [chatInfoOpen,   setChatInfoOpen]   = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [aliasTick, setAliasTick] = useState(0);
   const [chatPrefsTick, setChatPrefsTick] = useState(0);
-  const [chatBg,         setChatBg]         = useState(() => localStorage.getItem("cm_chat_background") || "clean");
+  const [chatBgs, setChatBgs] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("cm_chat_bgs") || "{}"); }
+    catch { return {}; }
+  });
   const [chatFilter,     setChatFilter]     = useState("all");
+  const [activeTab,      setActiveTab]      = useState("chats");
   
   const ctxMenuRef = useRef(null);
   const chatSearchRef = useRef(null);
@@ -174,8 +181,8 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
   }, []);
 
   const [theme, setTheme] = useState(() => {
-    if (typeof window === "undefined") return "light";
-    return localStorage.getItem(THEME_STORAGE_KEY) || "light";
+    if (typeof window === "undefined") return "dark";
+    return localStorage.getItem(THEME_STORAGE_KEY) || "dark";
   });
 
   const [sidebarWidth, setSidebarWidth] = useState(() =>
@@ -317,6 +324,7 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
 
   const activeChat = chatStore.chats.find(c => c.id === chatStore.activeId);
   const activeMsgs = msgStore.msgs[chatStore.activeId] || [];
+  const chatMuted = activeChat ? getChatUiPrefs(auth.me?.id).muted.has(String(activeChat.id)) : false;
   const refreshTimeoutRef = useRef(null);
   const requestsRefreshTimeoutRef = useRef(null);
   const requestsRefreshAttemptsRef = useRef(0);
@@ -499,11 +507,10 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
       }
 
       const insideInfo =
-        isInside(chatInfoRef, target) ||
-        isInside(chatInfoBtnRef, target) ||
         isInside(groupAdminBtnRef, target);
 
       if (chatInfoOpen && !insideInfo) {
+        if (target.closest(".modal-bg > .modal")) return;
         setChatInfoOpen(false);
       }
     };
@@ -522,6 +529,10 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
     document.body.setAttribute("data-theme", theme);
     localStorage.setItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
+
+  useEffect(() => {
+    localStorage.setItem("cm_chat_bgs", JSON.stringify(chatBgs));
+  }, [chatBgs]);
 
   useEffect(() => {
     loadTranslations(lang);
@@ -844,8 +855,20 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
     );
   }
 
+  const chatBg = chatBgs[String(chatStore.activeId)] || "clean";
+
   return (
     <div className={`app mobile-product-shell${activeChat ? " has-active-chat" : ""}`} onClick={closeCtx}>
+      {activeTab === "settings" ? (
+        <SettingsPage
+          me={auth.me}
+          theme={theme}
+          l={l}
+          onToggleTheme={() => setTheme(prev => prev === "dark" ? "light" : "dark")}
+          onLogout={logout}
+          onEditProfile={() => setShowSettings(true)}
+        />
+      ) : (
       <div
         className={`app-frame${sidebarDragging ? " app-frame--sidebar-dragging" : ""}`}
         style={
@@ -870,7 +893,7 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
             setNewChatInitialTab("direct");
             setShowNewChat(true);
           }}
-          onOpenНастройки={() => setShowSettings(true)}
+          onOpenНастройки={() => setActiveTab("settings")}
           onMarkAllRead={() => {
             chatStore.chats.forEach(c => {
               api.markRead(c.id).catch(() => {});
@@ -914,6 +937,8 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
             }
           }}
           sidebarCompact={sidebarCompact}
+          activeTab={activeTab}
+          onNavChange={setActiveTab}
           sidebarResizeEnabled={sidebarDesktop}
           onSidebarResizePointerDown={onSidebarResizePointerDown}
           onSidebarResizePointerMove={onSidebarResizePointerMove}
@@ -926,7 +951,11 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
         <section className={`chat-view chat-bg-${chatBg}`}>
           {!activeChat ? (
             <div className="product-empty">
-              <div className="product-empty-icon">◯</div>
+              <div className="product-empty-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                </svg>
+              </div>
               <div className="product-empty-title">{l("Нет сообщений", "No messages")}</div>
               <div className="product-empty-sub">
                 {l("Создайте новую переписку.", "Start a new conversation.")}
@@ -935,10 +964,11 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
           ) : (
             <>
               <div className="product-chat-head">
-                <button className="round-action desktop-hidden" onClick={goBackToList} title={l("Назад", "Back")}>‹</button>
+                <button className="round-action desktop-hidden" onClick={goBackToList} title={l("Назад", "Back")}><BackIcon /></button>
+
                 <button
                   type="button"
-                  className="chat-head-user"
+                  className="chat-head-name-pill"
                   onClick={() => {
                     if (activeChat.type === "direct") setProfileOpen(true);
                     else setChatInfoOpen(true);
@@ -946,31 +976,20 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
                   }}
                   title={l("Профиль", "Profile")}
                 >
-                  <Ava name={activeChatName || activeChat.name} colorIdx={activeChat.colorIdx} size="md" online={activeChat.online} avatarUrl={activeChat.avatarUrl} />
-                </button>
-                <button
-                  type="button"
-                  className="product-chat-title chat-head-user"
-                  onClick={() => {
-                    if (activeChat.type === "direct") setProfileOpen(true);
-                    else setChatInfoOpen(true);
-                    setChatSearchOpen(false);
-                  }}
-                  title={l("Профиль", "Profile")}
-                >
-                  <div className="head-name">{activeChatName || activeChat.name}</div>
-                  <div className={`head-status${activeChat.online ? "" : " off"}`}>
+                  <b>{activeChatName || activeChat.name}</b>
+                  <small className={`${activeChat.online ? "" : "off"}`}>
                     {activeChat.type === "group"
                       ? `${activeChat.members} ${t.participants || "members"}`
                       : activeChat.online ? (t.online || "online") : (t.offline || "last seen recently")}
-                  </div>
+                  </small>
                 </button>
-                <div className="chat-head-actions">
+
+                <div className="chat-head-right">
                   {showGroupAdminBtn && (
                     <button
                       ref={groupAdminBtnRef}
                       type="button"
-                      className={`chat-head-btn chat-head-btn--admin${groupAdminOpen ? " active" : ""}`}
+                      className={`chat-head-mini-btn${groupAdminOpen ? " active" : ""}`}
                       title={l("Администрирование группы", "Group administration")}
                       aria-label={l("Администрирование группы", "Group administration")}
                       onClick={() => {
@@ -979,40 +998,23 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
                         setChatSearchOpen(false);
                       }}
                     >
-                      <svg className="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M12 3 19 6v6c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3z" />
                       </svg>
                     </button>
                   )}
                   <button
                     type="button"
-                    className="chat-head-btn chat-head-btn--call"
-                    title={l("Звонок", "Call")}
+                    className="chat-head-avatar"
                     onClick={() => {
-                      const otherUser = activeChat?.username;
-                      if (otherUser) {
-                        call.startCall(chatStore.activeId, otherUser, false);
-                      }
+                      if (activeChat.type === "direct") setProfileOpen(true);
+                      else setChatInfoOpen(true);
+                      setChatSearchOpen(false);
                     }}
-                    disabled={call.callState !== 'idle'}
+                    title={l("Фото профиля", "Profile photo")}
+                    aria-label={l("Фото профиля", "Profile photo")}
                   >
-                    <svg className="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
-                      <path d="M22 2L11 13" />
-                      <path d="M22 2L15 22l-4-9-9-4z" />
-                    </svg>
-                  </button>
-                  <button
-                    ref={chatInfoBtnRef}
-                    className={`chat-head-btn chat-head-btn--info${chatInfoOpen ? " active" : ""}`}
-                    title={l("О чате", "Chat info")}
-                    onClick={() => { setChatInfoOpen(v => !v); setChatSearchOpen(false); }}
-                    aria-label={l("О чате", "Chat info")}
-                  >
-                    <svg className="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
-                      <circle cx="12" cy="12" r="9" />
-                      <circle cx="12" cy="8" r="1.2" fill="currentColor" stroke="none" />
-                      <path d="M12 11v5" />
-                    </svg>
+                    <Ava name={activeChatName || activeChat.name} colorIdx={activeChat.colorIdx} size="md" avatarUrl={activeChat.avatarUrl} />
                   </button>
                 </div>
               </div>
@@ -1030,17 +1032,12 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
                 />
               )}
 
-              {chatInfoOpen && (
+              {chatInfoOpen && activeChat?.type === "group" && (
                 <ChatInfoPanel
-                  panelRef={chatInfoRef}
-                  lang={lang}
                   chat={activeChat}
                   chatBg={chatBg}
-                  auth={auth}
-                  setSafetyModal={setSafetyModal}
-                  onChangeBg={setChatBg}
+                  onChangeBg={(val) => setChatBgs(prev => ({...prev, [String(activeChat.id)]: val}))}
                   onClose={() => setChatInfoOpen(false)}
-                  onOpenSearch={() => { setChatInfoOpen(false); setChatSearchOpen(true); }}
                 />
               )}
 
@@ -1063,7 +1060,21 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
                   l={l}
                   chat={{ ...activeChat, name: activeChatName || activeChat.name }}
                   onClose={() => setProfileOpen(false)}
-                  onAliasChanged={() => setAliasTick(v => v + 1)}
+                  onCall={() => {
+                    const otherUser = activeChat?.username;
+                    if (otherUser) call.startCall(chatStore.activeId, otherUser, false);
+                    setProfileOpen(false);
+                  }}
+                  onVideoCall={() => {
+                    const otherUser = activeChat?.username;
+                    if (otherUser) call.startCall(chatStore.activeId, otherUser, true);
+                    setProfileOpen(false);
+                  }}
+                  onOpenSearch={() => { setProfileOpen(false); setChatSearchOpen(true); }}
+                  chatBg={chatBg}
+                  onChangeBg={(val) => setChatBgs(prev => ({...prev, [String(chatStore.activeId)]: val}))}
+                  muted={chatMuted}
+                  onToggleMute={() => toggleMuted(auth.me?.id, chatStore.activeId)}
                 />
               )}
 
@@ -1088,11 +1099,6 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
                   )}
                 </div>
               )}
-
-              <div className="enc-notice">
-                <span>🔒</span>
-                <span>{t.encrypted_notice || "Encrypted on device"}</span>
-              </div>
 
               <MessageInput
                 onSend={sendMsg}
@@ -1120,6 +1126,17 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
           )}
         </section>
       </div>
+      )}
+      {!(activeTab === "chats" && activeChat) && (
+      <BottomNav
+        me={auth.me}
+        myName={[auth.me?.firstName, auth.me?.lastName].filter(Boolean).join(" ") || auth.me?.username || l("Я", "Me")}
+        activeTab={activeTab}
+        onNavChange={setActiveTab}
+        unreadTotal={aliasedChats.filter(c => c.unread > 0).length}
+        l={l}
+      />
+      )}
 
       <ContextMenu
         ctx={ctx}
@@ -1160,6 +1177,7 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
           onToggleTheme={() => setTheme(prev => prev === "dark" ? "light" : "dark")}
           onSwitchLang={() => switchLang(lang === "ru" ? "en" : "ru")}
           onLogout={logout}
+          onOpenChat={onChatCreated}
         />
       )}
 
@@ -1206,6 +1224,7 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
         isVideo={call.isVideo}
         isMuted={call.isMuted}
         isScreenSharing={call.isScreenSharing}
+        callDuration={call.callDuration}
         localVideoRef={call.localVideoRef}
         remoteVideoRef={call.remoteVideoRef}
         onAnswer={call.answerCall}
