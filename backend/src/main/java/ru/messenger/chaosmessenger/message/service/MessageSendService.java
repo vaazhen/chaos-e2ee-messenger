@@ -24,7 +24,6 @@ import ru.messenger.chaosmessenger.message.repository.MessageRepository;
 import ru.messenger.chaosmessenger.user.domain.User;
 
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
