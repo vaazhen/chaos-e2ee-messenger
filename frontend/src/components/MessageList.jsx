@@ -1,8 +1,7 @@
 import { useRef, useEffect, useLayoutEffect, useState, useCallback } from "react";
 import Ava from "./Ava";
-import VoiceMessage from "./VoiceMessage";
 import { ChevronDownIcon } from "./Icons";
-import { MsgRow, renderHighlightedText } from "./MsgRow";
+import { MsgRow } from "./MsgRow";
 import { getTime } from "../helpers";
 
 const chatScrollStore = new Map();

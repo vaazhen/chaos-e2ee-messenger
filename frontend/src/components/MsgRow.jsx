@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Ava from "./Ava";
 import VoiceMessage from "./VoiceMessage";
 import { FileIcon, CheckIcon, DoubleCheckIcon } from "./Icons";
-import { getTime, findWordStartMatches } from "../helpers";
+import { findWordStartMatches } from "../helpers";
 
 /**
  * Single message bubble — text, images, voice, files, reactions, expiry countdown.
@@ -11,6 +11,7 @@ export function MsgRow({ msg, isOut, isGroupEnd, text, time, reactions, myReacti
   const [expiring, setExpiring] = useState(false);
   const [hidden, setHidden] = useState(false);
   const [countdown, setCountdown] = useState("");
+  const hideTimerRef = useRef(null);
 
   useEffect(() => {
     if (!msg.expiresAt) return;
@@ -18,14 +19,14 @@ export function MsgRow({ msg, isOut, isGroupEnd, text, time, reactions, myReacti
     if (!Number.isFinite(expiresMs)) return;
     const tick = () => {
       const remaining = expiresMs - Date.now();
-      if (remaining <= 0) { setExpiring(true); setTimeout(() => setHidden(true), 500); return; }
+      if (remaining <= 0) { setExpiring(true); hideTimerRef.current = setTimeout(() => setHidden(true), 500); return; }
       if (remaining < 60000) setCountdown(`${Math.ceil(remaining / 1000)}s`);
       else if (remaining < 3600000) setCountdown(`${Math.ceil(remaining / 60000)}m`);
       else setCountdown(`${Math.ceil(remaining / 3600000)}h`);
     };
     tick();
     const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
+    return () => { clearInterval(id); if (hideTimerRef.current) clearTimeout(hideTimerRef.current); };
   }, [msg.expiresAt]);
 
   if (hidden) return null;
