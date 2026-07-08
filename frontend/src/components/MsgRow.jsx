@@ -42,7 +42,7 @@ export function MsgRow({ msg, isOut, isGroupEnd, text, time, reactions, myReacti
 
   return (
     <div data-mid={String(msg.id ?? msg.messageId ?? "")} className={`msg-wrap${isOut ? " out" : ""}${shouldHighlightMessage ? " search-hit-active" : ""}${expiring ? " msg-expiring" : ""}`} onContextMenu={e => onContextMenu(e, { ...msg, _text: text, _out: isOut })}>
-      {!isOut && (isGroupEnd ? <Ava name={activeChat?.name} colorIdx={activeChat?.colorIdx} size="sm" avatarUrl={activeChat?.avatarUrl} /> : <div style={{ width: 28, flexShrink: 0 }} />)}
+      {!isOut && (isGroupEnd ? <Ava name={activeChat?.name} colorIdx={activeChat?.colorIdx} size="sm" avatarUrl={activeChat?.avatarUrl} /> : <div className="msg-ava-spacer" />)}
       <div className={`bubble ${isOut ? "out" : "in"}${isGroupEnd ? (isOut ? " tl-out" : " tl-in") : ""}`} onClick={e => e.stopPropagation()}>
         {msg._replyTo && <div className="reply-quote"><div className="reply-q-name">Ответить</div><div className="reply-q-text">{msg._replyTo._text}</div></div>}
         {msg._img && <img className="msg-img" src={msg._img} alt="" />}
