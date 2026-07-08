@@ -53,3 +53,6 @@ frontend/out/
 frontend/dist/
 frontend/build/
 frontend/electron/tray-icon.png
+
+# opencode
+.opencode/
