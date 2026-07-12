@@ -1,6 +1,6 @@
 FROM maven:3.9.14-eclipse-temurin-17 AS build
 WORKDIR /build
-COPY pom.xml ./
+COPY pom.xml checkstyle.xml checkstyle-suppressions.xml ./
 COPY src ./src
 RUN mvn -B --no-transfer-progress verify
 
