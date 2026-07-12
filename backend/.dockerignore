@@ -8,8 +8,6 @@ logs
 *.iml
 *.md
 LICENSE
-checkstyle.xml
-checkstyle-suppressions.xml
 docker-compose*
 prometheus.yml
 mvnw
