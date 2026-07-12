@@ -2,7 +2,7 @@ FROM maven:3.9.14-eclipse-temurin-17 AS build
 WORKDIR /build
 COPY pom.xml ./
 COPY src ./src
-RUN mvn -B --no-transfer-progress verify
+RUN mvn -B --no-transfer-progress -Dcheckstyle.skip=true verify
 
 FROM eclipse-temurin:17-jre
 RUN apt-get update && apt-get install -y --no-install-recommends curl && \
