@@ -219,7 +219,7 @@ jobs:
           fi
 
       - name: Scan for high and critical vulnerabilities
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.30.0
         with:
           image-ref: ${{ steps.resolve.outputs.value }}
           format: sarif
