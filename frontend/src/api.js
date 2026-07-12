@@ -144,6 +144,10 @@ export const api = {
   createDirect:   (username)           => call(`/chats/direct/by-username?username=${encodeURIComponent(username)}`, { method: "POST" }),
   createGroup:    (name, members)      => call("/chats/group", { method: "POST", body: JSON.stringify({ name, memberIds: members }) }),
 
+  // ── Realtime recovery ────────────────────────────────────────────────────
+  syncRealtime:   (after = 0, limit = 200) =>
+    call(`/realtime/sync?after=${encodeURIComponent(Math.max(0, Number(after) || 0))}&limit=${encodeURIComponent(limit)}`),
+
   // ── Messages ──────────────────────────────────────────────────────────────
   getMessages:    (chatId, before)     => call(`/messages/chat/${chatId}/timeline?limit=50${before ? "&beforeMessageId=" + before : ""}`),
   markRead:       (chatId)             => call(`/messages/chat/${chatId}/read`,      { method: "POST" }),

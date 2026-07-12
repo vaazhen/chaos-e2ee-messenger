@@ -2,11 +2,34 @@ import { useEffect, useRef } from "react";
 import { Client } from "@stomp/stompjs";
 import SockJS from "sockjs-client";
 import { WS_URL } from "../config";
-import { getToken } from "../api";
+import { api, getToken } from "../api";
 import { getOrCreateDeviceId } from "../deviceId";
+
+const MAX_RECOVERY_PAGES = 20;
+const MAX_BUFFERED_LIVE_EVENTS = 5000;
 
 function debugLog(...args) {
   if (import.meta.env.DEV) console.warn(...args);
+}
+
+function cursorStorageKey(deviceId) {
+  return `cm_realtime_cursor:${deviceId}`;
+}
+
+function readCursor(deviceId) {
+  try {
+    const value = Number(localStorage.getItem(cursorStorageKey(deviceId)) || 0);
+    return Number.isSafeInteger(value) && value >= 0 ? value : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writeCursor(deviceId, sequence) {
+  if (!Number.isSafeInteger(sequence) || sequence < 0) return;
+  try {
+    localStorage.setItem(cursorStorageKey(deviceId), String(sequence));
+  } catch (_) { /* cursor is an optimization; timeline sync remains the fallback */ }
 }
 
 export default function useWebSocket({
@@ -22,12 +45,15 @@ export default function useWebSocket({
   onCallSignal,
   enabled,
 }) {
-  const clientRef   = useRef(null);
-  const subsRef     = useRef({});
-  const chatIdsRef  = useRef([]);
+  const clientRef = useRef(null);
+  const subsRef = useRef({});
+  const chatIdsRef = useRef([]);
   const heartbeatRef = useRef(null);
   const hadConnectedRef = useRef(false);
   const seenEventIdsRef = useRef(new Set());
+  const recoveringRef = useRef(false);
+  const liveBufferRef = useRef([]);
+  const cursorRef = useRef(0);
   const handlersRef = useRef({ onMessage, onChatListUpdate, onRequestsUpdate, onStatusUpdate, onTyping, onConnectionState, onCallSignal });
 
   useEffect(() => {
@@ -60,6 +86,80 @@ export default function useWebSocket({
     return false;
   };
 
+  const advanceCursor = (deviceId, event) => {
+    const sequence = Number(event?.sequence || 0);
+    if (!Number.isSafeInteger(sequence) || sequence <= cursorRef.current) return;
+    cursorRef.current = sequence;
+    writeCursor(deviceId, sequence);
+  };
+
+  const dispatchRecoveredEvent = (deviceId, destination, event) => {
+    if (!event || isDuplicateEvent(event)) {
+      advanceCursor(deviceId, event);
+      return;
+    }
+
+    if (/^\/chats\/\d+$/.test(destination || "")) {
+      const chatId = Number(event.chatId || String(destination).split("/").pop());
+      handlersRef.current.onMessage?.(event, chatId);
+    } else if (destination === "/status") {
+      handlersRef.current.onStatusUpdate?.({ type: "delivery", ...event });
+    } else if (destination === "/chats") {
+      handlersRef.current.onChatListUpdate?.(event);
+    } else if (destination === "/requests") {
+      handlersRef.current.onRequestsUpdate?.(event);
+    }
+    advanceCursor(deviceId, event);
+  };
+
+  const handleDurableLive = (deviceId, destination, event) => {
+    if (recoveringRef.current) {
+      liveBufferRef.current.push({ destination, event });
+      if (liveBufferRef.current.length > MAX_BUFFERED_LIVE_EVENTS) {
+        liveBufferRef.current.shift();
+      }
+      return;
+    }
+    dispatchRecoveredEvent(deviceId, destination, event);
+  };
+
+  const flushLiveBuffer = (deviceId) => {
+    const buffered = liveBufferRef.current.splice(0);
+    buffered.sort((left, right) => Number(left.event?.sequence || Number.MAX_SAFE_INTEGER)
+      - Number(right.event?.sequence || Number.MAX_SAFE_INTEGER));
+    buffered.forEach(({ destination, event }) => dispatchRecoveredEvent(deviceId, destination, event));
+  };
+
+  const recoverMissedEvents = async (deviceId) => {
+    recoveringRef.current = true;
+    liveBufferRef.current = [];
+    cursorRef.current = readCursor(deviceId);
+    try {
+      let cursor = cursorRef.current;
+      for (let page = 0; page < MAX_RECOVERY_PAGES; page++) {
+        const response = await api.syncRealtime(cursor, 200);
+        const events = Array.isArray(response?.events) ? response.events : [];
+        for (const item of events) {
+          const payload = { ...(item?.payload || {}) };
+          if (item?.eventId && !payload.eventId) payload.eventId = item.eventId;
+          if (item?.sequence != null) payload.sequence = Number(item.sequence);
+          dispatchRecoveredEvent(deviceId, item?.destination, payload);
+        }
+        cursor = Number(response?.nextCursor ?? cursorRef.current);
+        if (Number.isSafeInteger(cursor) && cursor > cursorRef.current) {
+          cursorRef.current = cursor;
+          writeCursor(deviceId, cursor);
+        }
+        if (!response?.hasMore || events.length === 0) break;
+      }
+    } catch (error) {
+      debugLog("[WS] realtime recovery failed; timeline sync remains available", error?.message || error);
+    } finally {
+      recoveringRef.current = false;
+      flushLiveBuffer(deviceId);
+    }
+  };
+
   const stopPresenceHeartbeat = () => {
     if (heartbeatRef.current) {
       clearInterval(heartbeatRef.current);
@@ -79,63 +179,53 @@ export default function useWebSocket({
 
   const setupPresence = (client, username) => {
     if (!client?.connected || !username) return;
-    unsub("userStatus");
-    unsub("myStatus");
-    unsub("chats");
-    unsub("requests");
+    ["userStatus", "myStatus", "chats", "deviceChats", "requests", "deviceRequests", "calls"]
+      .forEach(unsub);
 
     const did = getOrCreateDeviceId();
     debugLog("[WS] presence subscriptions ready");
 
-    subsRef.current["userStatus"] = client.subscribe("/topic/user/status", (msg) => {
+    subsRef.current.userStatus = client.subscribe("/topic/user/status", (msg) => {
       try {
         const event = { type: "user_status", ...JSON.parse(msg.body || "{}") };
         if (!isDuplicateEvent(event)) handlersRef.current.onStatusUpdate?.(event);
-      }
-      catch (_) { /* ignore malformed websocket payload */ }
+      } catch (_) { /* ignore malformed websocket payload */ }
     });
 
     if (did) {
-      subsRef.current["myStatus"] = client.subscribe(`/topic/devices/${did}/status`, (msg) => {
-        try {
-          const event = { type: "delivery", ...JSON.parse(msg.body || "{}") };
-          if (!isDuplicateEvent(event)) handlersRef.current.onStatusUpdate?.(event);
-        }
+      subsRef.current.myStatus = client.subscribe(`/topic/devices/${did}/status`, (msg) => {
+        try { handleDurableLive(did, "/status", JSON.parse(msg.body || "{}")); }
+        catch (_) { /* ignore malformed websocket payload */ }
+      });
+      subsRef.current.deviceChats = client.subscribe(`/topic/devices/${did}/chats`, (msg) => {
+        try { handleDurableLive(did, "/chats", JSON.parse(msg.body || "{}")); }
+        catch (_) { /* ignore malformed websocket payload */ }
+      });
+      subsRef.current.deviceRequests = client.subscribe(`/topic/devices/${did}/requests`, (msg) => {
+        try { handleDurableLive(did, "/requests", JSON.parse(msg.body || "{}")); }
         catch (_) { /* ignore malformed websocket payload */ }
       });
     }
 
-    const userCallTopic = `/topic/users/${username}/calls`;
-    subsRef.current["calls"] = client.subscribe(userCallTopic, (msg) => {
-      try {
-        const data = JSON.parse(msg.body || "{}");
-        handlersRef.current.onCallSignal?.(data);
-      } catch (_) { /* ignore optional failure */ }
+    subsRef.current.calls = client.subscribe(`/topic/users/${username}/calls`, (msg) => {
+      try { handlersRef.current.onCallSignal?.(JSON.parse(msg.body || "{}")); }
+      catch (_) { /* ignore optional failure */ }
     });
 
-    subsRef.current["chats"] = client.subscribe(
-      `/topic/users/${username}/chats`,
-      (msg) => {
-        try {
-          const data = JSON.parse(msg?.body || "{}");
-          if (!isDuplicateEvent(data)) handlersRef.current.onChatListUpdate?.(data);
-        } catch (_) {
-          handlersRef.current.onChatListUpdate?.();
-        }
-      }
-    );
-
-    subsRef.current["requests"] = client.subscribe(
-      `/topic/users/${username}/requests`,
-      (msg) => {
-        try {
-          const data = JSON.parse(msg?.body || "{}");
-          if (!isDuplicateEvent(data)) handlersRef.current.onRequestsUpdate?.(data);
-        } catch (_) {
-          handlersRef.current.onRequestsUpdate?.();
-        }
-      }
-    );
+    // Legacy user topics remain subscribed during rolling upgrades. Event IDs
+    // deduplicate them against the new device-scoped durable topics.
+    subsRef.current.chats = client.subscribe(`/topic/users/${username}/chats`, (msg) => {
+      try {
+        const data = JSON.parse(msg?.body || "{}");
+        if (!isDuplicateEvent(data)) handlersRef.current.onChatListUpdate?.(data);
+      } catch (_) { handlersRef.current.onChatListUpdate?.(); }
+    });
+    subsRef.current.requests = client.subscribe(`/topic/users/${username}/requests`, (msg) => {
+      try {
+        const data = JSON.parse(msg?.body || "{}");
+        if (!isDuplicateEvent(data)) handlersRef.current.onRequestsUpdate?.(data);
+      } catch (_) { handlersRef.current.onRequestsUpdate?.(); }
+    });
 
     client.publish({ destination: "/app/user.online", body: "{}" });
     startPresenceHeartbeat(client);
@@ -143,7 +233,6 @@ export default function useWebSocket({
 
   const subscribeToChat = (client, chatId) => {
     if (!client?.connected || !chatId) return;
-
     const did = getOrCreateDeviceId();
     if (!did) return;
 
@@ -152,21 +241,11 @@ export default function useWebSocket({
     const typingSubName = `typing:${cid}`;
     if (subsRef.current[chatSubName] && subsRef.current[typingSubName]) return;
 
-    const chatTopic   = `/topic/devices/${did}/chats/${cid}`;
-    const typingTopic = `/topic/chats/${cid}/typing`;
-
-    debugLog("[WS] subscribed to chat topic");
-
-    subsRef.current[chatSubName] = client.subscribe(chatTopic, (msg) => {
-      try {
-        const event = JSON.parse(msg.body || "{}");
-        const resolvedChatId = Number(event.chatId || cid);
-        debugLog("[WS] message event received", event.type);
-        if (!isDuplicateEvent(event)) handlersRef.current.onMessage?.(event, resolvedChatId);
-      } catch (e) { console.error("[WS] parse error:", e); }
+    subsRef.current[chatSubName] = client.subscribe(`/topic/devices/${did}/chats/${cid}`, (msg) => {
+      try { handleDurableLive(did, `/chats/${cid}`, JSON.parse(msg.body || "{}")); }
+      catch (error) { console.error("[WS] parse error:", error); }
     });
-
-    subsRef.current[typingSubName] = client.subscribe(typingTopic, (msg) => {
+    subsRef.current[typingSubName] = client.subscribe(`/topic/chats/${cid}/typing`, (msg) => {
       try { handlersRef.current.onTyping?.(JSON.parse(msg.body || "{}"), cid); }
       catch (_) { /* ignore malformed websocket payload */ }
     });
@@ -176,23 +255,19 @@ export default function useWebSocket({
     if (!client?.connected) return;
     const normalized = [...new Set((ids || []).filter(Boolean).map(Number))];
     const wanted = new Set(normalized.flatMap(id => [`chat:${id}`, `typing:${id}`]));
-
     Object.keys(subsRef.current)
       .filter(name => (name.startsWith("chat:") || name.startsWith("typing:")) && !wanted.has(name))
       .forEach(unsub);
-
     normalized.forEach(id => subscribeToChat(client, id));
   };
 
   useEffect(() => {
     if (!enabled || !me?.username) return;
-
     const token = getToken();
     if (!token) return;
 
     const did = getOrCreateDeviceId();
     const username = me.username;
-
     const client = new Client({
       webSocketFactory: () => new SockJS(WS_URL),
       reconnectDelay: 2000,
@@ -208,22 +283,17 @@ export default function useWebSocket({
     });
 
     client.onConnect = () => {
-      debugLog("[WS] connected");
       clientRef.current = client;
+      recoveringRef.current = true;
       setupPresence(client, username);
       setupChatSubscriptions(client, chatIdsRef.current);
-      handlersRef.current.onConnectionState?.({
-        connected: true,
-        isReconnect: hadConnectedRef.current,
-      });
+      handlersRef.current.onConnectionState?.({ connected: true, isReconnect: hadConnectedRef.current });
       hadConnectedRef.current = true;
+      void recoverMissedEvents(did);
     };
 
     client.onWebSocketClose = () => {
-      handlersRef.current.onConnectionState?.({
-        connected: false,
-        isReconnect: hadConnectedRef.current,
-      });
+      handlersRef.current.onConnectionState?.({ connected: false, isReconnect: hadConnectedRef.current });
       debugLog("[WS] disconnected, reconnecting");
     };
     client.onStompError = (frame) => console.error("[WS] STOMP error:", frame?.headers?.message || "broker error");
@@ -234,24 +304,21 @@ export default function useWebSocket({
     return () => {
       stopPresenceHeartbeat();
       unsubAll();
+      liveBufferRef.current = [];
+      recoveringRef.current = false;
       try { client.deactivate(); } catch (_) { /* ignore optional failure */ }
       clientRef.current = null;
     };
-  }, [enabled, me?.username]); // keep the socket stable across normal re-renders
+  }, [enabled, me?.username]);
 
   useEffect(() => {
-    if (clientRef.current?.connected) {
-      setupChatSubscriptions(clientRef.current, chatIds);
-    }
-  }, [JSON.stringify(chatIds)]); // subscribe/unsubscribe only when chat ids actually change
+    if (clientRef.current?.connected) setupChatSubscriptions(clientRef.current, chatIds);
+  }, [JSON.stringify(chatIds)]);
 
   return {
     isConnected: () => clientRef.current?.connected ?? false,
     sendTyping: (chatId) => {
-      clientRef.current?.publish({
-        destination: "/app/typing",
-        body: JSON.stringify({ chatId }),
-      });
+      clientRef.current?.publish({ destination: "/app/typing", body: JSON.stringify({ chatId }) });
     },
     publish: (dest, body) => {
       clientRef.current?.publish({ destination: dest, body: typeof body === "string" ? body : JSON.stringify(body) });

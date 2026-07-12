@@ -29,6 +29,8 @@ public interface OneTimePreKeyRepository extends JpaRepository<OneTimePreKey, Lo
 
     void deleteByDeviceId(Long deviceId);
 
+    long countByDeviceIdAndUsedAtIsNull(Long deviceId);
+
     void flush();
 
     @Query("""
