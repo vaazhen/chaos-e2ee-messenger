@@ -1,13 +1,8 @@
 import { ChevronRightIcon } from "../Icons";
 
-export function SettingsRow({ icon, title, subtitle, danger, disabled, onClick, children }) {
+function RowContent({ icon, title, subtitle, disabled, children }) {
   return (
-    <button
-      type="button"
-      className={`settings-row${danger ? " danger" : ""}${disabled ? " disabled" : ""}`}
-      onClick={disabled ? undefined : onClick}
-      disabled={disabled}
-    >
+    <>
       {icon && <span className="settings-row-icon">{icon}</span>}
       <span className="settings-row-main">
         <span className="settings-row-title">{title}</span>
@@ -16,6 +11,44 @@ export function SettingsRow({ icon, title, subtitle, danger, disabled, onClick, 
       <span className="settings-row-action">
         {children || (!disabled && <ChevronRightIcon />)}
       </span>
+    </>
+  );
+}
+
+export function SettingsRow({ icon, title, subtitle, danger, disabled, onClick, children }) {
+  const className = `settings-row${danger ? " danger" : ""}${disabled ? " disabled" : ""}`;
+
+  if (children) {
+    const activate = disabled ? undefined : onClick;
+    return (
+      <div
+        className={className}
+        role={activate ? "button" : undefined}
+        tabIndex={activate ? 0 : undefined}
+        aria-disabled={disabled || undefined}
+        onClick={activate}
+        onKeyDown={activate ? (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            activate();
+          }
+        } : undefined}
+      >
+        <RowContent icon={icon} title={title} subtitle={subtitle} disabled={disabled}>
+          {children}
+        </RowContent>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className={className}
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
+    >
+      <RowContent icon={icon} title={title} subtitle={subtitle} disabled={disabled} />
     </button>
   );
 }
@@ -34,7 +67,12 @@ export function SettingsToggle({ value, onChange }) {
     <button
       type="button"
       className={`settings-toggle${value ? " on" : ""}`}
-      onClick={() => onChange?.(!value)}
+      onClick={(event) => {
+        event.stopPropagation();
+        onChange?.(!value);
+      }}
+      role="switch"
+      aria-checked={Boolean(value)}
       aria-label="Toggle"
     >
       <span className="settings-toggle-thumb" />

@@ -39,7 +39,7 @@ export function getOrCreateDeviceId() {
  */
 export async function ensureDeviceRegistered(deviceRegistrationToken) {
   if (!window.e2ee?.ensureDeviceRegistered) {
-    console.warn("[E2EE] crypto-engine.js is not loaded");
+    if (import.meta.env.DEV) console.warn("[E2EE] crypto-engine.js is not loaded");
     return getOrCreateDeviceId();
   }
 
@@ -78,13 +78,13 @@ export async function ensureDeviceRegistered(deviceRegistrationToken) {
       throw error;
     }
 
-    console.warn("[E2EE] Device id conflict, resetting local identity and retrying registration");
-    window.e2ee.resetLocalDeviceIdentity();
+    if (import.meta.env.DEV) console.warn("[E2EE] Device id conflict, resetting local identity and retrying registration");
+    await window.e2ee.resetLocalDeviceIdentity();
     clearLocalStore().catch(() => {});
     await window.e2ee.ensureDeviceRegistered(apiFn);
   }
   const deviceId = window.e2ee.getOrCreateDeviceId();
-  console.warn("[E2EE] Device registered:", deviceId);
+  if (import.meta.env.DEV) console.warn("[E2EE] Device registered");
   return deviceId;
 }
 

@@ -23,11 +23,9 @@ const mocks = vi.hoisted(() => {
     },
     setToken: vi.fn((value) => {
       token = value || "";
-      if (value) localStorage.setItem("cm_token", value);
     }),
     clearToken: vi.fn(() => {
       token = "";
-      localStorage.removeItem("cm_token");
     }),
     getToken: vi.fn(() => token),
     ensureDeviceRegistered: vi.fn(),
@@ -50,6 +48,7 @@ vi.mock("../deviceId", () => ({
 describe("useAuth critical frontend auth flow", () => {
   beforeEach(() => {
     localStorage.clear();
+    sessionStorage.clear();
     vi.clearAllMocks();
     mocks.token = "";
 
@@ -143,7 +142,7 @@ describe("useAuth critical frontend auth flow", () => {
     });
 
     expect(mocks.setToken).toHaveBeenCalledWith("jwt-after-setup");
-    expect(localStorage.getItem("cm_refresh_token")).toBe("refresh-after-setup");
+    expect(localStorage.getItem("cm_refresh_token")).toBeNull();
     expect(mocks.ensureDeviceRegistered).toHaveBeenCalledWith("device-reg-after-setup");
     expect(mocks.api.getMe).toHaveBeenCalled();
 
@@ -191,8 +190,6 @@ describe("useAuth critical frontend auth flow", () => {
 
   it("restoreSession refreshes JWT and recovers missing device registration", async () => {
     const { useAuth } = await import("../hooks/useAuth");
-
-    localStorage.setItem("cm_refresh_token", "refresh-old");
 
     mocks.api.refreshToken
       .mockResolvedValueOnce({

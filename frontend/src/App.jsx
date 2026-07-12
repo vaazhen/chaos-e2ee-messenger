@@ -30,6 +30,7 @@ import CallOverlay from "./components/CallOverlay";
 import SettingsPage from "./components/SettingsPage";
 import BottomNav from "./components/BottomNav";
 import { api } from "./api";
+import { computeSafetyNumber, formatSafetyNumber } from "./safety-number";
 import { ShieldIcon, BackIcon } from "./components/Icons";
 
 import { getTime, messageMatchesQuery } from "./helpers";
@@ -172,7 +173,7 @@ const [deleteTarget, setDeleteTarget] = useState(null);
 const [editTarget, setEditTarget] = useState(null);
 const [editText, setEditText] = useState("");
 const [editLoading, setEditLoading] = useState(false);
-const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null, display: null, error: null });
+const [safetyModal, setSafetyModal] = useState({ open: false, devices: [], selectedDeviceId: null, error: null });
   const resetMessageSearch = useCallback(() => {
     setMessageSearch("");
     setMatchIndex(0);
@@ -348,6 +349,67 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
     void aliasTick;
     return displayNameForChat(activeChat, auth.me?.id);
   }, [activeChat, auth.me?.id, aliasTick]);
+
+  const openSafetyNumber = useCallback(async () => {
+    if (!activeChat || activeChat.type !== "direct") return;
+    setSafetyModal({ open: true, devices: [], selectedDeviceId: null, error: null });
+    try {
+      const ownBundle = window.e2ee?.getLocalDeviceBundle?.();
+      const ownIdentityKey = ownBundle?.identity?.publicKey;
+      if (!ownIdentityKey) throw new Error(l("Локальный ключ устройства не найден", "Local device identity key is missing"));
+
+      const resolved = await api.resolveDevicesForSafetyNumber(activeChat.id);
+      const remoteDevices = (resolved?.targetDevices || []).filter(device =>
+        String(device.userId) !== String(auth.me?.id) &&
+        device.identityPublicKey &&
+        device.deviceId
+      );
+      if (remoteDevices.length === 0) {
+        throw new Error(l("У собеседника нет активных E2EE-устройств", "The contact has no active E2EE devices"));
+      }
+
+      const devices = await Promise.all(remoteDevices.map(async device => {
+        const fingerprint = await computeSafetyNumber(ownIdentityKey, device.identityPublicKey);
+        const trust = window.e2ee?.getRemoteIdentityTrust?.(device.deviceId, device.identityPublicKey) || {
+          trustState: "UNVERIFIED"
+        };
+        return {
+          deviceId: device.deviceId,
+          deviceName: device.deviceName || device.deviceId,
+          identityPublicKey: device.identityPublicKey,
+          fingerprint,
+          display: formatSafetyNumber(fingerprint),
+          trustState: trust.trustState || "UNVERIFIED"
+        };
+      }));
+
+      setSafetyModal({
+        open: true,
+        devices,
+        selectedDeviceId: devices[0].deviceId,
+        error: null
+      });
+    } catch (error) {
+      setSafetyModal({
+        open: true,
+        devices: [],
+        selectedDeviceId: null,
+        error: error?.message || l("Не удалось вычислить Safety Number", "Could not compute Safety Number")
+      });
+    }
+  }, [activeChat, auth.me?.id, l]);
+
+  const verifySafetyDevice = useCallback(async (deviceId) => {
+    const target = safetyModal.devices.find(device => device.deviceId === deviceId);
+    if (!target) return;
+    await window.e2ee.verifyRemoteIdentity(target.deviceId, target.identityPublicKey, "SAFETY_NUMBER");
+    setSafetyModal(current => ({
+      ...current,
+      devices: current.devices.map(device =>
+        device.deviceId === deviceId ? { ...device, trustState: "VERIFIED" } : device
+      )
+    }));
+  }, [safetyModal.devices]);
 
   const myMutedUntilIso = useMemo(() => {
     if (activeChat?.type !== "group" || !auth.me?.id) return null;
@@ -1003,6 +1065,21 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
                       </svg>
                     </button>
                   )}
+                  {activeChat.type === "direct" && (
+                    <button
+                      type="button"
+                      className="chat-head-mini-btn"
+                      title={l("Проверить шифрование", "Verify encryption")}
+                      aria-label={l("Проверить шифрование", "Verify encryption")}
+                      onClick={() => {
+                        void openSafetyNumber();
+                        setProfileOpen(false);
+                        setChatSearchOpen(false);
+                      }}
+                    >
+                      <ShieldIcon />
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="chat-head-avatar"
@@ -1214,7 +1291,9 @@ const [safetyModal, setSafetyModal] = useState({ open: false, fingerprint: null,
 
       <SafetyNumberModal
         safetyModal={safetyModal}
-        onClose={() => setSafetyModal({ open: false, fingerprint: null, display: null, error: null })}
+        onSelectDevice={(selectedDeviceId) => setSafetyModal(current => ({ ...current, selectedDeviceId }))}
+        onVerify={verifySafetyDevice}
+        onClose={() => setSafetyModal({ open: false, devices: [], selectedDeviceId: null, error: null })}
         l={l}
       />
 

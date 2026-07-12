@@ -154,6 +154,31 @@ describe("useWebSocket", () => {
     }, 100);
   });
 
+  it("deduplicates at-least-once realtime delivery by event id", async () => {
+    const { default: useWebSocket } = await import("../hooks/useWebSocket");
+    const onMessage = vi.fn();
+
+    renderHook(() => useWebSocket({
+      me: { username: "alice" },
+      chatIds: [100],
+      onMessage,
+      enabled: true,
+    }));
+
+    const client = wsMocks.clients[0];
+    const callback = client.subscriptions["/topic/devices/device-a/chats/100"].cb;
+    const frame = {
+      body: JSON.stringify({ eventId: "event-1", type: "MESSAGE_CREATED", chatId: 100 }),
+    };
+
+    act(() => {
+      callback(frame);
+      callback(frame);
+    });
+
+    expect(onMessage).toHaveBeenCalledTimes(1);
+  });
+
   it("updates chat subscriptions on chatIds changes and unsubscribes removed chats", async () => {
     const { default: useWebSocket } = await import("../hooks/useWebSocket");
 

@@ -1,31 +1,35 @@
-import { contextBridge, ipcRenderer, desktopCapturer } from 'electron';
+import { contextBridge, ipcRenderer } from 'electron';
 
-contextBridge.exposeInMainWorld('electronAPI', {
+function assertObject(value, label) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError(`${label} must be an object`);
+  }
+}
+
+contextBridge.exposeInMainWorld('electronAPI', Object.freeze({
   getVersion: () => ipcRenderer.invoke('app:getVersion'),
   getPlatform: () => ipcRenderer.invoke('app:getPlatform'),
-  getPath: (name) => ipcRenderer.invoke('app:getPath', name),
-
-  saveFile: (opts) => ipcRenderer.invoke('dialog:saveFile', opts),
+  saveFile: (options) => {
+    assertObject(options, 'saveFile options');
+    return ipcRenderer.invoke('dialog:saveFile', {
+      defaultName: String(options.defaultName || '').slice(0, 128),
+      dataUrl: String(options.dataUrl || ''),
+    });
+  },
   openFile: () => ipcRenderer.invoke('dialog:openFile'),
-
-  showNotification: ({ title, body }) => {
-    ipcRenderer.invoke('notification:show', { title, body });
+  showNotification: (options) => {
+    assertObject(options, 'notification options');
+    return ipcRenderer.invoke('notification:show', {
+      title: String(options.title || '').slice(0, 80),
+      body: String(options.body || '').slice(0, 240),
+    });
   },
-
-  openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
-
+  openExternal: (url) => ipcRenderer.invoke('shell:openExternal', String(url)),
   onDeepLink: (callback) => {
-    ipcRenderer.on('deep-link', (_, url) => callback(url));
+    if (typeof callback !== 'function') throw new TypeError('callback must be a function');
+    const listener = (_, url) => callback(String(url));
+    ipcRenderer.on('deep-link', listener);
+    return () => ipcRenderer.removeListener('deep-link', listener);
   },
-
-  getScreenSources: async () => {
-    const sources = await desktopCapturer.getSources({ types: ['screen', 'window'] });
-    return sources.map(s => ({
-      id: s.id,
-      name: s.name,
-      thumbnail: s.thumbnail.toDataURL(),
-    }));
-  },
-
   isElectron: true,
-});
+}));

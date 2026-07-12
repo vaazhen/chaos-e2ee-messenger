@@ -1,4 +1,12 @@
-(function () {
+import {
+    readSecureRecord,
+    writeSecureRecord,
+    deleteSecureRecord,
+    clearSecureStorageForTests,
+    secureStorageBackend
+} from "./secure-storage.js";
+
+await (async function () {
     // ─── UUID helper — works in both secure (https/localhost) and non-secure (http+IP) contexts ───
     function safeUUID() {
         if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -47,53 +55,31 @@
         return btoa(binary);
     }
 
-    function b64UrlToText(base64Url) {
-        try {
-            const normalized = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-            const padded = normalized + '='.repeat((4 - normalized.length % 4) % 4);
-            return atob(padded);
-        } catch (_) { return ''; }
-    }
-
     function b64ToArrayBuffer(base64) {
         return b64ToBytes(base64);
     }
 
-    // ─── JWT username (used only for registrationPromise scoping) ─────────────
-
-    function getCurrentUsername() {
-        const token = localStorage.getItem('cm_token') || '';
-        const parts = token.split('.');
-        if (parts.length < 2) return 'anonymous';
-        const raw = b64UrlToText(parts[1]);
-        if (!raw) return 'anonymous';
-        try { return JSON.parse(raw)?.sub || 'anonymous'; } catch (_) { return 'anonymous'; }
-    }
-
-    function assertWebCryptoAvailable() {
-        if (typeof crypto === 'undefined' || !crypto.subtle) {
-            throw new Error('E2EE crypto is unavailable. Open the app via HTTPS or localhost. Mobile browsers usually block WebCrypto on plain http://LAN IP.');
-        }
-    }
-
-    // ─── One-time migration: move username-scoped keys to unscoped ────────────
+    // ─── One-time migration: move legacy username-scoped keys to unscoped ────
     function migrateUsernameScoped() {
-        const username = getCurrentUsername();
-        if (!username || username === 'anonymous') return;
         [DEVICE_KEY_PREFIX, SESSION_KEY_PREFIX, DEVICE_ID_KEY_PREFIX].forEach(prefix => {
-            const oldKey = `${prefix}:${username}`;
-            const val = localStorage.getItem(oldKey);
-            if (val !== null) {
-                if (localStorage.getItem(prefix) === null) {
-                    localStorage.setItem(prefix, val);
-                }
-                localStorage.removeItem(oldKey);
+            const scopedKey = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
+                .find(key => key?.startsWith(`${prefix}:`));
+            if (!scopedKey) return;
+            const value = localStorage.getItem(scopedKey);
+            if (value !== null && localStorage.getItem(prefix) === null) {
+                localStorage.setItem(prefix, value);
             }
+            localStorage.removeItem(scopedKey);
         });
     }
-    migrateUsernameScoped();
 
     // ─── WebCrypto wrappers ───────────────────────────────────────────────────
+
+    function assertWebCryptoAvailable() {
+        if (typeof crypto === 'undefined' || !crypto.subtle || typeof crypto.getRandomValues !== 'function') {
+            throw new Error('WebCrypto is unavailable. Use HTTPS or localhost in a supported browser.');
+        }
+    }
 
     async function exportRawPublicKey(publicKey) {
         assertWebCryptoAvailable();
@@ -231,7 +217,16 @@
         }
     }
 
-    // ─── Storage ──────────────────────────────────────────────────────────────
+    // ─── Secure storage ───────────────────────────────────────────────────────
+
+    const DEVICE_RECORD = 'device-bundle-v1';
+    const SESSION_RECORD = 'ratchet-sessions-v1';
+    const TRUST_RECORD = 'identity-trust-v1';
+
+    let localDeviceBundle = null;
+    let sessionState = {};
+    let identityTrustState = {};
+    const inProcessLocks = new Map();
 
     function getOrCreateDeviceId() {
         let id = localStorage.getItem(DEVICE_ID_KEY_PREFIX);
@@ -243,7 +238,7 @@
         const bytes = new Uint32Array(1); crypto.getRandomValues(bytes); return bytes[0] & 0x7fffffff;
     }
 
-    function loadJson(key) {
+    function loadLegacyJson(key) {
         try {
             const raw = localStorage.getItem(key);
             return raw ? JSON.parse(raw) : null;
@@ -252,21 +247,89 @@
         }
     }
 
-    function saveJson(key, value) {
-        localStorage.setItem(key, JSON.stringify(value));
+    async function initializeSecureState() {
+        migrateUsernameScoped();
+
+        const legacyBundle = loadLegacyJson(DEVICE_KEY_PREFIX);
+        const legacySessions = loadLegacyJson(SESSION_KEY_PREFIX);
+
+        localDeviceBundle = await readSecureRecord(DEVICE_RECORD);
+        sessionState = (await readSecureRecord(SESSION_RECORD)) || {};
+        identityTrustState = (await readSecureRecord(TRUST_RECORD)) || {};
+
+        if (!localDeviceBundle && legacyBundle) {
+            localDeviceBundle = legacyBundle;
+            await writeSecureRecord(DEVICE_RECORD, legacyBundle);
+        }
+        if (Object.keys(sessionState).length === 0 && legacySessions) {
+            sessionState = legacySessions;
+            await writeSecureRecord(SESSION_RECORD, legacySessions);
+        }
+
+        // Private key material and ratchet state must never remain in localStorage.
+        localStorage.removeItem(DEVICE_KEY_PREFIX);
+        localStorage.removeItem(SESSION_KEY_PREFIX);
     }
 
-    function getLocalDeviceBundle() { return loadJson(DEVICE_KEY_PREFIX); }
-    function loadSessions()         { return loadJson(SESSION_KEY_PREFIX) || {}; }
-    function saveSessions(sessions) { saveJson(SESSION_KEY_PREFIX, sessions); }
+    async function reloadSecureState() {
+        localDeviceBundle = (await readSecureRecord(DEVICE_RECORD)) || localDeviceBundle;
+        sessionState = (await readSecureRecord(SESSION_RECORD)) || {};
+        identityTrustState = (await readSecureRecord(TRUST_RECORD)) || {};
+    }
 
-    function resetLocalDeviceIdentity() {
+    function getLocalDeviceBundle() {
+        return localDeviceBundle ? structuredClone(localDeviceBundle) : null;
+    }
+
+    async function saveLocalDeviceBundle(bundle) {
+        localDeviceBundle = structuredClone(bundle);
+        await writeSecureRecord(DEVICE_RECORD, localDeviceBundle);
+    }
+
+    function loadSessions() {
+        return structuredClone(sessionState || {});
+    }
+
+    async function saveSessions(sessions) {
+        sessionState = structuredClone(sessions || {});
+        await writeSecureRecord(SESSION_RECORD, sessionState);
+    }
+
+    async function resetLocalDeviceIdentity() {
+        localDeviceBundle = null;
+        sessionState = {};
+        identityTrustState = {};
         localStorage.removeItem(DEVICE_KEY_PREFIX);
         localStorage.removeItem(SESSION_KEY_PREFIX);
         localStorage.removeItem(DEVICE_ID_KEY_PREFIX);
+        await Promise.all([
+            deleteSecureRecord(DEVICE_RECORD),
+            deleteSecureRecord(SESSION_RECORD),
+            deleteSecureRecord(TRUST_RECORD)
+        ]);
         registrationPromise = null;
         registrationPromiseUsername = null;
         log('[E2EE] Local device identity reset');
+    }
+
+    async function importLocalDeviceBundle(bundle) {
+        if (!bundle?.deviceId || !bundle?.identity?.publicKey || !bundle?.identity?.privateKeyPkcs8) {
+            throw new Error('Backup does not contain a valid device identity');
+        }
+        localStorage.setItem(DEVICE_ID_KEY_PREFIX, bundle.deviceId);
+        localDeviceBundle = structuredClone(bundle);
+        sessionState = {};
+        identityTrustState = {};
+        await Promise.all([
+            writeSecureRecord(DEVICE_RECORD, localDeviceBundle),
+            writeSecureRecord(SESSION_RECORD, sessionState),
+            writeSecureRecord(TRUST_RECORD, identityTrustState)
+        ]);
+        localStorage.removeItem(DEVICE_KEY_PREFIX);
+        localStorage.removeItem(SESSION_KEY_PREFIX);
+        registrationPromise = null;
+        registrationPromiseUsername = null;
+        return bundle.deviceId;
     }
 
     function sessionKey(localDeviceId, remoteDeviceId) {
@@ -274,13 +337,94 @@
     }
 
     function getSession(localDeviceId, remoteDeviceId) {
-        return loadSessions()[sessionKey(localDeviceId, remoteDeviceId)] || null;
+        const value = sessionState[sessionKey(localDeviceId, remoteDeviceId)];
+        return value ? structuredClone(value) : null;
     }
 
-    function storeSession(localDeviceId, remoteDeviceId, session) {
+    async function storeSession(localDeviceId, remoteDeviceId, session) {
         const sessions = loadSessions();
-        sessions[sessionKey(localDeviceId, remoteDeviceId)] = session;
-        saveSessions(sessions);
+        sessions[sessionKey(localDeviceId, remoteDeviceId)] = structuredClone(session);
+        await saveSessions(sessions);
+    }
+
+    async function withInProcessLock(name, operation) {
+        const previous = inProcessLocks.get(name) || Promise.resolve();
+        let release;
+        const gate = new Promise(resolve => { release = resolve; });
+        const tail = previous.then(() => gate);
+        inProcessLocks.set(name, tail);
+        await previous;
+        try {
+            return await operation();
+        } finally {
+            release();
+            if (inProcessLocks.get(name) === tail) inProcessLocks.delete(name);
+        }
+    }
+
+    async function withCryptoStateLock(operation) {
+        const run = async () => {
+            await reloadSecureState();
+            return operation();
+        };
+        if (typeof navigator !== 'undefined' && navigator.locks?.request) {
+            return navigator.locks.request('chaos-messenger-ratchet-state-v1', { mode: 'exclusive' }, run);
+        }
+        return withInProcessLock('ratchet-state', run);
+    }
+
+    function trustKey(remoteDeviceId) {
+        return `device:${remoteDeviceId}`;
+    }
+
+    async function observeRemoteIdentity(remoteDeviceId, identityPublicKey) {
+        if (!remoteDeviceId || !identityPublicKey) return 'UNVERIFIED';
+        const key = trustKey(remoteDeviceId);
+        const current = identityTrustState[key];
+        if (!current) {
+            identityTrustState[key] = {
+                identityPublicKey,
+                trustState: 'UNVERIFIED',
+                firstSeenAt: Date.now(),
+                lastSeenAt: Date.now()
+            };
+            await writeSecureRecord(TRUST_RECORD, identityTrustState);
+            return 'UNVERIFIED';
+        }
+        if (current.identityPublicKey !== identityPublicKey) {
+            current.previousIdentityPublicKey = current.identityPublicKey;
+            current.identityPublicKey = identityPublicKey;
+            current.trustState = 'KEY_CHANGED';
+            current.changedAt = Date.now();
+            current.lastSeenAt = Date.now();
+            await writeSecureRecord(TRUST_RECORD, identityTrustState);
+            return 'KEY_CHANGED';
+        }
+        current.lastSeenAt = Date.now();
+        return current.trustState || 'UNVERIFIED';
+    }
+
+    async function verifyRemoteIdentity(remoteDeviceId, identityPublicKey, method = 'MANUAL') {
+        if (!remoteDeviceId || !identityPublicKey) throw new Error('Remote device identity is required');
+        identityTrustState[trustKey(remoteDeviceId)] = {
+            identityPublicKey,
+            trustState: 'VERIFIED',
+            verificationMethod: method,
+            verifiedAt: Date.now(),
+            firstSeenAt: identityTrustState[trustKey(remoteDeviceId)]?.firstSeenAt || Date.now(),
+            lastSeenAt: Date.now()
+        };
+        await writeSecureRecord(TRUST_RECORD, identityTrustState);
+        return 'VERIFIED';
+    }
+
+    function getRemoteIdentityTrust(remoteDeviceId, identityPublicKey = null) {
+        const current = identityTrustState[trustKey(remoteDeviceId)];
+        if (!current) return { trustState: 'UNVERIFIED', identityPublicKey };
+        if (identityPublicKey && current.identityPublicKey !== identityPublicKey) {
+            return { ...structuredClone(current), trustState: 'KEY_CHANGED', identityPublicKey };
+        }
+        return structuredClone(current);
     }
 
     // ─── Device bundle generation and registration ───────────────────────────
@@ -336,7 +480,7 @@
     }
 
     function log(...args) {
-        console.warn('[ChaosMessenger]', ...args);
+        if (import.meta.env.DEV) console.warn('[ChaosMessenger]', ...args);
     }
 
     async function registerBundleOnServer(api, bundle, isNewDevice = false) {
@@ -360,11 +504,11 @@
     }
 
     async function ensureDeviceRegistered(api) {
-        const username = getCurrentUsername();
+        const registrationScope = getOrCreateDeviceId();
         const canRegister = !!(api && (api.__canRegisterDevice || api.canRegisterDevice));
 
-        if (registrationPromise && registrationPromiseUsername === username) return registrationPromise;
-        registrationPromiseUsername = username;
+        if (registrationPromise && registrationPromiseUsername === registrationScope) return registrationPromise;
+        registrationPromiseUsername = registrationScope;
 
         registrationPromise = (async () => {
             let bundle = getLocalDeviceBundle();
@@ -373,14 +517,14 @@
             if (!bundle) {
                 log('[E2EE] New device — generating keys');
                 bundle = await buildNewDeviceBundle();
-                saveJson(DEVICE_KEY_PREFIX, bundle);
+                await saveLocalDeviceBundle(bundle);
                 shouldUploadOneTimeKeys = true;
             } else if (!bundle?.signingKey?.publicKeySpki) {
                 log('[E2EE] Legacy bundle without signingKey detected — recreating device');
                 localStorage.removeItem(DEVICE_KEY_PREFIX);
                 localStorage.removeItem(SESSION_KEY_PREFIX);
                 bundle = await buildNewDeviceBundle();
-                saveJson(DEVICE_KEY_PREFIX, bundle);
+                await saveLocalDeviceBundle(bundle);
                 shouldUploadOneTimeKeys = true;
             }
 
@@ -495,7 +639,7 @@
             version: 4
         };
 
-        storeSession(localBundle.deviceId, targetDevice.deviceId, session);
+        await storeSession(localBundle.deviceId, targetDevice.deviceId, session);
         return { session, ephemeralPublicKey };
     }
 
@@ -552,7 +696,7 @@
             version: 4
         };
 
-        storeSession(localBundle.deviceId, envelope.senderDeviceId, session);
+        await storeSession(localBundle.deviceId, envelope.senderDeviceId, session);
         return session;
     }
 
@@ -687,6 +831,10 @@
     // ─── Fanout (send to chat) ─────────────────────────────────────────────────
 
     async function buildFanoutRequest(api, chatId, plainText) {
+        return withCryptoStateLock(() => buildFanoutRequestUnlocked(api, chatId, plainText));
+    }
+
+    async function buildFanoutRequestUnlocked(api, chatId, plainText) {
         const localBundle = await ensureDeviceRegistered(api);
         const resolved = await api('/api/crypto/resolve-chat-devices/' + encodeURIComponent(chatId), { method: 'POST' });
 
@@ -699,6 +847,12 @@
         }
 
         for (const targetDevice of uniqueTargets.values()) {
+            if (targetDevice.deviceId !== localBundle.deviceId && targetDevice.identityPublicKey) {
+                const trustState = await observeRemoteIdentity(targetDevice.deviceId, targetDevice.identityPublicKey);
+                if (trustState === 'KEY_CHANGED') {
+                    throw new Error('IDENTITY_KEY_CHANGED:' + targetDevice.deviceId);
+                }
+            }
             if (targetDevice.deviceId === localBundle.deviceId) {
                 const encrypted = await encryptSelfEnvelope(localBundle, plainText);
                 envelopes.push({
@@ -744,7 +898,7 @@
 
             const { encrypted, messageIndex, ratchetPublicKey, previousChainLength } =
                 await encryptWithDoubleRatchet(session, plainText);
-            storeSession(localBundle.deviceId, targetDevice.deviceId, session);
+            await storeSession(localBundle.deviceId, targetDevice.deviceId, session);
 
             envelopes.push({
                 targetDeviceId: targetDevice.deviceId,
@@ -774,10 +928,21 @@
     // ─── Decrypt an incoming envelope ─────────────────────────────────────────
 
     async function decryptEnvelope(envelope) {
+        return withCryptoStateLock(() => decryptEnvelopeUnlocked(envelope));
+    }
+
+    async function decryptEnvelopeUnlocked(envelope) {
         const localBundle = getLocalDeviceBundle();
         if (!localBundle) throw new Error('Local device bundle is missing');
 
         log('[decrypt] senderDeviceId=' + envelope.senderDeviceId + ' messageType=' + envelope.messageType + ' messageIndex=' + envelope.messageIndex);
+
+        if (envelope.messageType !== 'SELF_WHISPER' && envelope.senderIdentityPublicKey) {
+            const trustState = await observeRemoteIdentity(envelope.senderDeviceId, envelope.senderIdentityPublicKey);
+            if (trustState === 'KEY_CHANGED') {
+                throw new Error('IDENTITY_KEY_CHANGED:' + envelope.senderDeviceId);
+            }
+        }
 
         if (envelope.messageType === 'SELF_WHISPER') {
             return decryptSelfEnvelope(localBundle, envelope);
@@ -800,7 +965,7 @@
         }
 
         const plainText = await decryptWithDoubleRatchet(session, envelope);
-        storeSession(localBundle.deviceId, envelope.senderDeviceId, session);
+        await storeSession(localBundle.deviceId, envelope.senderDeviceId, session);
 
         log('[decrypt] OK messageIndex=' + envelope.messageIndex);
         return plainText;
@@ -833,15 +998,24 @@
 
     // ─── Public API ────────────────────────────────────────────────────────────
 
+    await initializeSecureState();
+
     window.e2ee = {
         getOrCreateDeviceId,
         getLocalDeviceBundle,
         resetLocalDeviceIdentity,
+        importLocalDeviceBundle,
         ensureDeviceRegistered,
         buildFanoutRequest,
         decryptEnvelope,
         encryptFile,
-        decryptFile
+        decryptFile,
+        verifyRemoteIdentity,
+        getRemoteIdentityTrust,
+        getSecureStorageBackend: secureStorageBackend,
+        __clearSecureStorageForTests: clearSecureStorageForTests,
+        __exportSessionStateForTests: () => structuredClone(sessionState),
+        __importSessionStateForTests: async (sessions) => saveSessions(sessions || {})
     };
 
 })();

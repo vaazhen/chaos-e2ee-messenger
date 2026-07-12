@@ -1,3 +1,5 @@
+> **Historical baseline audit.** The source has been hardened since this document was written. Use `PRODUCTION_READINESS.md`, `HARDENING_CHANGELOG.md`, and `VALIDATION_REPORT.md` for the current status. Findings below remain useful as threat-model context but may no longer describe the current implementation.
+
 # Chaos Messenger — Security Audit & Hardening Plan
 
 Project: E2EE messenger built with Spring Boot + React.

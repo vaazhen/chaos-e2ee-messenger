@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { api } from "../api";
+import { api, setToken } from "../api";
 import { compressImageToDataUrl, IMAGE_PROFILES } from "../imagePipeline";
 import useSwipeDown from "../hooks/useSwipeDown";
 import BackupModal from "./BackupModal";
@@ -142,7 +142,7 @@ export default function ProfileModal({ me, lang, theme, onClose, onSaved, onTogg
         avatarUrl: form.avatarUrl?.trim() || "",
       };
       const updated = await api.updateProfile(payload);
-      if (updated?.token) localStorage.setItem("cm_token", updated.token);
+      if (updated?.token) setToken(updated.token);
       onSaved?.(updated);
       setEditing(false);
     } catch (e) {

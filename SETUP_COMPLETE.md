@@ -1,3 +1,5 @@
+> **Legacy setup snapshot.** Use `README.md` and `VALIDATION_REPORT.md` for current commands and status.
+
 # Chaos Messenger — Complete Quick Setup
 
 [Back to README](README.md) · [Russian README](README.ru.md) · [Быстрый запуск RU](SETUP_COMPLETE.ru.md)

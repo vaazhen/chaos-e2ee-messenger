@@ -3,7 +3,7 @@ import { api, setToken } from "../api";
 import { initials } from "../helpers";
 import { compressImageToDataUrl, IMAGE_PROFILES } from "../imagePipeline";
 
-const LS_PREFIXES = ["cm_device_id", "cm_device_bundle_v2", "cm_e2ee_sessions_v4"];
+const LS_PREFIXES = ["cm_device_id"];
 
 function migrateLocalStorageKeys(oldUsername, newUsername) {
   if (!oldUsername || !newUsername || oldUsername === newUsername) return;

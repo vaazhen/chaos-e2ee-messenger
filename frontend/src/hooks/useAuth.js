@@ -16,20 +16,13 @@ export function useAuth() {
 
   const otpRefs = [useRef(), useRef(), useRef(), useRef(), useRef(), useRef()];
 
-  const saveRefreshToken  = (rt) => { if (rt) localStorage.setItem("cm_refresh_token", rt); };
-  const loadRefreshToken  = ()   => localStorage.getItem("cm_refresh_token");
-  const clearRefreshToken = ()   => localStorage.removeItem("cm_refresh_token");
-
   const buildFullPhone = (dc, ph) => dc + ph.replace(/\D/g, "");
   const isProfileComplete = (u) => !!String(u?.firstName || "").trim();
 
   const refreshSession = useCallback(async () => {
-    const rt = loadRefreshToken();
-    if (!rt) return null;
-    const res = await api.refreshToken(rt);
+    const res = await api.refreshToken();
     if (res?.token) {
       setToken(res.token);
-      saveRefreshToken(res.refreshToken);
       return res;
     }
     return null;
@@ -37,7 +30,7 @@ export function useAuth() {
 
   const tryRefresh = useCallback(async () => {
     try { return !!(await refreshSession()); }
-    catch (_) { clearRefreshToken(); return false; }
+    catch (_) { return false; }
   }, [refreshSession]);
 
   const ensureDeviceOrRecover = useCallback(async () => {
@@ -63,7 +56,7 @@ export function useAuth() {
       } catch (_firstErr) {
         // JWT expired but refresh token may still be valid
         const refreshed = await tryRefresh();
-        if (!refreshed) { clearToken(); clearRefreshToken(); setScreen("auth"); return; }
+        if (!refreshed) { clearToken(); setScreen("auth"); return; }
         meData = await api.getMe();
       }
       setMe(meData);
@@ -71,14 +64,13 @@ export function useAuth() {
       if (!isProfileComplete(meData)) { setScreen("setup"); return; }
       onRestored(meData);
     } catch {
-      clearToken(); clearRefreshToken(); setScreen("auth");
+      clearToken(); setScreen("auth");
     }
   }, [tryRefresh, ensureDeviceOrRecover]);
 
   /** Called after a successful OTP / email login — sets JWT and registers device. */
   const completeTokenLogin = useCallback(async (res, onSuccess) => {
     setToken(res.token);
-    saveRefreshToken(res.refreshToken);
     await ensureDeviceRegistered(res.deviceRegistrationToken);
     const meData = await api.getMe();
     setMe(meData);
@@ -165,9 +157,8 @@ export function useAuth() {
   }, [email, password, completeTokenLogin]);
 
   const logout = useCallback(async () => {
-    const rt = loadRefreshToken();
-    if (rt) { try { await api.logout(rt); } catch (_) { /* ignore optional failure */ } }
-    clearToken(); clearRefreshToken(); setMe(null); setSetupToken(null); setScreen("auth");
+    try { await api.logout(); } catch (_) { /* ignore optional failure */ }
+    clearToken(); setMe(null); setSetupToken(null); setScreen("auth");
     if (typeof window !== "undefined" && window.location?.reload) {
       window.location.reload();
     }

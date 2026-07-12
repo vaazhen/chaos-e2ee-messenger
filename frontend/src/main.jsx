@@ -8,7 +8,7 @@ import "./crypto-engine.js";
 if (!window.e2ee) {
   console.warn(
     "[E2EE] crypto-engine.js is not loaded. " +
-    "Check VITE_BACKEND_URL in frontend/.env and make sure the backend is running on port 8080."
+    "Check WebCrypto support and crypto-engine module initialization."
   );
 }
 

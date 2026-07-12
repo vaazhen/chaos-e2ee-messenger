@@ -25,8 +25,8 @@
     "format": "prettier --check \"src/**/*.{js,jsx,css}\"",
     "format:fix": "prettier --write \"src/**/*.{js,jsx,css}\"",
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
-    "electron:build": "vite build && electron-builder",
-    "electron:build:win": "vite build && electron-builder --win",
+    "electron:build": "node scripts/validate-electron-env.mjs && vite build --mode electron && electron-builder",
+    "electron:build:win": "node scripts/validate-electron-env.mjs && vite build --mode electron && electron-builder --win",
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {

@@ -14,10 +14,8 @@
 #   - Fall back to plain HTTP for localhost
 
 {$DOMAIN:localhost} {
-    # Self-signed HTTPS for IP-only demo (WebCrypto requires HTTPS)
-    tls internal
-
-    reverse_proxy frontend:80
+    # Caddy obtains a public certificate for real domains and uses its local CA for localhost.
+    reverse_proxy frontend:8080
 
     log {
         output file /data/caddy/access.log {

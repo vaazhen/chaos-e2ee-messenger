@@ -56,3 +56,5 @@ frontend/electron/tray-icon.png
 
 # opencode
 .opencode/
+# Packaged Electron endpoints (copy from .env.electron.example)
+frontend/.env.electron

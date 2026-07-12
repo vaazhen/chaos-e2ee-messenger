@@ -2,10 +2,17 @@ name: CI/CD
 
 on:
   push:
-    branches: [ main, master ]
-    tags: [ 'v*' ]
+    branches: [main, master]
+    tags: ['v*']
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+permissions:
+  contents: read
 
 env:
   REGISTRY: ghcr.io
@@ -14,9 +21,9 @@ env:
 
 jobs:
   backend-build:
-    name: Backend Build & Test
+    name: Backend verify
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: backend
@@ -30,23 +37,31 @@ jobs:
           java-version: '17'
           cache: maven
 
-      - name: Run backend checkstyle
-        run: mvn checkstyle:check
+      - name: Verify backend
+        run: mvn --batch-mode --no-transfer-progress verify
 
-      - name: Run backend tests & verify
-        run: mvn verify
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-reports
+          path: |
+            backend/target/surefire-reports
+            backend/target/site/jacoco
+          if-no-files-found: ignore
+          retention-days: 14
 
-      - name: Upload JAR artifact
+      - name: Upload JAR
         uses: actions/upload-artifact@v4
         with:
           name: backend-jar
-          path: backend/target/*.jar
+          path: backend/target/app.jar
           retention-days: 7
 
   frontend-build:
-    name: Frontend Build & Test
+    name: Frontend verify
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: frontend
@@ -57,129 +72,217 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20.11.1'
-          cache: 'npm'
+          cache: npm
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
-        run: npm ci --no-audit --no-fund
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
-      - name: Run frontend lint
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Lint
         run: npm run lint
 
-      - name: Run frontend tests
-        run: npm test
+      - name: Test with coverage
+        run: npm run test:coverage -- --run
 
-      - name: Build frontend
+      - name: Build
         run: npm run build
 
-      - name: Upload dist artifact
+      - name: Upload frontend artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: frontend-dist
-          path: frontend/dist
-          retention-days: 7
+          name: frontend-artifacts
+          path: |
+            frontend/dist
+            frontend/coverage
+          if-no-files-found: ignore
+          retention-days: 14
+
+  dependency-review:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+
+  codeql:
+    name: CodeQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [java-kotlin, javascript-typescript]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+      - uses: github/codeql-action/autobuild@v3
+      - uses: github/codeql-action/analyze@v3
 
   docker-build:
-    name: Build & Push Docker Images
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v'))
-    needs: [backend-build, frontend-build]
+    name: Build and publish images
+    if: github.event_name == 'push'
+    needs: [backend-build, frontend-build, codeql]
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
+      id-token: write
+    outputs:
+      backend-image: ${{ steps.images.outputs.backend }}
+      frontend-image: ${{ steps.images.outputs.frontend }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Log in to GitHub Container Registry
+      - name: Define immutable image names
+        id: images
+        run: |
+          echo "backend=${REGISTRY}/${IMAGE_NAME_BACKEND}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "frontend=${REGISTRY}/${IMAGE_NAME_FRONTEND}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata for backend
-        id: meta-backend
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BACKEND }}
-          tags: |
-            type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha,format=short
-
-      - name: Extract metadata for frontend
-        id: meta-frontend
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FRONTEND }}
-          tags: |
-            type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha,format=short
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-        with:
-          driver: docker-container
+      - uses: docker/setup-buildx-action@v3
 
       - name: Build and push backend
         uses: docker/build-push-action@v6
         with:
           context: backend
           push: true
-          tags: ${{ steps.meta-backend.outputs.tags }}
-          labels: ${{ steps.meta-backend.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: ${{ steps.images.outputs.backend }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+          provenance: mode=max
+          sbom: true
 
       - name: Build and push frontend
         uses: docker/build-push-action@v6
         with:
           context: frontend
           push: true
-          tags: ${{ steps.meta-frontend.outputs.tags }}
-          labels: ${{ steps.meta-frontend.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: ${{ steps.images.outputs.frontend }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+          provenance: mode=max
+          sbom: true
 
-  deploy:
-    name: Deploy to Kubernetes
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v'))
+  container-scan:
+    name: Scan published images
+    if: github.event_name == 'push'
     needs: [docker-build]
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
+    strategy:
+      matrix:
+        image: [backend, frontend]
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve image
+        id: resolve
+        env:
+          BACKEND_IMAGE: ${{ needs.docker-build.outputs.backend-image }}
+          FRONTEND_IMAGE: ${{ needs.docker-build.outputs.frontend-image }}
+        run: |
+          if [ "${{ matrix.image }}" = "backend" ]; then
+            echo "value=$BACKEND_IMAGE" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=$FRONTEND_IMAGE" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Scan for high and critical vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ steps.resolve.outputs.value }}
+          format: sarif
+          output: trivy-${{ matrix.image }}.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-${{ matrix.image }}.sarif
+          category: trivy-${{ matrix.image }}
+
+  deploy:
+    name: Deploy production
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [docker-build, container-scan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up kubectl
         uses: azure/setup-kubectl@v4
         with:
-          version: 'latest'
+          version: v1.31.4
 
       - name: Configure kubeconfig
-        id: kubeconfig
         env:
           KUBECONFIG_B64: ${{ secrets.KUBECONFIG }}
         run: |
-          if [ -z "$KUBECONFIG_B64" ]; then
-            echo "KUBECONFIG secret not set — deploy will be skipped"
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-          else
-            mkdir -p "$HOME/.kube"
-            echo "$KUBECONFIG_B64" | base64 -d > "$HOME/.kube/config"
-            echo "configured=true" >> "$GITHUB_OUTPUT"
-          fi
+          test -n "$KUBECONFIG_B64" || { echo "KUBECONFIG secret is required" >&2; exit 1; }
+          mkdir -p "$HOME/.kube"
+          printf '%s' "$KUBECONFIG_B64" | base64 -d > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+          kubectl auth can-i patch deployment -n chaos-messenger | grep -qx yes
 
-      - name: Deploy to Kubernetes
-        if: steps.kubeconfig.outputs.configured == 'true'
+      - name: Deploy immutable images
         env:
           REGISTRY: ${{ env.REGISTRY }}
           REPOSITORY: ${{ github.repository }}
           TAG: ${{ github.sha }}
         run: |
-          kustomize build k8s/ | envsubst | kubectl apply --validate=false -f -
-          kubectl rollout status deployment/chaos-backend -n chaos-messenger --timeout=5m || echo "Backend rollout check skipped"
-          kubectl rollout status deployment/chaos-frontend -n chaos-messenger --timeout=5m || echo "Frontend rollout check skipped"
+          test -n "$REGISTRY" -a -n "$REPOSITORY" -a -n "$TAG"
+          kubectl kustomize k8s > /tmp/chaos-manifests.yaml
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          path = Path('/tmp/chaos-manifests.yaml')
+          rendered = path.read_text()
+          for name in ('REGISTRY', 'REPOSITORY', 'TAG'):
+              rendered = rendered.replace('${' + name + '}', os.environ[name])
+          if '${' in rendered:
+              raise SystemExit('Unresolved manifest placeholder remains')
+          path.write_text(rendered)
+          PY
+          kubectl apply --server-side --field-manager=github-actions -f /tmp/chaos-manifests.yaml
+          kubectl rollout status deployment/chaos-backend -n chaos-messenger --timeout=7m
+          kubectl rollout status deployment/chaos-frontend -n chaos-messenger --timeout=5m
+          kubectl get pods -n chaos-messenger

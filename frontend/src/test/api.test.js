@@ -23,8 +23,30 @@ describe("api", () => {
     vi.resetModules();
     vi.restoreAllMocks();
     localStorage.clear();
+    sessionStorage.clear();
     delete window.e2ee;
     global.fetch = vi.fn();
+  });
+
+  it("keeps access tokens in memory and removes legacy persisted credentials", async () => {
+    localStorage.setItem("cm_token", "legacy-access");
+    localStorage.setItem("cm_refresh_token", "legacy-refresh");
+    sessionStorage.setItem("cm_token", "legacy-session-access");
+
+    const { getToken, setToken, clearToken } = await import("../api");
+
+    expect(getToken()).toBe("");
+    expect(localStorage.getItem("cm_token")).toBeNull();
+    expect(localStorage.getItem("cm_refresh_token")).toBeNull();
+    expect(sessionStorage.getItem("cm_token")).toBeNull();
+
+    setToken("runtime-only");
+    expect(getToken()).toBe("runtime-only");
+    expect(localStorage.getItem("cm_token")).toBeNull();
+    expect(sessionStorage.getItem("cm_token")).toBeNull();
+
+    clearToken();
+    expect(getToken()).toBe("");
   });
 
   it("call attaches JWT, current device id, JSON content type and custom headers", async () => {

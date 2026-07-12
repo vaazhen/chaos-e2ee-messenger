@@ -5,6 +5,11 @@ metadata:
   namespace: chaos-messenger
 spec:
   replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app: chaos-backend
@@ -14,20 +19,53 @@ spec:
         app: chaos-backend
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "8080"
+        prometheus.io/port: "9091"
         prometheus.io/path: "/actuator/prometheus"
     spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: chaos-backend
       containers:
         - name: backend
-          image: ${REGISTRY:-ghcr.io}/${REPOSITORY:-chaos-messenger}/backend:${TAG:-latest}
-          imagePullPolicy: Always
+          image: ${REGISTRY}/${REPOSITORY}/backend:${TAG}
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           env:
             - name: HOSTNAME
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: chaos-messenger-secret
+                  key: POSTGRES_PASSWORD
+            - name: SPRING_DATA_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: chaos-messenger-secret
+                  key: REDIS_PASSWORD
             - name: CHAOS_KAFKA_REALTIME_GROUP_ID
               value: "chaos-realtime-$(HOSTNAME)"
+            - name: SERVER_SHUTDOWN
+              value: "graceful"
           envFrom:
             - configMapRef:
                 name: chaos-messenger-config
@@ -41,32 +79,46 @@ spec:
           volumeMounts:
             - name: attachments
               mountPath: /app/attachments
+            - name: tmp
+              mountPath: /tmp
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: management
+            failureThreshold: 30
+            periodSeconds: 5
+            timeoutSeconds: 3
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
-              port: 8080
-            initialDelaySeconds: 60
-            periodSeconds: 30
-            timeoutSeconds: 5
+              port: management
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
-              port: 8080
-            initialDelaySeconds: 30
+              port: management
             periodSeconds: 10
             timeoutSeconds: 3
+            failureThreshold: 3
           resources:
             requests:
-              memory: "256Mi"
+              memory: "384Mi"
               cpu: "250m"
             limits:
-              memory: "768Mi"
+              memory: "1Gi"
               cpu: "1000m"
       volumes:
         - name: attachments
           persistentVolumeClaim:
             claimName: chaos-attachments
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi
 ---
+# Reference storage for encrypted attachments. For multi-zone production,
+# replace this filesystem backend with S3-compatible object storage.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -89,7 +141,7 @@ spec:
   ports:
     - name: http
       port: 8080
-      targetPort: 8080
+      targetPort: http
     - name: management
       port: 9091
-      targetPort: 9091
+      targetPort: management

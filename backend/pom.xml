@@ -9,7 +9,7 @@
   </parent>
   <groupId>ru.messenger</groupId>
   <artifactId>chaos-messenger</artifactId>
-  <version>0.0.1-SNAPSHOT</version>
+  <version>1.0.0</version>
   <name>chaos-messenger</name>
   <description>chaos-messenger</description>
   <url>https://github.com/vaazhen/chaos-messenger</url>

@@ -1,9 +1,28 @@
 import { API_BASE as _API_BASE } from "./config";
 export const API_BASE = _API_BASE;
 
-export const getToken   = () => localStorage.getItem("cm_token") || "";
-export const setToken   = (token) => { if (token) localStorage.setItem("cm_token", token); };
-export const clearToken = () => { localStorage.removeItem("cm_token"); };
+let accessToken = "";
+
+// Remove credentials left by earlier releases. Access tokens are memory-only;
+// the HttpOnly refresh cookie restores the session after a reload.
+try {
+  sessionStorage.removeItem("cm_token");
+  localStorage.removeItem("cm_token");
+  localStorage.removeItem("cm_refresh_token");
+} catch (_) { /* storage may be unavailable in hardened browser contexts */ }
+
+export const getToken = () => accessToken;
+export const setToken = (token) => {
+  accessToken = token || "";
+};
+export const clearToken = () => {
+  accessToken = "";
+  try {
+    sessionStorage.removeItem("cm_token");
+    localStorage.removeItem("cm_token");
+    localStorage.removeItem("cm_refresh_token");
+  } catch (_) { /* ignore unavailable storage */ }
+};
 
 function safeUUID() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -35,18 +54,15 @@ async function tryAutoRefresh() {
   if (_refreshPromise) return _refreshPromise;
   _refreshPromise = (async () => {
     try {
-      const rt = localStorage.getItem("cm_refresh_token");
-      if (!rt) return false;
       const response = await fetch(API_BASE + "/auth/refresh", {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken: rt }),
       });
       if (!response.ok) return false;
       const data = await response.json();
       if (data?.token) {
         setToken(data.token);
-        if (data.refreshToken) localStorage.setItem("cm_refresh_token", data.refreshToken);
         return true;
       }
       return false;
@@ -61,6 +77,7 @@ export async function call(path, opts = {}) {
   const deviceId = getCurrentDeviceId();
 
   let response = await fetch(API_BASE + path, {
+    credentials: "include",
     ...opts,
     headers: {
       "Content-Type": "application/json",
@@ -76,6 +93,7 @@ export async function call(path, opts = {}) {
     if (refreshed) {
       const newToken = getToken();
       response = await fetch(API_BASE + path, {
+        credentials: "include",
         ...opts,
         headers: {
           "Content-Type": "application/json",
@@ -105,8 +123,8 @@ export const api = {
   registerEmail:  (email, password) => call("/auth/register", { method: "POST", body: JSON.stringify({ email, password }) }),
   loginEmail:     (email, password) => call("/auth/login",    { method: "POST", body: JSON.stringify({ email, password }) }),
 
-  refreshToken:   (refreshToken) => call("/auth/refresh", { method: "POST", body: JSON.stringify({ refreshToken }) }),
-  logout:         (refreshToken) => call("/auth/logout",  { method: "POST", body: JSON.stringify({ refreshToken }) }),
+  refreshToken:   () => call("/auth/refresh", { method: "POST" }),
+  logout:         () => call("/auth/logout",  { method: "POST" }),
 
   // ── Profile ───────────────────────────────────────────────────────────────
   getMe:          ()     => call("/users/me"),
@@ -164,6 +182,7 @@ export const api = {
     if (chatId !== null && chatId !== undefined) form.append("chatId", String(chatId));
     const res = await fetch(API_BASE + "/attachments/upload", {
       method: "POST",
+      credentials: "include",
       headers: {
         ...(token ? { Authorization: "Bearer " + token } : {}),
         ...(deviceId ? { "X-Device-Id": deviceId } : {}),
@@ -177,6 +196,7 @@ export const api = {
     const token = getToken();
     const deviceId = getCurrentDeviceId();
     const res = await fetch(API_BASE + "/attachments/" + attachmentId, {
+      credentials: "include",
       headers: {
         ...(token ? { Authorization: "Bearer " + token } : {}),
         ...(deviceId ? { "X-Device-Id": deviceId } : {}),
@@ -193,6 +213,7 @@ export const api = {
     const token = getToken();
     const deviceId = getCurrentDeviceId();
     const res = await fetch(API_BASE + "/push/vapid-public-key", {
+      credentials: "include",
       headers: {
         ...(token ? { Authorization: "Bearer " + token } : {}),
         ...(deviceId ? { "X-Device-Id": deviceId } : {}),
@@ -215,6 +236,7 @@ export const api = {
     const token = getToken();
     const deviceId = getCurrentDeviceId();
     const res = await fetch(API_BASE + "/backup/export", {
+      credentials: "include",
       headers: {
         "Content-Type": "application/json",
         "X-Backup-Passphrase": passphrase,

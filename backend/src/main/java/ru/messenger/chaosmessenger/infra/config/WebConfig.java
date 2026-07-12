@@ -5,7 +5,6 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
-import java.util.Arrays;
 
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
@@ -15,10 +14,7 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
-        String[] origins = Arrays.stream(allowedOriginPatterns.split(","))
-                .map(String::trim)
-                .filter(origin -> !origin.isBlank())
-                .toArray(String[]::new);
+        String[] origins = AllowedOriginParser.parse(allowedOriginPatterns);
 
         registry.addMapping("/**")
                 .allowedOriginPatterns(origins)
