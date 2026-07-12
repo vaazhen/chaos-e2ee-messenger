@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 
 const wsMocks = vi.hoisted(() => {
   const clients = [];
@@ -30,6 +30,7 @@ const wsMocks = vi.hoisted(() => {
     clients,
     MockClient,
     getToken: vi.fn(() => "jwt-token"),
+    syncRealtime: vi.fn(async (after = 0) => ({ events: [], nextCursor: after, hasMore: false })),
     getOrCreateDeviceId: vi.fn(() => "device-a"),
     sockJs: vi.fn(() => ({ socket: true })),
   };
@@ -46,6 +47,7 @@ vi.mock("sockjs-client", () => ({
 vi.mock("../api", () => ({
   getToken: wsMocks.getToken,
   getCurrentDeviceId: vi.fn(() => "device-a"),
+  api: { syncRealtime: wsMocks.syncRealtime },
 }));
 
 vi.mock("../deviceId", () => ({
@@ -60,6 +62,9 @@ describe("useWebSocket", () => {
   beforeEach(() => {
     wsMocks.clients.length = 0;
     vi.clearAllMocks();
+    localStorage.clear();
+    wsMocks.getToken.mockReturnValue("jwt-token");
+    wsMocks.syncRealtime.mockImplementation(async (after = 0) => ({ events: [], nextCursor: after, hasMore: false }));
   });
 
   it("does not connect when disabled, user is missing or JWT is missing", async () => {
@@ -130,6 +135,7 @@ describe("useWebSocket", () => {
       destination: "/app/user.online",
       body: "{}",
     });
+    await waitFor(() => expect(wsMocks.syncRealtime).toHaveBeenCalled());
 
     act(() => {
       client.subscriptions["/topic/users/alice/chats"].cb({ body: "{}" });
@@ -166,6 +172,7 @@ describe("useWebSocket", () => {
     }));
 
     const client = wsMocks.clients[0];
+    await waitFor(() => expect(wsMocks.syncRealtime).toHaveBeenCalled());
     const callback = client.subscriptions["/topic/devices/device-a/chats/100"].cb;
     const frame = {
       body: JSON.stringify({ eventId: "event-1", type: "MESSAGE_CREATED", chatId: 100 }),
@@ -177,6 +184,43 @@ describe("useWebSocket", () => {
     });
 
     expect(onMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("replays missed durable events before buffered live events and persists the cursor", async () => {
+    wsMocks.syncRealtime.mockResolvedValueOnce({
+      events: [{
+        sequence: 4,
+        eventId: "missed-4",
+        destination: "/chats/100",
+        payload: { type: "MESSAGE_CREATED", chatId: 100 },
+      }],
+      nextCursor: 4,
+      hasMore: false,
+    });
+    const { default: useWebSocket } = await import("../hooks/useWebSocket");
+    const received = [];
+
+    renderHook(() => useWebSocket({
+      me: { username: "alice" },
+      chatIds: [100],
+      onMessage: (event) => received.push(event.eventId),
+      enabled: true,
+    }));
+
+    const client = wsMocks.clients[0];
+    act(() => {
+      client.subscriptions["/topic/devices/device-a/chats/100"].cb({
+        body: JSON.stringify({
+          sequence: 5,
+          eventId: "live-5",
+          type: "MESSAGE_CREATED",
+          chatId: 100,
+        }),
+      });
+    });
+
+    await waitFor(() => expect(received).toEqual(["missed-4", "live-5"]));
+    expect(localStorage.getItem("cm_realtime_cursor:device-a")).toBe("5");
   });
 
   it("updates chat subscriptions on chatIds changes and unsubscribes removed chats", async () => {

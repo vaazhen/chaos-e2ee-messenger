@@ -1,6 +1,7 @@
 import {
     readSecureRecord,
     writeSecureRecord,
+    writeSecureRecordsAtomic,
     deleteSecureRecord,
     clearSecureStorageForTests,
     secureStorageBackend
@@ -222,6 +223,8 @@ await (async function () {
     const DEVICE_RECORD = 'device-bundle-v1';
     const SESSION_RECORD = 'ratchet-sessions-v1';
     const TRUST_RECORD = 'identity-trust-v1';
+    const PREKEY_REPLENISH_THRESHOLD = 20;
+    const PREKEY_TARGET_COUNT = 50;
 
     let localDeviceBundle = null;
     let sessionState = {};
@@ -347,6 +350,27 @@ await (async function () {
         await saveSessions(sessions);
     }
 
+    async function commitRecipientBootstrap(localBundle, remoteDeviceId, session, consumedPreKeyId) {
+        const nextBundle = structuredClone(localBundle);
+        if (consumedPreKeyId != null) {
+            const before = nextBundle.oneTimePreKeys?.length || 0;
+            nextBundle.oneTimePreKeys = (nextBundle.oneTimePreKeys || [])
+                .filter(key => key.preKeyId !== consumedPreKeyId);
+            if ((nextBundle.oneTimePreKeys?.length || 0) === before) {
+                throw new Error('One-time prekey was already consumed: ' + consumedPreKeyId);
+            }
+        }
+
+        const nextSessions = loadSessions();
+        nextSessions[sessionKey(nextBundle.deviceId, remoteDeviceId)] = structuredClone(session);
+        await writeSecureRecordsAtomic({
+            [DEVICE_RECORD]: nextBundle,
+            [SESSION_RECORD]: nextSessions
+        });
+        localDeviceBundle = nextBundle;
+        sessionState = nextSessions;
+    }
+
     async function withInProcessLock(name, operation) {
         const previous = inProcessLocks.get(name) || Promise.resolve();
         let release;
@@ -429,6 +453,20 @@ await (async function () {
 
     // ─── Device bundle generation and registration ───────────────────────────
 
+    async function generateOneTimePreKeys(count, startAt = 1000) {
+        const generated = [];
+        for (let i = 0; i < count; i++) {
+            const kp = await generateX25519KeyPair();
+            generated.push({
+                preKeyId: startAt + i,
+                publicKey: await exportRawPublicKey(kp.publicKey),
+                privateKeyPkcs8: await exportPkcs8PrivateKey(kp.privateKey),
+                published: false
+            });
+        }
+        return generated;
+    }
+
     async function buildNewDeviceBundle() {
         const deviceId = 'device-' + safeUUID();
         localStorage.setItem(DEVICE_ID_KEY_PREFIX, deviceId);
@@ -436,15 +474,7 @@ await (async function () {
         const registrationId = randomRegistrationId();
         const identity = await generateX25519KeyPair();
         const signedPreKey = await generateX25519KeyPair();
-        const oneTimePreKeys = [];
-        for (let i = 0; i < 50; i++) {
-            const kp = await generateX25519KeyPair();
-            oneTimePreKeys.push({
-                preKeyId: 1000 + i,
-                publicKey: await exportRawPublicKey(kp.publicKey),
-                privateKeyPkcs8: await exportPkcs8PrivateKey(kp.privateKey)
-            });
-        }
+        const oneTimePreKeys = await generateOneTimePreKeys(PREKEY_TARGET_COUNT, 1000);
         const signedPreKeyPublic  = await exportRawPublicKey(signedPreKey.publicKey);
         const identityPrivate     = await exportPkcs8PrivateKey(identity.privateKey);
         const identityPublic      = await exportRawPublicKey(identity.publicKey);
@@ -503,6 +533,44 @@ await (async function () {
         await api('/api/crypto/devices/register', { method: 'POST', body: JSON.stringify(body) });
     }
 
+    async function replenishOneTimePreKeys(api) {
+        if (!api || !localDeviceBundle) return localDeviceBundle;
+
+        const serverPool = await api('/api/crypto/devices/current/prekeys', { method: 'GET' });
+        const serverAvailable = Math.max(0, Number(serverPool?.available || 0));
+        let nextBundle = structuredClone(localDeviceBundle);
+        let unpublished = (nextBundle.oneTimePreKeys || []).filter(key => key.published === false);
+
+        if (serverAvailable + unpublished.length < PREKEY_REPLENISH_THRESHOLD) {
+            const existingIds = (nextBundle.oneTimePreKeys || []).map(key => Number(key.preKeyId) || 0);
+            const startAt = Math.max(1000, ...existingIds) + 1;
+            const needed = PREKEY_TARGET_COUNT - serverAvailable - unpublished.length;
+            const generated = await generateOneTimePreKeys(Math.max(0, needed), startAt);
+            nextBundle.oneTimePreKeys = [...(nextBundle.oneTimePreKeys || []), ...generated];
+            await saveLocalDeviceBundle(nextBundle);
+            unpublished = [...unpublished, ...generated];
+        }
+
+        if (unpublished.length > 0) {
+            await api('/api/crypto/devices/current/prekeys', {
+                method: 'POST',
+                body: JSON.stringify({
+                    oneTimePreKeys: unpublished.map(key => ({
+                        preKeyId: key.preKeyId,
+                        publicKey: key.publicKey
+                    }))
+                })
+            });
+            const uploadedIds = new Set(unpublished.map(key => key.preKeyId));
+            nextBundle = structuredClone(localDeviceBundle);
+            nextBundle.oneTimePreKeys = (nextBundle.oneTimePreKeys || []).map(key =>
+                uploadedIds.has(key.preKeyId) ? { ...key, published: true } : key
+            );
+            await saveLocalDeviceBundle(nextBundle);
+        }
+        return getLocalDeviceBundle();
+    }
+
     async function ensureDeviceRegistered(api) {
         const registrationScope = getOrCreateDeviceId();
         const canRegister = !!(api && (api.__canRegisterDevice || api.canRegisterDevice));
@@ -530,8 +598,13 @@ await (async function () {
 
             if (shouldUploadOneTimeKeys || canRegister) {
                 await registerBundleOnServer(api, bundle, true);
+                bundle = structuredClone(bundle);
+                bundle.oneTimePreKeys = (bundle.oneTimePreKeys || []).map(key => ({ ...key, published: true }));
+                await saveLocalDeviceBundle(bundle);
             } else {
                 log('[E2EE] Existing device detected, skipping re-registration:', bundle.deviceId);
+                await replenishOneTimePreKeys(api);
+                bundle = getLocalDeviceBundle();
             }
             return bundle;
         })().catch((err) => {
@@ -696,7 +769,6 @@ await (async function () {
             version: 4
         };
 
-        await storeSession(localBundle.deviceId, envelope.senderDeviceId, session);
         return session;
     }
 
@@ -949,11 +1021,14 @@ await (async function () {
         }
 
         let session = getSession(localBundle.deviceId, envelope.senderDeviceId);
+        const isPreKeyBootstrap = envelope.messageType === 'PREKEY_WHISPER';
 
-        if (envelope.messageType === 'PREKEY_WHISPER') {
+        if (isPreKeyBootstrap) {
+            if (session) {
+                throw new Error('PREKEY_REPLAY:' + envelope.senderDeviceId);
+            }
             log('[decrypt] Bootstrap X3DH + Double Ratchet session with', envelope.senderDeviceId);
-            await bootstrapRecipientSession(localBundle, envelope);
-            session = getSession(localBundle.deviceId, envelope.senderDeviceId);
+            session = await bootstrapRecipientSession(localBundle, envelope);
         }
 
         if (!session) {
@@ -965,7 +1040,16 @@ await (async function () {
         }
 
         const plainText = await decryptWithDoubleRatchet(session, envelope);
-        await storeSession(localBundle.deviceId, envelope.senderDeviceId, session);
+        if (isPreKeyBootstrap) {
+            await commitRecipientBootstrap(
+                localBundle,
+                envelope.senderDeviceId,
+                session,
+                envelope.oneTimePreKeyId
+            );
+        } else {
+            await storeSession(localBundle.deviceId, envelope.senderDeviceId, session);
+        }
 
         log('[decrypt] OK messageIndex=' + envelope.messageIndex);
         return plainText;
@@ -1006,6 +1090,7 @@ await (async function () {
         resetLocalDeviceIdentity,
         importLocalDeviceBundle,
         ensureDeviceRegistered,
+        replenishOneTimePreKeys,
         buildFanoutRequest,
         decryptEnvelope,
         encryptFile,

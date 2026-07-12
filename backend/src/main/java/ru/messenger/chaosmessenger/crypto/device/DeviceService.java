@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.messenger.chaosmessenger.crypto.dto.DeviceRegistrationRequest;
 import ru.messenger.chaosmessenger.crypto.dto.DeviceRegistrationResponse;
+import ru.messenger.chaosmessenger.crypto.dto.OneTimePreKeyDto;
 import ru.messenger.chaosmessenger.crypto.dto.UserDeviceResponse;
 import ru.messenger.chaosmessenger.crypto.prekey.OneTimePreKey;
 import ru.messenger.chaosmessenger.crypto.prekey.OneTimePreKeyRepository;
@@ -143,6 +144,46 @@ public class DeviceService {
 
         UserDevice saved = userDeviceRepository.save(device);
         return toResponse(saved, currentDeviceId);
+    }
+
+    @Transactional(readOnly = true)
+    public int availableOneTimePreKeys(UserDevice device) {
+        return Math.toIntExact(oneTimePreKeyRepository.countByDeviceIdAndUsedAtIsNull(device.getId()));
+    }
+
+    @Transactional
+    public int appendOneTimePreKeys(UserDevice device, List<OneTimePreKeyDto> keys) {
+        if (keys == null || keys.isEmpty()) {
+            throw new IllegalArgumentException("At least one one-time pre-key is required");
+        }
+        Set<Integer> requestIds = new HashSet<>();
+        for (OneTimePreKeyDto dto : keys) {
+            if (dto.preKeyId() == null || dto.publicKey() == null || dto.publicKey().isBlank()) {
+                throw new IllegalArgumentException("One-time pre-key id and public key are required");
+            }
+            if (!requestIds.add(dto.preKeyId())) {
+                throw new IllegalArgumentException("Duplicate one-time pre-key id: " + dto.preKeyId());
+            }
+
+            Optional<OneTimePreKey> existing = oneTimePreKeyRepository
+                    .findByDeviceIdAndPreKeyId(device.getId(), dto.preKeyId());
+            if (existing.isPresent()) {
+                if (!existing.get().getPublicKey().equals(dto.publicKey())) {
+                    throw new IllegalArgumentException(
+                            "One-time pre-key id already exists with different key material: " + dto.preKeyId());
+                }
+                continue;
+            }
+
+            oneTimePreKeyRepository.save(OneTimePreKey.builder()
+                    .device(device)
+                    .preKeyId(dto.preKeyId())
+                    .publicKey(dto.publicKey())
+                    .createdAt(LocalDateTime.now())
+                    .build());
+        }
+        oneTimePreKeyRepository.flush();
+        return Math.toIntExact(oneTimePreKeyRepository.countByDeviceIdAndUsedAtIsNull(device.getId()));
     }
 
     private UserDeviceResponse toResponse(UserDevice device, String currentDeviceId) {

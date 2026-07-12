@@ -130,6 +130,7 @@ describe("crypto-engine frontend safety checks", () => {
     await activateDevice(bundle);
 
     const api = vi.fn(async (path) => {
+      if (path === "/api/crypto/devices/current/prekeys") return { available: 50 };
       expect(path).toBe("/api/crypto/resolve-chat-devices/100");
       return { targetDevices: [{ userId: 1, deviceId: bundle.deviceId }] };
     });
@@ -187,6 +188,12 @@ describe("Double Ratchet full protocol cycle", () => {
   }
 
   function makeApi(targetBundle) {
+    const oneTimePreKey = targetBundle.oneTimePreKeys?.[0]
+      ? {
+          preKeyId: targetBundle.oneTimePreKeys[0].preKeyId,
+          publicKey: targetBundle.oneTimePreKeys[0].publicKey,
+        }
+      : null;
     return vi.fn(async (path) => {
       if (path.includes("resolve-chat-devices")) {
         return {
@@ -201,10 +208,24 @@ describe("Double Ratchet full protocol cycle", () => {
         };
       }
       if (path.includes("reserve-prekey")) {
-        return { signedPreKey: null, oneTimePreKey: null };
+        return { signedPreKey: targetBundle.signedPreKey, oneTimePreKey };
       }
       return {};
     });
+  }
+
+  async function withOneTimePreKey(bundle, preKeyId = 1001) {
+    const keyPair = await crypto.subtle.generateKey({ name: "X25519" }, true, ["deriveBits"]);
+    const publicKey = new Uint8Array(await crypto.subtle.exportKey("raw", keyPair.publicKey));
+    const privateKey = new Uint8Array(await crypto.subtle.exportKey("pkcs8", keyPair.privateKey));
+    return {
+      ...bundle,
+      oneTimePreKeys: [{
+        preKeyId,
+        publicKey: bytesToB64(publicKey),
+        privateKeyPkcs8: bytesToB64(privateKey),
+      }],
+    };
   }
 
   beforeAll(async () => {
@@ -302,6 +323,47 @@ describe("Double Ratchet full protocol cycle", () => {
     };
     await expect(window.e2ee.buildFanoutRequest(makeApi(changedBob), 100, "must block"))
       .rejects.toThrow(`IDENTITY_KEY_CHANGED:${Bob.deviceId}`);
+  }, 30000);
+
+
+  it("consumes a one-time pre-key only after authenticated bootstrap and rejects replay", async () => {
+    await loadCryptoEngine();
+    const bobWithPreKey = await withOneTimePreKey(Bob, 1777);
+
+    await activateDevice(Alice);
+    const fanout = await window.e2ee.buildFanoutRequest(makeApi(bobWithPreKey), 100, "one-time hello");
+    const envelope = fanout.envelopes[0];
+    expect(envelope.oneTimePreKeyId).toBe(1777);
+
+    await activateDevice(bobWithPreKey);
+    await expect(window.e2ee.decryptEnvelope({ ...envelope, senderDeviceId: Alice.deviceId }))
+      .resolves.toBe("one-time hello");
+    expect(window.e2ee.getLocalDeviceBundle().oneTimePreKeys).toEqual([]);
+
+    await expect(window.e2ee.decryptEnvelope({ ...envelope, senderDeviceId: Alice.deviceId }))
+      .rejects.toThrow(`PREKEY_REPLAY:${Alice.deviceId}`);
+  }, 30000);
+
+  it("keeps a one-time pre-key when bootstrap ciphertext authentication fails", async () => {
+    await loadCryptoEngine();
+    const bobWithPreKey = await withOneTimePreKey(Bob, 1888);
+
+    await activateDevice(Alice);
+    const fanout = await window.e2ee.buildFanoutRequest(makeApi(bobWithPreKey), 100, "authentic payload");
+    const envelope = fanout.envelopes[0];
+
+    await activateDevice(bobWithPreKey);
+    const tampered = {
+      ...envelope,
+      senderDeviceId: Alice.deviceId,
+      ciphertext: envelope.ciphertext.slice(0, -4) + "AAAA",
+    };
+    await expect(window.e2ee.decryptEnvelope(tampered)).rejects.toThrow();
+    expect(window.e2ee.getLocalDeviceBundle().oneTimePreKeys.map(key => key.preKeyId)).toEqual([1888]);
+    expect(window.e2ee.__exportSessionStateForTests()).toEqual({});
+
+    await expect(window.e2ee.decryptEnvelope({ ...envelope, senderDeviceId: Alice.deviceId }))
+      .resolves.toBe("authentic payload");
   }, 30000);
 
   it("rejects decryption when the local bundle is missing", async () => {

@@ -16,9 +16,13 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import ru.messenger.chaosmessenger.auth.service.DeviceRegistrationTokenService;
+import ru.messenger.chaosmessenger.crypto.device.CurrentDeviceService;
 import ru.messenger.chaosmessenger.crypto.device.DeviceService;
+import ru.messenger.chaosmessenger.crypto.device.UserDevice;
 import ru.messenger.chaosmessenger.crypto.dto.DeviceRegistrationRequest;
 import ru.messenger.chaosmessenger.crypto.dto.DeviceRegistrationResponse;
+import ru.messenger.chaosmessenger.crypto.dto.OneTimePreKeyPoolResponse;
+import ru.messenger.chaosmessenger.crypto.dto.OneTimePreKeyUploadRequest;
 import ru.messenger.chaosmessenger.crypto.dto.UserDeviceResponse;
 
 import java.util.List;
@@ -33,6 +37,7 @@ import java.util.List;
 public class DeviceController {
 
     private final DeviceService                  deviceService;
+    private final CurrentDeviceService           currentDeviceService;
     private final DeviceRegistrationTokenService deviceRegTokenService;
 
     @Operation(
@@ -92,6 +97,23 @@ public class DeviceController {
     ) {
         requireAuth(authentication);
         return deviceService.listMyDevices(authentication.getName(), currentDeviceId);
+    }
+
+    @Operation(summary = "Get the available one-time pre-key count for the current device")
+    @GetMapping("/current/prekeys")
+    public OneTimePreKeyPoolResponse oneTimePreKeyCount() {
+        UserDevice device = currentDeviceService.requireCurrentDevice();
+        return new OneTimePreKeyPoolResponse(deviceService.availableOneTimePreKeys(device));
+    }
+
+    @Operation(summary = "Append one-time pre-keys for the current device")
+    @PostMapping("/current/prekeys")
+    public OneTimePreKeyPoolResponse appendOneTimePreKeys(
+            @Valid @RequestBody OneTimePreKeyUploadRequest request
+    ) {
+        UserDevice device = currentDeviceService.requireCurrentDevice();
+        int available = deviceService.appendOneTimePreKeys(device, request.oneTimePreKeys());
+        return new OneTimePreKeyPoolResponse(available);
     }
 
     @Operation(summary = "Deactivate one of my devices")

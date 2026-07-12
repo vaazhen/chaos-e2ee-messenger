@@ -116,5 +116,27 @@ export async function ensureCurrentDeviceExists() {
     throw new Error(body?.message || `${r.status} ${r.statusText}`);
   }
 
+  if (window.e2ee?.replenishOneTimePreKeys) {
+    const baseUrl = API_BASE.replace(/\/api$/, "");
+    const cryptoApi = async (path, opts = {}) => {
+      const response = await fetch(baseUrl + path, {
+        ...opts,
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + token,
+          "X-Device-Id": deviceId,
+          ...opts.headers,
+        },
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body?.message || `${response.status}`);
+      }
+      return response.json().catch(() => null);
+    };
+    await window.e2ee.replenishOneTimePreKeys(cryptoApi);
+  }
+
   return deviceId;
 }
