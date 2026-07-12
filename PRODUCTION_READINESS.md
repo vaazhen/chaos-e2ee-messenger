@@ -2,169 +2,142 @@
 
 Status date: **2026-07-12**
 
-This document separates controls implemented in the repository from external work that must be completed before a high-risk public launch. “Implemented” means present in source and covered by the validation described in `VALIDATION_REPORT.md`; it does not mean independently audited.
+This file separates controls implemented in the repository from release work that requires a real infrastructure environment or an independent reviewer.
 
-## Readiness summary
+## Current status
 
-| Domain | Current status | Launch requirement |
+| Domain | Repository status | Remaining release gate |
 |---|---|---|
-| Client E2EE state | Hardened | Independent cryptographic audit |
-| Identity verification | Implemented per device | Key transparency / auditable directory |
-| Browser auth storage | Hardened | Pentest and session abuse testing |
-| Electron sandbox/IPC | Hardened baseline | Code signing, notarisation and desktop pentest |
-| Message delivery | At-least-once with event IDs | Reconnect/missed-event recovery under load |
-| Backend auth | Short JWT + rotating refresh family | Production Redis HA and operational revocation tests |
-| Attachments | Bounded local/PVC implementation | S3-compatible object storage and quotas |
-| PostgreSQL/Redis/Kafka | Demo/dev manifests supplied | Managed or operator-backed HA services |
-| Kubernetes workload security | Hardened stateless base | Cluster policy, NetworkPolicy and secret manager |
-| CI/CD | Security gates defined | Protected environments and organisation-specific credentials |
-| Observability | Metrics/logging stack supplied | SLOs, alerts, on-call and incident runbooks |
-| Validation | Frontend and static validation passed | Backend Maven, E2E and load suites in connected CI |
+| Client E2EE state | Hardened storage and concurrency controls | Independent cryptographic audit |
+| Device verification | Per-device Safety Number and `KEY_CHANGED` blocking | Auditable key directory/key transparency for high-assurance use |
+| Browser authentication | Memory-only access token and rotating HttpOnly refresh cookie | Abuse testing and external pentest |
+| Realtime delivery | Durable per-device cursor recovery and event deduplication | Load, reconnect-storm and broker-failure testing |
+| Attachments | Bounded encrypted filesystem/PVC adapter | S3-compatible storage, quotas and lifecycle controls |
+| Electron | Sandboxed renderer and restricted IPC | Signed/notarised installers and desktop pentest |
+| Stateful services | Local Compose and Kubernetes application manifests | Managed/operator-backed HA PostgreSQL, Redis and Kafka |
+| CI/CD | Build, test and security workflow definitions | Protected release environment and real deployment credentials |
+| Observability | Metrics/logging stack configuration | SLOs, alert ownership and incident exercises |
+| Validation | Frontend and configuration checks passed | Backend Maven/integration/E2E/load testing in connected CI |
 
 ## Implemented controls
 
-### Client and cryptography
+### Cryptography and client storage
 
-- Private E2EE records migrated out of `localStorage`.
+- Private identity, pre-key, ratchet and trust state moved out of `localStorage`.
 - AES-GCM encrypted IndexedDB records with a non-extractable WebCrypto wrapping key.
-- Ratchet state serialisation across concurrent operations/tabs.
-- Full X3DH/Double Ratchet cycle tests, skipped-key tests and concurrent-send tests.
+- Concurrent ratchet mutation locking.
+- One-time pre-key consumption only after authenticated bootstrap.
+- Replayed pre-key bootstrap messages are rejected.
+- Automatic one-time pre-key pool replenishment.
+- Skipped-message-key support for out-of-order delivery.
 - Per-device Safety Number verification.
-- `KEY_CHANGED` persistence and encrypted-operation blocking.
-- Memory-only access JWT.
-- Legacy browser token cleanup.
-- Encrypted password-protected backup/restore with increased PBKDF2 work factor.
+- Persistent `KEY_CHANGED` state and encrypted-operation blocking.
+- Encrypted password-protected backup and restore.
 
-### Authentication
+### Authentication and sessions
 
-- 15-minute default access JWT with issuer, audience, `jti`, token type and session ID.
+- Short-lived access JWT with issuer, audience, `jti`, token type and session ID.
+- Access token stored only in process memory.
 - Host-only `Secure`, `HttpOnly`, `SameSite=Strict` refresh cookie.
-- Refresh token stored as SHA-256 digest in Redis.
-- Refresh token family, rotation, consumed-token reuse detection and family revocation.
-- Credential rate limiting and bounded password inputs.
-- Latest-issued-code-only OTP verification, strict OTP/phone format validation and hashed phone identifiers in logs/rate-limit keys.
-- Fail-fast credentialed CORS/WebSocket origin allowlists.
-- No-store response headers on authentication responses.
+- Refresh token digest storage, rotation, token families and reuse detection.
+- Credential throttling and bounded inputs.
+- Latest-issued-code-only OTP verification.
+- Strict phone/OTP validation and hashed phone identifiers in rate-limit keys/logs.
+- Fail-fast credentialed CORS and WebSocket origin allowlists.
 
-### Delivery and storage
+### Delivery
 
 - Transactional outbox for Kafka-enabled deployments.
 - Event IDs propagated to realtime payloads.
-- Deduplication only after successful backend fanout, allowing Kafka retry after failure.
-- Client-side WebSocket event deduplication.
-- Attachment ID validation, path normalisation, size bounds, temporary writes, atomic move and rollback cleanup.
+- Durable per-device realtime event store with monotonic sequence numbers.
+- Authenticated `/api/realtime/sync` catch-up endpoint.
+- Client cursor persistence, reconnect recovery, buffering and ordered replay.
+- Client deduplication for at-least-once delivery.
+- Kafka configuration fails at startup when Kafka is enabled without broker addresses.
 
-### Edge, Electron and infrastructure
+### Attachments
 
-- Browser and Electron CSP/security headers.
-- Electron renderer sandbox, context isolation, disabled Node integration, trusted-sender IPC checks and HTTPS-only external links.
-- Nginx auth/API rate limits, connection limits, upload size limits and hidden management/docs paths.
-- Actuator management port separated from the public application port.
-- Kubernetes non-root/read-only/seccomp/drop-capabilities baseline.
+- UUID validation and canonical path containment.
+- Configurable maximum encrypted payload size.
+- Temporary writes and atomic finalisation where supported.
+- Cleanup after transaction rollback.
+- Chat membership checks for upload/download.
+- `no-store` and `nosniff` download headers.
+
+### Web, Electron and deployment
+
+- CSP and security headers at the web edge.
+- Electron sandbox, context isolation and disabled Node integration.
+- Trusted-sender IPC validation and bounded file IPC.
+- HTTPS-only external links and blocked arbitrary navigation/webviews.
+- Fail-closed Electron endpoint validation for HTTPS/WSS.
+- Relative Electron asset paths for packaged `file://` pages.
+- Separate management port and hidden Actuator/docs routes.
+- Non-root/read-only/seccomp/drop-capabilities Kubernetes baseline.
 - HPA, PodDisruptionBudget and topology spreading.
-- No real Kubernetes secrets committed.
-- CI dependency review, CodeQL, coverage/build gates, image scan, SBOM/provenance and rollout failure enforcement.
+- Dependency review, CodeQL, image scanning and SBOM workflow definitions.
 
-## Required launch blockers
+## Release blockers outside this packaging run
 
-### 1. Independent security review
+### Independent review
 
-A qualified external reviewer must examine:
+Before high-risk use, obtain:
 
-- protocol construction and X3DH/Double Ratchet interoperability assumptions;
-- pre-key reservation, replay, identity replacement and multi-device edge cases;
-- browser/Electron key lifecycle and backup recovery;
-- XSS, CSRF, CORS, WebSocket authentication and IPC boundaries;
-- backend authorisation for every chat/device/message operation.
+- cryptographic protocol review;
+- web/API/WebSocket authorisation pentest;
+- Electron IPC and update-channel review;
+- dependency and release supply-chain review.
 
-Release gate: all critical/high findings fixed and re-tested.
+### Object storage
 
-### 2. Key transparency
-
-Safety Numbers detect a changed key only after a user has verified and persisted trust. A malicious or compromised directory server can still present different first-seen keys to different clients.
-
-Release gate for high-assurance use: append-only auditable key directory, consistency proofs/gossip, or an equivalent independently verifiable mechanism.
-
-### 3. Endpoint compromise and supply chain
-
-Encrypted IndexedDB does not protect secrets from JavaScript already executing in the trusted origin. Required controls include:
-
-- strict CSP without unnecessary inline allowances;
-- dependency pinning and recurring SCA;
-- reproducible/signed builds;
-- protected release branches and environments;
-- Electron code signing/notarisation and signed auto-updates;
-- incident response for a compromised web distribution origin.
-
-### 4. Production attachment service
-
-The supplied filesystem/PVC adapter is suitable for local evaluation and bounded single-environment use, not final horizontally scaled production.
-
-Release gate:
+The current attachment adapter uses local/PVC storage. A horizontally scaled production environment should add:
 
 - S3-compatible object storage;
-- presigned upload/download flow;
-- ciphertext digest validation;
-- user/chat quotas and bandwidth limits;
-- multipart upload, orphan cleanup and lifecycle retention;
-- deletion reconciliation and storage audit metrics.
+- presigned upload/download;
+- ciphertext checksum verification;
+- user/chat quotas and bandwidth controls;
+- multipart upload;
+- orphan cleanup and deletion reconciliation;
+- lifecycle retention and audit metrics.
 
-### 5. Stateful infrastructure
+### Stateful infrastructure
 
-Use managed services or production operators for PostgreSQL, Redis and Kafka/Redpanda.
+Use managed services or production operators with:
 
-Release gate:
-
-- multi-AZ/zone placement;
-- encryption in transit and at rest;
-- automated backups and point-in-time recovery;
-- quarterly restore drill with measured RPO/RTO;
+- multi-zone deployment;
+- TLS and encryption at rest;
+- automatic backups and point-in-time recovery;
+- tested restore procedures and measured RPO/RTO;
 - Kafka replication/min-ISR and dead-letter operations;
-- Redis persistence/HA appropriate to session revocation requirements.
+- Redis persistence/HA appropriate for session revocation.
 
-### 6. Realtime recovery and scale
+### Operations
 
-Realtime transport is at least once. The current event-ID dedup cache is process-local and bounded.
+Define and test:
 
-Release gate:
+- API, message persistence, authentication and realtime SLOs;
+- alert rules and on-call ownership;
+- signing-key rotation and emergency revocation;
+- migration rollback/recovery;
+- incident response and user notification procedures;
+- privacy, retention and abuse-handling policies.
 
-- durable or protocol-level missed-event recovery after disconnect;
-- monotonic cursor/sequence and REST catch-up path;
-- duplicate, reordered and delayed event tests;
-- gateway/broker restart tests;
-- target concurrent-connection, fanout and reconnect-storm benchmarks;
-- decision on sharded realtime gateways before broadcast cost becomes material.
+### Release validation
 
-### 7. Operational security
+Run in a connected CI/staging environment:
 
-Release gate:
+```bash
+cd backend && ./mvnw verify
+cd frontend && npm ci && npm run lint && npm test && npm run test:coverage && npm run build
+```
 
-- Vault/KMS/External Secrets integration;
-- signing-key rotation and emergency revocation procedure;
-- database migration rollback/recovery plan;
-- SLOs for API, message persistence, realtime delivery and authentication;
-- alerts, dashboards, on-call ownership and incident runbooks;
-- privacy policy, retention rules, abuse controls and legal review for target markets.
+Also run:
 
-## Suggested deployment evolution
+- PostgreSQL/Redis/Kafka integration tests;
+- browser E2E against a real backend;
+- Docker image and full Compose startup;
+- Kubernetes smoke tests;
+- load, soak, reconnect-storm and broker-restart scenarios;
+- signed Electron installer tests on supported operating systems.
 
-Phase 1: hardened modular monolith with managed stateful services.
-
-Phase 2: separate deployments from the same build for API, realtime and worker responsibilities.
-
-Phase 3: extract only components with measured independent scaling or ownership needs: push, attachments, realtime gateway and call signalling.
-
-A dedicated API Gateway is not a prerequisite while one backend API is deployed. Nginx/Ingress already provides edge routing, TLS, limits and headers. Introduce a gateway when multiple independently deployed APIs require central route policy, service authentication or version management.
-
-## Go-live approval record
-
-Before launch, record for every gate:
-
-- owner;
-- evidence link;
-- test date;
-- reviewer;
-- accepted residual risk;
-- rollback procedure.
-
-Do not replace evidence with a generic “production-ready” label.
+A release should be approved from recorded evidence, not from a generic “production-ready” label.
