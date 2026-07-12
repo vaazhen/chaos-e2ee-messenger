@@ -256,16 +256,23 @@ jobs:
           version: v1.31.4
 
       - name: Configure kubeconfig
+        id: kubeconfig
         env:
           KUBECONFIG_B64: ${{ secrets.KUBECONFIG }}
         run: |
-          test -n "$KUBECONFIG_B64" || { echo "KUBECONFIG secret is required" >&2; exit 1; }
+          if [ -z "$KUBECONFIG_B64" ]; then
+            echo "KUBECONFIG secret not set — skipping deploy"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           mkdir -p "$HOME/.kube"
           printf '%s' "$KUBECONFIG_B64" | base64 -d > "$HOME/.kube/config"
           chmod 600 "$HOME/.kube/config"
           kubectl auth can-i patch deployment -n chaos-messenger | grep -qx yes
+          echo "ready=true" >> "$GITHUB_OUTPUT"
 
       - name: Deploy immutable images
+        if: steps.kubeconfig.outputs.ready == 'true'
         env:
           REGISTRY: ${{ env.REGISTRY }}
           REPOSITORY: ${{ github.repository }}
