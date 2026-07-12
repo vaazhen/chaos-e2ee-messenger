@@ -154,8 +154,8 @@ test.describe("auth/setup browser flow", () => {
 
     await expect(page.getByText(/Чаты|Chats/i)).toBeVisible();
 
-    await expect.poll(async () => page.evaluate(() => localStorage.getItem("cm_token"))).toBe("jwt-login");
-    await expect.poll(async () => page.evaluate(() => localStorage.getItem("cm_refresh_token"))).toBe("refresh-login");
+    await expect.poll(async () => page.evaluate(() => sessionStorage.getItem("cm_token"))).toBeNull();
+    await expect.poll(async () => page.evaluate(() => localStorage.getItem("cm_refresh_token"))).toBeNull();
 
     expect(state.calls.some(c => c.pathname === "/auth/login")).toBeTruthy();
     expect(state.calls.some(c => c.pathname === "/crypto/devices/register")).toBeTruthy();
@@ -195,8 +195,8 @@ test.describe("auth/setup browser flow", () => {
 
     await expect(page.getByText(/Чаты|Chats/i)).toBeVisible();
 
-    await expect.poll(async () => page.evaluate(() => localStorage.getItem("cm_token"))).toBe("jwt-setup");
-    await expect.poll(async () => page.evaluate(() => localStorage.getItem("cm_refresh_token"))).toBe("refresh-setup");
+    await expect.poll(async () => page.evaluate(() => sessionStorage.getItem("cm_token"))).toBeNull();
+    await expect.poll(async () => page.evaluate(() => localStorage.getItem("cm_refresh_token"))).toBeNull();
 
     expect(state.calls.some(c => c.pathname === "/auth/verify-code")).toBeTruthy();
     expect(state.calls.some(c => c.pathname === "/auth/complete-setup")).toBeTruthy();
@@ -213,7 +213,6 @@ test.describe("auth/setup browser flow", () => {
     await mockApi(page, state);
 
     await page.addInitScript(() => {
-      localStorage.setItem("cm_refresh_token", "refresh-old");
       localStorage.setItem("cm_device_id", "device-e2e");
     });
 
@@ -225,7 +224,7 @@ test.describe("auth/setup browser flow", () => {
     expect(state.deviceRegisterCount).toBeGreaterThanOrEqual(1);
     expect(state.currentDeviceCount).toBeGreaterThanOrEqual(2);
 
-    await expect.poll(async () => page.evaluate(() => localStorage.getItem("cm_token"))).toBe("jwt-refresh-2");
-    await expect.poll(async () => page.evaluate(() => localStorage.getItem("cm_refresh_token"))).toBe("refresh-new-2");
+    await expect.poll(async () => page.evaluate(() => sessionStorage.getItem("cm_token"))).toBeNull();
+    await expect.poll(async () => page.evaluate(() => localStorage.getItem("cm_refresh_token"))).toBeNull();
   });
 });

@@ -54,8 +54,8 @@ async function registerEmailUser(page, data) {
 
   await expect(page.getByText(/Чаты|Chats/i)).toBeVisible();
 
-  await expect.poll(async () => page.evaluate(() => localStorage.getItem("cm_token"))).not.toBeNull();
-  await expect.poll(async () => page.evaluate(() => localStorage.getItem("cm_refresh_token"))).not.toBeNull();
+  await expect.poll(async () => page.evaluate(() => sessionStorage.getItem("cm_token"))).toBeNull();
+  await expect.poll(async () => page.evaluate(() => localStorage.getItem("cm_refresh_token"))).toBeNull();
   await expect.poll(async () => page.evaluate(() => localStorage.getItem("cm_device_id"))).not.toBeNull();
   await expect.poll(async () => page.evaluate(() => localStorage.getItem("cm_device_bundle_v2"))).not.toBeNull();
 }

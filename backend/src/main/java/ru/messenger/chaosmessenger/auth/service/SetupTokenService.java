@@ -31,7 +31,7 @@ public class SetupTokenService {
     public String issue(String phone) {
         String token = UUID.randomUUID().toString();
         redisTemplate.opsForValue().set(PREFIX + token, phone, TTL);
-        log.debug("[SetupToken] issued for phone={}", phone);
+        log.debug("[SetupToken] issued");
         return token;
     }
 
@@ -55,7 +55,7 @@ public class SetupTokenService {
         String key = PREFIX + token;
         String phone = redisTemplate.opsForValue().getAndDelete(key);
         if (phone != null) {
-            log.debug("[SetupToken] consumed for phone={}", phone);
+            log.debug("[SetupToken] consumed");
         } else {
             log.warn("[SetupToken] invalid or expired token");
         }

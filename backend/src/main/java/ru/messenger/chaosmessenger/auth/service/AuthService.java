@@ -33,6 +33,7 @@ public class AuthService {
     private final JwtService jwtService;
     private final SetupTokenService setupTokenService;
     private final PasswordEncoder passwordEncoder;
+    private final CredentialRateLimiter credentialRateLimiter;
 
     @Transactional(readOnly = true)
     public AccountExistsResponse accountExists(String phone) {
@@ -70,8 +71,9 @@ public class AuthService {
             if (result.newUser()) {
                 setupToken = setupTokenService.issue(normalized);
             } else {
-                token = result.token();
-                refreshToken = refreshTokenService.issue(result.username());
+                RefreshTokenService.IssuedToken session = refreshTokenService.issueSession(result.username());
+                token = jwtService.generateToken(result.username(), session.sessionId());
+                refreshToken = session.token();
                 deviceRegistrationToken = deviceRegTokenService.issue(result.username());
                 userId = result.userId();
                 username = result.username();
@@ -127,15 +129,15 @@ public class AuthService {
 
     @Transactional
     public TokenRefreshResponse refresh(String refreshToken) {
-        String username = refreshTokenService.consumeAndGetUsername(refreshToken);
-        if (username == null) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid_refresh_token");
+        RefreshTokenService.Rotation rotation = refreshTokenService.rotate(refreshToken);
+        if (rotation == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid_or_reused_refresh_token");
         }
 
         return new TokenRefreshResponse(
-                jwtService.generateToken(username),
-                refreshTokenService.issue(username),
-                deviceRegTokenService.issue(username)
+                jwtService.generateToken(rotation.username(), rotation.sessionId()),
+                rotation.token(),
+                deviceRegTokenService.issue(rotation.username())
         );
     }
 
@@ -168,6 +170,8 @@ public class AuthService {
     @Transactional(readOnly = true)
     public AuthResponse loginEmail(String rawEmail, String password) {
         String email = normalizeEmail(rawEmail);
+        credentialRateLimiter.checkAndIncrement(email);
+
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid email or password"));
 
@@ -178,10 +182,12 @@ public class AuthService {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid email or password");
         }
 
+        credentialRateLimiter.reset(email);
         return buildAuthResponse(user, false);
     }
 
     private AuthResponse buildAuthResponse(User user, boolean isNewUser) {
+        RefreshTokenService.IssuedToken session = refreshTokenService.issueSession(user.getUsername());
         return new AuthResponse(
                 "ok",
                 !isNewUser,
@@ -189,8 +195,8 @@ public class AuthService {
                 user.getId(),
                 user.getUsername(),
                 user.getEmail(),
-                jwtService.generateToken(user.getUsername()),
-                refreshTokenService.issue(user.getUsername()),
+                jwtService.generateToken(user.getUsername(), session.sessionId()),
+                session.token(),
                 deviceRegTokenService.issue(user.getUsername())
         );
     }
@@ -207,6 +213,9 @@ public class AuthService {
             digits = "7" + digits.substring(1);
         } else if (digits.length() == 10) {
             digits = "7" + digits;
+        }
+        if (digits.length() < 10 || digits.length() > 15) {
+            throw new IllegalArgumentException("Phone number must contain 10 to 15 digits");
         }
         return "+" + digits;
     }

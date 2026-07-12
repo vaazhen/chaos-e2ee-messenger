@@ -5,9 +5,8 @@ namespace: chaos-messenger
 resources:
   - namespace.yaml
   - configmap.yaml
-  - secret.yaml
-  - postgres.yaml
-  - redis.yaml
   - backend.yaml
   - frontend.yaml
   - ingress.yaml
+  - autoscaling.yaml
+  - disruption-budgets.yaml

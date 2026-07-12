@@ -6,7 +6,7 @@ scrape_configs:
   - job_name: 'chaos-messenger'
     metrics_path: /actuator/prometheus
     static_configs:
-      - targets: ['backend:8080']
+      - targets: ['backend:9091']
 
   - job_name: 'postgres'
     static_configs:

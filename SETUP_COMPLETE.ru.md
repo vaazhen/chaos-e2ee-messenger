@@ -1,3 +1,5 @@
+> **Устаревший setup snapshot.** Актуальные команды и статус находятся в `README.ru.md` и `VALIDATION_REPORT.md`.
+
 # Chaos Messenger — полный быстрый запуск
 
 [Вернуться к README](README.ru.md) · [English README](README.md) · [Quick Setup EN](SETUP_COMPLETE.md)

@@ -43,15 +43,19 @@ public class RealtimeEventConsumer {
             containerFactory = "kafkaListenerContainerFactory"
     )
     public void handleDomainEvent(DomainEvent event) {
-        if (event.eventId() != null && !processedEvents.add(event.eventId())) {
+        String eventId = event.eventId();
+        if (eventId != null && processedEvents.contains(eventId)) {
             increment("chaos_kafka_consumer_duplicate_total");
             return;
         }
-        trimDedupCacheIfNeeded();
 
         try {
             JsonNode payload = objectMapper.readTree(event.payload());
             route(event, payload);
+            if (eventId != null) {
+                processedEvents.add(eventId);
+                trimDedupCacheIfNeeded();
+            }
             increment("chaos_kafka_consumer_success_total");
         } catch (JsonProcessingException e) {
             increment("chaos_kafka_consumer_failure_total");
@@ -92,7 +96,7 @@ public class RealtimeEventConsumer {
         }
 
         if ("MESSAGE_STATUS".equals(event.eventType()) || "MESSAGE_BULK_STATUS".equals(event.eventType())) {
-            fanoutStatus(payload);
+            fanoutStatus(event, payload);
             return;
         }
 
@@ -108,6 +112,7 @@ public class RealtimeEventConsumer {
             String deviceId = deviceIdNode.asText();
             JsonNode envelope = envelopes == null ? null : envelopes.get(deviceId);
             ObjectNode devicePayload = payload.deepCopy();
+            devicePayload.put("eventId", event.eventId());
             devicePayload.put("type", event.eventType());
             devicePayload.put("eventType", event.eventType());
             if (envelope != null && !envelope.isNull()) {
@@ -118,18 +123,20 @@ public class RealtimeEventConsumer {
         }
     }
 
-    private void fanoutStatus(JsonNode payload) {
+    private void fanoutStatus(DomainEvent event, JsonNode payload) {
+        ObjectNode statusPayload = payload.deepCopy();
+        statusPayload.put("eventId", event.eventId());
         JsonNode deviceIds = payload.get("targetDeviceIds");
         if (deviceIds == null || !deviceIds.isArray()) {
             return;
         }
         for (JsonNode deviceIdNode : deviceIds) {
-            stompEventPublisher.publishToDevice(deviceIdNode.asText(), "/status", payload);
+            stompEventPublisher.publishToDevice(deviceIdNode.asText(), "/status", statusPayload);
         }
     }
 
     private void fanoutChatEvent(DomainEvent event, JsonNode payload) {
-        fanoutChatList(payload, event.eventType().toLowerCase());
+        fanoutChatList(event, payload, event.eventType().toLowerCase());
     }
 
     private void fanoutRequestEvent(DomainEvent event, JsonNode payload) {
@@ -138,6 +145,7 @@ public class RealtimeEventConsumer {
             return;
         }
         Map<String, Object> requestEvent = new HashMap<>();
+        requestEvent.put("eventId", event.eventId());
         requestEvent.put("chatId", payload.hasNonNull("chatId") ? payload.get("chatId").asLong() : null);
         requestEvent.put("reason", event.eventType().toLowerCase());
         requestEvent.put("eventType", event.eventType());
@@ -148,20 +156,23 @@ public class RealtimeEventConsumer {
 
     private void fanoutUserEvent(DomainEvent event, JsonNode payload) {
         if ("PROFILE_UPDATED".equals(event.eventType())) {
-            fanoutChatList(payload, "profile_updated");
+            fanoutChatList(event, payload, "profile_updated");
             return;
         }
         if ("USER_STATUS".equals(event.eventType())) {
-            stompEventPublisher.publishGlobal("/topic/user/status", payload);
+            ObjectNode statusPayload = payload.deepCopy();
+            statusPayload.put("eventId", event.eventId());
+            stompEventPublisher.publishGlobal("/topic/user/status", statusPayload);
         }
     }
 
-    private void fanoutChatList(JsonNode payload, String reason) {
+    private void fanoutChatList(DomainEvent event, JsonNode payload, String reason) {
         JsonNode usernames = payload.get("participantUsernames");
         if (usernames == null || !usernames.isArray()) {
             return;
         }
         Map<String, Object> chatListEvent = new HashMap<>();
+        chatListEvent.put("eventId", event.eventId());
         chatListEvent.put("chatId", payload.hasNonNull("chatId") ? payload.get("chatId").asLong() : null);
         chatListEvent.put("reason", reason);
         chatListEvent.put("eventType", reason);

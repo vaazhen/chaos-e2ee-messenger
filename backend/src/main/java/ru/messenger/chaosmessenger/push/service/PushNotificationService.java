@@ -96,7 +96,7 @@ public class PushNotificationService {
                     ps.send(notification);
                     log.debug("Push sent to device {}", sub.getDeviceId());
                 } else {
-                    log.info("Would send push to {} — title: {}, body: {}", sub.getEndpoint(), title, body);
+                    log.debug("Push transport is not configured; skipped notification for device {}", sub.getDeviceId());
                 }
             } catch (Exception e) {
                 log.warn("Failed to send push to device {}: {}", sub.getDeviceId(), e.getMessage());
@@ -123,7 +123,7 @@ public class PushNotificationService {
                     );
                     ps.send(notification);
                 } else {
-                    log.info("Would send push to {} — title: {}, body: {}, tag: {}", sub.getEndpoint(), title, body, tag);
+                    log.debug("Push transport is not configured; skipped tagged notification for device {}", sub.getDeviceId());
                 }
             } catch (Exception e) {
                 log.warn("Failed to send push to device {}: {}", sub.getDeviceId(), e.getMessage());

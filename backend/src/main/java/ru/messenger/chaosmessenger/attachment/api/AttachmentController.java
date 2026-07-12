@@ -44,6 +44,9 @@ public class AttachmentController {
             @RequestParam(value = "chatId", required = false) Long chatId,
             Authentication auth
     ) throws IOException {
+        if (file == null || file.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Encrypted attachment is empty");
+        }
         User user = userIdentityService.require(auth.getName());
         if (!attachmentAccessService.canUpload(chatId, user.getId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied to chat attachments");
@@ -52,7 +55,7 @@ public class AttachmentController {
                 user.getId(),
                 chatId,
                 file.getBytes(),
-                file.getContentType()
+                MediaType.APPLICATION_OCTET_STREAM_VALUE
         );
         return Map.of("attachmentId", attachmentId);
     }
@@ -69,12 +72,12 @@ public class AttachmentController {
 
         byte[] data = attachmentStorageService.download(attachmentId);
 
-        String contentType = attachment.getContentType() != null
-                ? attachment.getContentType()
-                : MediaType.APPLICATION_OCTET_STREAM_VALUE;
-
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_TYPE, contentType)
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"encrypted-" + attachmentId + ".bin\"")
+                .header(HttpHeaders.CACHE_CONTROL, "no-store, max-age=0")
+                .header("X-Content-Type-Options", "nosniff")
                 .body(data);
     }
 }

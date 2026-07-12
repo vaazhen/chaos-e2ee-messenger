@@ -8,7 +8,7 @@ public record EmailRegisterRequest(
         @Email(message = "Invalid email")
         @NotBlank(message = "Email is required")
         String email,
-        @Size(min = 6, max = 72)
+        @Size(min = 8, max = 72)
         @NotBlank(message = "Password is required")
         String password,
         String username,

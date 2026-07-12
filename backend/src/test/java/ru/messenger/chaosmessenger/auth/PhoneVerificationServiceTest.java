@@ -72,7 +72,7 @@ class PhoneVerificationServiceTest {
         VerificationCode code = verificationCode(phone, "123456");
         User user = user(1L, "alice", phone);
 
-        when(codeRepo.findTopByPhoneAndUsedAtIsNullOrderByIdDesc(phone)).thenReturn(Optional.of(code));
+        when(codeRepo.findTopByPhoneOrderByIdDesc(phone)).thenReturn(Optional.of(code));
         when(userRepository.existsByPhone(phone)).thenReturn(true);
         when(userRepository.findByPhone(phone)).thenReturn(Optional.of(user));
         when(jwtService.generateToken("alice")).thenReturn("jwt-token");
@@ -88,9 +88,11 @@ class PhoneVerificationServiceTest {
     }
 
     @Test
-    void verifyCode_doesNotReturnAlreadyUsedCodes() {
+    void verifyCode_doesNotFallBackToOlderCodesAfterLatestCodeWasUsed() {
         String phone = "+79991234567";
-        when(codeRepo.findTopByPhoneAndUsedAtIsNullOrderByIdDesc(phone)).thenReturn(Optional.empty());
+        VerificationCode latest = verificationCode(phone, "654321");
+        latest.setUsedAt(LocalDateTime.now());
+        when(codeRepo.findTopByPhoneOrderByIdDesc(phone)).thenReturn(Optional.of(latest));
 
         PhoneVerificationService.VerificationResult result = service.verifyCode(phone, "123456");
 
@@ -100,11 +102,20 @@ class PhoneVerificationServiceTest {
     }
 
     @Test
+    void sendCode_rejectsMalformedPhoneBeforeSmsOrPersistence() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.sendCode("123", "SMS"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("10 to 15 digits");
+
+        verifyNoInteractions(rateLimiter, smsSender, codeRepo);
+    }
+
+    @Test
     void verifyCode_incrementsAttemptsForInvalidCodeAndKeepsCodeUnused() {
         String phone = "+79991234567";
         VerificationCode code = verificationCode(phone, "123456");
 
-        when(codeRepo.findTopByPhoneAndUsedAtIsNullOrderByIdDesc(phone)).thenReturn(Optional.of(code));
+        when(codeRepo.findTopByPhoneOrderByIdDesc(phone)).thenReturn(Optional.of(code));
 
         PhoneVerificationService.VerificationResult result = service.verifyCode(phone, "000000");
 

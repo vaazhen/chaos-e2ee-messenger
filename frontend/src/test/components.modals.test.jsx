@@ -13,11 +13,13 @@ const mocks = vi.hoisted(() => ({
     deactivateDevice: vi.fn(),
   },
   getCurrentDeviceId: vi.fn(() => "device-current"),
+  setToken: vi.fn(),
 }));
 
 vi.mock("../api", () => ({
   api: mocks.api,
   getCurrentDeviceId: mocks.getCurrentDeviceId,
+  setToken: mocks.setToken,
 }));
 
 describe("AuthScreen critical UI flow", () => {
@@ -433,7 +435,9 @@ describe("ProfileModal critical UI flow", () => {
       });
     });
 
-    expect(localStorage.getItem("cm_token")).toBe("jwt-updated");
+    expect(mocks.setToken).toHaveBeenCalledWith("jwt-updated");
+    expect(sessionStorage.getItem("cm_token")).toBeNull();
+    expect(localStorage.getItem("cm_token")).toBeNull();
     expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({
       username: "alice",
       lastName: "Updated",

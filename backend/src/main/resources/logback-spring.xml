@@ -52,11 +52,18 @@
         </encoder>
     </appender>
 
-    <!-- Crypto logger: file + profile-appropriate console -->
-    <logger name="ru.messenger.chaosmessenger.crypto" level="DEBUG" additivity="false">
-        <appender-ref ref="CONSOLE"/>
-        <appender-ref ref="CRYPTO_FILE"/>
-    </logger>
+    <!-- Never persist crypto logs in production. -->
+    <springProfile name="!prod">
+        <logger name="ru.messenger.chaosmessenger.crypto" level="DEBUG" additivity="false">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="CRYPTO_FILE"/>
+        </logger>
+    </springProfile>
+    <springProfile name="prod">
+        <logger name="ru.messenger.chaosmessenger.crypto" level="INFO" additivity="false">
+            <appender-ref ref="JSON_STDOUT"/>
+        </logger>
+    </springProfile>
 
     <!-- Dev profile: text to console -->
     <springProfile name="!prod">

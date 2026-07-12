@@ -5,6 +5,11 @@ metadata:
   namespace: chaos-messenger
 spec:
   replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app: chaos-frontend
@@ -13,25 +18,55 @@ spec:
       labels:
         app: chaos-frontend
     spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        fsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: chaos-frontend
       containers:
         - name: frontend
-          image: ${REGISTRY:-ghcr.io}/${REPOSITORY:-chaos-messenger}/frontend:${TAG:-latest}
-          imagePullPolicy: Always
+          image: ${REGISTRY}/${REPOSITORY}/frontend:${TAG}
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           ports:
-            - containerPort: 80
+            - containerPort: 8080
               name: http
+          volumeMounts:
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+            - name: nginx-run
+              mountPath: /var/run
+            - name: tmp
+              mountPath: /tmp
           livenessProbe:
             httpGet:
-              path: /
-              port: 80
-            initialDelaySeconds: 15
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
             periodSeconds: 20
+            timeoutSeconds: 3
           readinessProbe:
             httpGet:
-              path: /
-              port: 80
-            initialDelaySeconds: 5
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
             periodSeconds: 10
+            timeoutSeconds: 3
           resources:
             requests:
               memory: "64Mi"
@@ -39,6 +74,16 @@ spec:
             limits:
               memory: "256Mi"
               cpu: "500m"
+      volumes:
+        - name: nginx-cache
+          emptyDir:
+            sizeLimit: 128Mi
+        - name: nginx-run
+          emptyDir:
+            sizeLimit: 16Mi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
 ---
 apiVersion: v1
 kind: Service
@@ -49,5 +94,6 @@ spec:
   selector:
     app: chaos-frontend
   ports:
-    - port: 80
-      targetPort: 80
+    - name: http
+      port: 80
+      targetPort: http
