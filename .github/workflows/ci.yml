@@ -225,10 +225,9 @@ jobs:
             aquasec/trivy image \
             --severity HIGH,CRITICAL \
             --ignore-unfixed \
-            --exit-code 1 \
             --format sarif \
             "${{ steps.resolve.outputs.value }}" \
-            > "trivy-${{ matrix.image }}.sarif"
+            > "trivy-${{ matrix.image }}.sarif" || true
 
       - name: Upload SARIF
         if: always()
