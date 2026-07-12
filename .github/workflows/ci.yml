@@ -219,14 +219,16 @@ jobs:
           fi
 
       - name: Scan for high and critical vulnerabilities
-        uses: aquasecurity/trivy-action@0.30.0
-        with:
-          image-ref: ${{ steps.resolve.outputs.value }}
-          format: sarif
-          output: trivy-${{ matrix.image }}.sarif
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: '1'
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy image \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --exit-code 1 \
+            --format sarif \
+            "${{ steps.resolve.outputs.value }}" \
+            > "trivy-${{ matrix.image }}.sarif"
 
       - name: Upload SARIF
         if: always()
