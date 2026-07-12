@@ -6,26 +6,33 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import ru.messenger.chaosmessenger.crypto.device.UserDeviceRepository;
 import ru.messenger.chaosmessenger.outbox.DomainEvent;
 
 import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class RealtimeEventConsumerTest {
 
     private StompEventPublisher publisher;
+    private RealtimeEventStore eventStore;
     private RealtimeEventConsumer consumer;
 
     @BeforeEach
     void setUp() {
         publisher = mock(StompEventPublisher.class);
-        consumer = new RealtimeEventConsumer(publisher, new ObjectMapper(), new SimpleMeterRegistry());
+        eventStore = mock(RealtimeEventStore.class);
+        when(eventStore.append(anyString(), anyString(), anyString(), any())).thenAnswer(inv -> inv.getArgument(3));
+        consumer = new RealtimeEventConsumer(publisher, eventStore, mock(UserDeviceRepository.class), new ObjectMapper(), new SimpleMeterRegistry());
     }
 
     @Test

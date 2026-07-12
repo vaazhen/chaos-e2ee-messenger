@@ -98,6 +98,7 @@ public class AttachmentStorageService {
     }
 
     public byte[] download(String attachmentId) throws IOException {
+        validateAttachmentId(attachmentId);
         attachmentRepository.findByAttachmentId(attachmentId)
                 .orElseThrow(() -> new IllegalArgumentException("Attachment not found"));
 
