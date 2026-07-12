@@ -113,3 +113,14 @@ New or expanded tests cover:
 - WebSocket at-least-once deduplication;
 - realtime backend retry-safe deduplication;
 - Electron endpoint configuration.
+
+## Final reliability pass
+
+- Added durable per-device realtime event persistence with monotonic sequence numbers.
+- Added authenticated reconnect catch-up through `/api/realtime/sync`.
+- Added client cursor persistence, recovery buffering, ordered replay and deduplication.
+- Added one-time pre-key consumption only after successful authenticated bootstrap.
+- Added pre-key bootstrap replay rejection and automatic pre-key pool replenishment.
+- Added production Kafka fail-fast validation when broker addresses are missing.
+- Rewrote English and Russian README files as user-facing GitHub documentation.
+- Updated validation and readiness reports to match the final tested source state.

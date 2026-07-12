@@ -2,13 +2,11 @@
 
 Validation date: **2026-07-12**
 
-Environment: isolated Linux packaging container. Network access and a pre-populated Maven repository were not available.
+Environment: isolated Linux packaging container. Backend execution was intentionally skipped at the user's request. External network access was insufficient for downloading Electron packaging binaries.
 
 ## Passed checks
 
-### Frontend unit/integration suite
-
-Command:
+### Frontend unit/integration tests
 
 ```bash
 cd frontend
@@ -18,89 +16,110 @@ npm test -- --run
 Result:
 
 - 20 test files passed;
-- 151 tests passed;
+- 154 tests passed;
 - 3 tests intentionally skipped;
-- no failed tests.
+- 0 failed tests.
 
-The suite includes full client X3DH/Double Ratchet exchange, concurrent-send serialization, out-of-order messages, trust-state changes, secure storage migration, auth storage, WebSocket deduplication and endpoint configuration.
+Covered behaviour includes:
 
-### Frontend production build
-
-```bash
-cd frontend
-npm run build
-```
-
-Result: passed. Vite emitted a large-chunk advisory for the main application bundle; this is a performance optimisation item, not a build failure.
+- X3DH/Double Ratchet bidirectional exchange;
+- concurrent ratchet sends;
+- skipped keys and out-of-order delivery;
+- one-time pre-key consumption and replay rejection;
+- secure storage migration;
+- device trust and `KEY_CHANGED` blocking;
+- memory-only access-token behaviour;
+- WebSocket event deduplication;
+- durable reconnect recovery and cursor persistence;
+- critical message and UI flows.
 
 ### Frontend lint
 
 ```bash
-cd frontend
 npm run lint
 ```
 
-Result: passed with zero errors. 35 warnings remain within the configured repository gate; there are zero lint errors.
+Result: passed with **0 errors and 35 warnings**. The repository lint gate permits up to 50 warnings.
 
-### Frontend coverage gate
+### Frontend production build
 
 ```bash
-cd frontend
+npm run build
+```
+
+Result: passed. Vite emitted a bundle-size advisory for the main application chunk; this is a performance optimisation item, not a build failure.
+
+### Frontend coverage
+
+```bash
 npm run test:coverage -- --run
 ```
 
-Result: passed. Repository-wide coverage at the last full run was approximately:
+Result: coverage gate passed.
 
-- statements/lines: 54.88%;
-- branches: 65.67%;
-- functions: 55.04%.
+| Metric | Result |
+|---|---:|
+| Statements | 55.24% |
+| Branches | 65.70% |
+| Functions | 55.60% |
+| Lines | 55.24% |
 
-Critical auth, crypto, trust and realtime modules have dedicated behavioural tests. The project-wide percentage is not represented as high-assurance coverage; UI and integration coverage should continue to increase.
+The crypto engine has dedicated behavioural coverage; repository-wide UI coverage should continue to increase.
 
-### Configuration/static checks
+### Electron frontend build
+
+Checks performed:
+
+- missing packaged endpoints fail closed;
+- HTTPS/WSS endpoint configuration passes validation;
+- Vite `electron` mode builds successfully;
+- generated asset URLs are relative and compatible with packaged `file://` pages.
+
+The final `electron-builder` installer stage was not completed because the isolated environment could not download platform Electron binaries. No signed installer is claimed.
+
+### Configuration checks
 
 Passed:
 
-- `git diff --check`;
-- YAML parsing for Docker Compose, Kubernetes and GitHub Actions files;
-- Nginx configuration syntax check with the backend hostname substituted by a local test endpoint;
-- Java source syntax screening on 33 changed/new Java files using `javac -proc:none` (dependency symbols unavailable, but no parser-level syntax failures were detected);
-- direct Java compilation of the dependency-free CORS/WebSocket origin parser;
-- Kubernetes Kustomize resource-reference consistency check;
-- Electron endpoint validator negative and positive paths;
-- packaged Electron-mode Vite build with an assertion that generated asset URLs are relative;
-- Electron production endpoint validator negative path (missing `.env.electron` correctly fails closed).
+- YAML parsing for 22 Compose, Kubernetes and GitHub Actions files;
+- Kubernetes Kustomize resource-reference validation;
+- shell syntax checks for project scripts;
+- frontend `package.json` and lockfile JSON parsing;
+- basic committed-secret pattern scan;
+- Compose service-graph inspection.
 
-### Packaging checks
+Docker itself was not available in this environment, so `docker compose config`, image builds and runtime health checks were not executed.
 
-The final archive is created without `.git`, `node_modules`, frontend build/coverage output, backend `target`, Electron release output, logs, runtime attachments or real `.env` files. The ZIP is verified with `unzip -t` and a SHA-256 checksum is recorded at packaging time.
+## Backend status
 
-## Backend Maven limitation
+The backend was **not compiled or executed in this validation run**, following the user's explicit instruction. This report does not claim:
 
-A full backend build/test command is defined and required by CI:
+- successful `./mvnw verify`;
+- Flyway migration execution;
+- PostgreSQL/Redis/Kafka integration success;
+- application startup;
+- backend API or WebSocket runtime compatibility.
+
+The backend must be treated as release-blocking until a connected CI or developer environment runs:
 
 ```bash
 cd backend
 ./mvnw verify
 ```
 
-It could not be executed inside the packaging container because:
+Any compiler, dependency, migration or integration failure must block deployment.
 
-- no system Maven installation was present;
-- the Maven Wrapper distribution/JAR was not bundled in the source archive;
-- no local Maven dependency repository was available;
-- outbound network/DNS was unavailable, so Maven and dependencies could not be downloaded.
+## Not performed
 
-Backend tests were added and changed source was statically inspected, but this report does **not** claim a successful local Maven compilation or integration run. The first connected CI run must execute `./mvnw verify`; any resulting dependency/API/compiler issue must block release.
-
-## Not performed in this environment
-
-- Docker image builds and full Compose startup;
-- PostgreSQL/Redis/Kafka integration tests;
+- full Docker Compose startup;
+- backend integration tests;
 - browser Playwright E2E against a running backend;
-- Electron installer build/signing;
+- Electron installer packaging/signing/notarisation;
 - Kubernetes deployment;
-- load, soak, reconnect-storm or chaos testing;
-- penetration testing or independent cryptographic audit.
+- load, soak or chaos tests;
+- external penetration test;
+- independent cryptographic audit.
 
-These are mandatory release activities, not optional evidence.
+## Packaging
+
+The distributed archive excludes dependency directories, compiled output, coverage reports, runtime data, logs, local `.env` files and repository metadata. The final ZIP is checked with `unzip -t` and accompanied by a SHA-256 checksum.
