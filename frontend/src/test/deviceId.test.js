@@ -23,6 +23,7 @@ describe("deviceId", () => {
     vi.resetModules();
     vi.restoreAllMocks();
     localStorage.clear();
+    sessionStorage.clear();
     delete window.e2ee;
     global.fetch = vi.fn();
   });
@@ -50,7 +51,8 @@ describe("deviceId", () => {
   });
 
   it("ensureDeviceRegistered passes device-registration token only to register endpoint", async () => {
-    localStorage.setItem("cm_token", "jwt-token");
+    const { setToken } = await import("../api");
+    setToken("jwt-token");
 
     window.e2ee = {
       getOrCreateDeviceId: vi.fn(() => "device-a"),
@@ -90,7 +92,8 @@ describe("deviceId", () => {
   });
 
   it("ensureDeviceRegistered resets local identity and retries once on device id conflict", async () => {
-    localStorage.setItem("cm_token", "jwt-token");
+    const { setToken } = await import("../api");
+    setToken("jwt-token");
 
     const conflict = new Error("Device id is already registered to another account");
     conflict.status = 409;
@@ -127,7 +130,8 @@ describe("deviceId", () => {
   });
 
   it("ensureCurrentDeviceExists sends JWT and X-Device-Id", async () => {
-    localStorage.setItem("cm_token", "jwt-token");
+    const { setToken } = await import("../api");
+    setToken("jwt-token");
     localStorage.setItem("cm_device_id", "device-current");
 
     fetch.mockResolvedValueOnce(await okJson({ ok: true }));
@@ -144,7 +148,8 @@ describe("deviceId", () => {
   });
 
   it("ensureCurrentDeviceExists throws backend message on failed current-device check", async () => {
-    localStorage.setItem("cm_token", "jwt-token");
+    const { setToken } = await import("../api");
+    setToken("jwt-token");
     localStorage.setItem("cm_device_id", "device-current");
 
     fetch.mockResolvedValueOnce(await failJson(401, "Unauthorized", {

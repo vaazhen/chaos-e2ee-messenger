@@ -1,3 +1,5 @@
+> **Исторический baseline-аудит.** После создания этого документа исходный код был усилен. Текущий статус описан в `PRODUCTION_READINESS.md`, `HARDENING_CHANGELOG.md` и `VALIDATION_REPORT.md`. Материал ниже полезен как threat model, но отдельные findings уже могут не соответствовать реализации.
+
 # Chaos Messenger — аудит безопасности и план усиления
 
 Проект: E2EE-мессенджер на Spring Boot + React.

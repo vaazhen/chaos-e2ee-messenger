@@ -5043,4 +5043,11 @@ html,body{
 }
 .device-badge.current{background:rgba(53,208,127,.15);color:var(--success)}
 .device-badge.disabled{background:rgba(255,77,109,.12);color:var(--danger)}
+.safety-device-picker{display:flex;flex-direction:column;gap:7px;margin:4px 0 12px;font-size:13px;font-weight:800;color:var(--t2)}
+.safety-device-picker select{width:100%;border:1px solid var(--line);border-radius:14px;background:var(--bg1);color:var(--t1);padding:10px 12px;font:inherit}
+.safety-trust-state{padding:10px 12px;border-radius:14px;font-size:13px;font-weight:800;line-height:1.35}
+.safety-trust-state.verified{background:rgba(38,179,112,.13);color:var(--green)}
+.safety-trust-state.unverified{background:rgba(var(--acc-rgb),.1);color:var(--acc)}
+.safety-trust-state.changed{background:rgba(235,87,87,.13);color:var(--red)}
+.safety-inline-error{margin-top:10px;color:var(--red);font-size:13px;font-weight:700}
 `;

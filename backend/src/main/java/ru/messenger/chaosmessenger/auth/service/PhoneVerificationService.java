@@ -12,8 +12,11 @@ import ru.messenger.chaosmessenger.user.domain.User;
 import ru.messenger.chaosmessenger.user.domain.UserStatus;
 import ru.messenger.chaosmessenger.user.repository.UserRepository;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
+import java.util.Base64;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -50,21 +53,24 @@ public class PhoneVerificationService {
         codeRepo.saveAndFlush(vc);
 
         smsSender.sendSms(normalizedPhone, "Your verification code: " + code);
-        LOG.debug("Sent verification code to {}", normalizedPhone);
+        LOG.debug("Verification code sent phoneHash={}", hashForLog(normalizedPhone));
     }
 
     @Transactional
     public VerificationResult verifyCode(String phone, String code) {
         String normalizedPhone = normalizePhone(phone);
         try {
-            LOG.debug("Verifying code for phone={}", normalizedPhone);
+            LOG.debug("Verifying code phoneHash={}", hashForLog(normalizedPhone));
 
-            Optional<VerificationCode> maybe = codeRepo.findTopByPhoneAndUsedAtIsNullOrderByIdDesc(normalizedPhone);
+            Optional<VerificationCode> maybe = codeRepo.findTopByPhoneOrderByIdDesc(normalizedPhone);
             if (maybe.isEmpty()) {
                 return new VerificationResult("not_found", false, false, null, null, null);
             }
 
             VerificationCode vc = maybe.get();
+            if (vc.getUsedAt() != null) {
+                return new VerificationResult("not_found", false, false, null, null, null);
+            }
             int attempts = vc.getAttempts() == null ? 0 : vc.getAttempts();
             if (attempts >= MAX_ATTEMPTS) {
                 LOG.warn("Too many attempts for phone={}", hashForLog(normalizedPhone));
@@ -127,6 +133,9 @@ public class PhoneVerificationService {
         } else if (digits.length() == 10) {
             digits = "7" + digits;
         }
+        if (digits.length() < 10 || digits.length() > 15) {
+            throw new IllegalArgumentException("Phone number must contain 10 to 15 digits");
+        }
         return "+" + digits;
     }
 
@@ -146,8 +155,16 @@ public class PhoneVerificationService {
     }
 
     private static String hashForLog(String phone) {
-        if (phone == null) return "null";
-        return phone.substring(0, Math.min(4, phone.length())) + "***";
+        if (phone == null) {
+            return "null";
+        }
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(phone.getBytes(StandardCharsets.UTF_8));
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(digest).substring(0, 12);
+        } catch (Exception e) {
+            return "hash-unavailable";
+        }
     }
 
     public record VerificationResult(

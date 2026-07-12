@@ -19,6 +19,7 @@ import ru.messenger.chaosmessenger.auth.dto.UsernameAvailabilityResponse;
 import ru.messenger.chaosmessenger.auth.dto.VerifyCodeRequest;
 import ru.messenger.chaosmessenger.auth.dto.VerifyCodeResponse;
 import ru.messenger.chaosmessenger.auth.service.AuthService;
+import ru.messenger.chaosmessenger.auth.service.RefreshCookieService;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -29,6 +30,7 @@ import static org.mockito.Mockito.when;
 class AuthPhoneControllerTest {
 
     @Mock AuthService authService;
+    @Mock RefreshCookieService refreshCookieService;
 
     @InjectMocks AuthPhoneController controller;
 
@@ -112,7 +114,7 @@ class AuthPhoneControllerTest {
         assertThat(response.exists()).isTrue();
         assertThat(response.newUser()).isFalse();
         assertThat(response.token()).isEqualTo("jwt-token");
-        assertThat(response.refreshToken()).isEqualTo("refresh-token");
+        assertThat(response.refreshToken()).isNull();
         assertThat(response.deviceRegistrationToken()).isEqualTo("device-token");
         assertThat(response.userId()).isEqualTo(1L);
         assertThat(response.username()).isEqualTo("alice");
@@ -175,13 +177,14 @@ class AuthPhoneControllerTest {
     void refreshDelegatesToAuthService() {
         RefreshRequest request = new RefreshRequest("old-refresh");
 
+        when(refreshCookieService.resolve("old-refresh", null)).thenReturn("old-refresh");
         when(authService.refresh("old-refresh"))
                 .thenReturn(new TokenRefreshResponse("new-jwt", "new-refresh", "new-device-token"));
 
         var response = controller.refresh(request);
 
         assertThat(response.token()).isEqualTo("new-jwt");
-        assertThat(response.refreshToken()).isEqualTo("new-refresh");
+        assertThat(response.refreshToken()).isNull();
         assertThat(response.deviceRegistrationToken()).isEqualTo("new-device-token");
         verify(authService).refresh("old-refresh");
     }
@@ -190,6 +193,7 @@ class AuthPhoneControllerTest {
     void logoutDelegatesToAuthService() {
         RefreshRequest request = new RefreshRequest("refresh-token");
 
+        when(refreshCookieService.resolve("refresh-token", null)).thenReturn("refresh-token");
         when(authService.logout("refresh-token")).thenReturn(new LogoutResponse(true));
 
         var response = controller.logout(request);

@@ -10,11 +10,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
+import ru.messenger.chaosmessenger.crypto.device.UserDevice;
+import ru.messenger.chaosmessenger.crypto.device.UserDeviceRepository;
 import ru.messenger.chaosmessenger.outbox.DomainEvent;
 import ru.messenger.chaosmessenger.outbox.KafkaConfig;
 
-import java.util.HashMap;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -27,6 +28,8 @@ public class RealtimeEventConsumer {
     private static final int MAX_DEDUP_CACHE_SIZE = 100_000;
 
     private final StompEventPublisher stompEventPublisher;
+    private final RealtimeEventStore realtimeEventStore;
+    private final UserDeviceRepository userDeviceRepository;
     private final ObjectMapper objectMapper;
     private final MeterRegistry meterRegistry;
     private final Set<String> processedEvents = ConcurrentHashMap.newKeySet();
@@ -42,16 +45,21 @@ public class RealtimeEventConsumer {
             groupId = "${chaos.kafka.realtime.group-id:chaos-realtime-${random.uuid}}",
             containerFactory = "kafkaListenerContainerFactory"
     )
+    @Transactional
     public void handleDomainEvent(DomainEvent event) {
-        if (event.eventId() != null && !processedEvents.add(event.eventId())) {
+        String eventId = event.eventId();
+        if (eventId != null && processedEvents.contains(eventId)) {
             increment("chaos_kafka_consumer_duplicate_total");
             return;
         }
-        trimDedupCacheIfNeeded();
 
         try {
             JsonNode payload = objectMapper.readTree(event.payload());
             route(event, payload);
+            if (eventId != null) {
+                processedEvents.add(eventId);
+                trimDedupCacheIfNeeded();
+            }
             increment("chaos_kafka_consumer_success_total");
         } catch (JsonProcessingException e) {
             increment("chaos_kafka_consumer_failure_total");
@@ -92,7 +100,7 @@ public class RealtimeEventConsumer {
         }
 
         if ("MESSAGE_STATUS".equals(event.eventType()) || "MESSAGE_BULK_STATUS".equals(event.eventType())) {
-            fanoutStatus(payload);
+            fanoutStatus(event, payload);
             return;
         }
 
@@ -108,66 +116,77 @@ public class RealtimeEventConsumer {
             String deviceId = deviceIdNode.asText();
             JsonNode envelope = envelopes == null ? null : envelopes.get(deviceId);
             ObjectNode devicePayload = payload.deepCopy();
+            devicePayload.put("eventId", event.eventId());
             devicePayload.put("type", event.eventType());
             devicePayload.put("eventType", event.eventType());
             if (envelope != null && !envelope.isNull()) {
                 devicePayload.set("envelope", envelope);
             }
             devicePayload.remove("envelopes");
-            stompEventPublisher.publishToDevice(deviceId, "/chats/" + chatId, devicePayload);
+            publishDurableToDevice(deviceId, event.eventId(), "/chats/" + chatId, devicePayload);
         }
     }
 
-    private void fanoutStatus(JsonNode payload) {
+    private void fanoutStatus(DomainEvent event, JsonNode payload) {
+        ObjectNode statusPayload = payload.deepCopy();
+        statusPayload.put("eventId", event.eventId());
         JsonNode deviceIds = payload.get("targetDeviceIds");
         if (deviceIds == null || !deviceIds.isArray()) {
             return;
         }
         for (JsonNode deviceIdNode : deviceIds) {
-            stompEventPublisher.publishToDevice(deviceIdNode.asText(), "/status", payload);
+            publishDurableToDevice(deviceIdNode.asText(), event.eventId(), "/status", statusPayload);
         }
     }
 
     private void fanoutChatEvent(DomainEvent event, JsonNode payload) {
-        fanoutChatList(payload, event.eventType().toLowerCase());
+        fanoutUserDevices(event, payload, "/chats", event.eventType().toLowerCase());
     }
 
     private void fanoutRequestEvent(DomainEvent event, JsonNode payload) {
-        JsonNode usernames = payload.get("participantUsernames");
-        if (usernames == null || !usernames.isArray()) {
-            return;
-        }
-        Map<String, Object> requestEvent = new HashMap<>();
-        requestEvent.put("chatId", payload.hasNonNull("chatId") ? payload.get("chatId").asLong() : null);
-        requestEvent.put("reason", event.eventType().toLowerCase());
-        requestEvent.put("eventType", event.eventType());
-        for (JsonNode usernameNode : usernames) {
-            stompEventPublisher.publishToUser(usernameNode.asText(), "/requests", requestEvent);
-        }
+        fanoutUserDevices(event, payload, "/requests", event.eventType().toLowerCase());
     }
 
     private void fanoutUserEvent(DomainEvent event, JsonNode payload) {
         if ("PROFILE_UPDATED".equals(event.eventType())) {
-            fanoutChatList(payload, "profile_updated");
+            fanoutUserDevices(event, payload, "/chats", "profile_updated");
             return;
         }
         if ("USER_STATUS".equals(event.eventType())) {
-            stompEventPublisher.publishGlobal("/topic/user/status", payload);
+            ObjectNode statusPayload = payload.deepCopy();
+            statusPayload.put("eventId", event.eventId());
+            stompEventPublisher.publishGlobal("/topic/user/status", statusPayload);
         }
     }
 
-    private void fanoutChatList(JsonNode payload, String reason) {
+    private void fanoutUserDevices(DomainEvent event, JsonNode payload, String destination, String reason) {
         JsonNode usernames = payload.get("participantUsernames");
         if (usernames == null || !usernames.isArray()) {
             return;
         }
-        Map<String, Object> chatListEvent = new HashMap<>();
-        chatListEvent.put("chatId", payload.hasNonNull("chatId") ? payload.get("chatId").asLong() : null);
-        chatListEvent.put("reason", reason);
-        chatListEvent.put("eventType", reason);
-        for (JsonNode usernameNode : usernames) {
-            stompEventPublisher.publishToUser(usernameNode.asText(), "/chats", chatListEvent);
+        ObjectNode eventPayload = objectMapper.createObjectNode();
+        eventPayload.put("eventId", event.eventId());
+        if (payload.hasNonNull("chatId")) {
+            eventPayload.put("chatId", payload.get("chatId").asLong());
         }
+        eventPayload.put("reason", reason);
+        eventPayload.put("eventType", event.eventType());
+
+        for (JsonNode usernameNode : usernames) {
+            for (UserDevice device : userDeviceRepository.findActiveByUsernameWithUser(usernameNode.asText())) {
+                publishDurableToDevice(device.getDeviceId(), event.eventId(), destination, eventPayload);
+            }
+        }
+    }
+
+    private void publishDurableToDevice(
+            String deviceId,
+            String eventId,
+            String destination,
+            ObjectNode payload
+    ) {
+        ObjectNode storedPayload = realtimeEventStore.append(deviceId, eventId, destination, payload);
+        stompEventPublisher.publishToDevice(deviceId, destination, storedPayload);
     }
 
     private void trimDedupCacheIfNeeded() {

@@ -39,8 +39,8 @@ async function registerUser(page, data) {
   await page.getByRole("button", { name: /Enter messenger|Войти/i }).click();
   await expect(page.getByText(/Чаты|Chats/i)).toBeVisible();
 
-  expect(await page.evaluate(() => localStorage.getItem("cm_token"))).not.toBeNull();
-  expect(await page.evaluate(() => localStorage.getItem("cm_refresh_token"))).not.toBeNull();
+  expect(await page.evaluate(() => sessionStorage.getItem("cm_token"))).toBeNull();
+  expect(await page.evaluate(() => localStorage.getItem("cm_refresh_token"))).toBeNull();
   expect(await page.evaluate(() => localStorage.getItem("cm_device_id"))).not.toBeNull();
   expect(await page.evaluate(() => localStorage.getItem("cm_device_bundle_v2"))).not.toBeNull();
 }

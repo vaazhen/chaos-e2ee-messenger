@@ -1,0 +1,27 @@
+# Chaos Messenger — Caddy reverse proxy
+#
+# Usage in docker-compose.yml:
+#   environment:
+#     DOMAIN: example.com
+#     ADMIN_EMAIL: admin@example.com
+#
+# For local dev without a domain:
+#   environment:
+#     DOMAIN: localhost
+#
+# Caddy will:
+#   - Automatically provision Let's Encrypt SSL for real domains
+#   - Fall back to plain HTTP for localhost
+
+{$DOMAIN:localhost} {
+    # Caddy obtains a public certificate for real domains and uses its local CA for localhost.
+    reverse_proxy frontend:8080
+
+    log {
+        output file /data/caddy/access.log {
+            roll_size 50mb
+            roll_keep 5
+        }
+        format json
+    }
+}

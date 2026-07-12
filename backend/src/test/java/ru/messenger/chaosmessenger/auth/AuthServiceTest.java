@@ -9,6 +9,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.server.ResponseStatusException;
 import ru.messenger.chaosmessenger.auth.service.AuthService;
+import ru.messenger.chaosmessenger.auth.service.CredentialRateLimiter;
 import ru.messenger.chaosmessenger.auth.service.DeviceRegistrationTokenService;
 import ru.messenger.chaosmessenger.auth.service.PhoneVerificationService;
 import ru.messenger.chaosmessenger.auth.service.RefreshTokenService;
@@ -38,6 +39,7 @@ class AuthServiceTest {
     @Mock JwtService jwtService;
     @Mock SetupTokenService setupTokenService;
     @Mock PasswordEncoder passwordEncoder;
+    @Mock CredentialRateLimiter credentialRateLimiter;
 
     private AuthService service;
 
@@ -50,7 +52,8 @@ class AuthServiceTest {
                 deviceRegTokenService,
                 jwtService,
                 setupTokenService,
-                passwordEncoder
+                passwordEncoder,
+                credentialRateLimiter
         );
     }
 
@@ -79,8 +82,9 @@ class AuthServiceTest {
         when(userRepository.existsByUsername("alice")).thenReturn(false);
         when(setupTokenService.consumePhone("setup-token")).thenReturn("+79001234567");
         when(userRepository.save(user)).thenReturn(user);
-        when(jwtService.generateToken("alice")).thenReturn("jwt");
-        when(refreshTokenService.issue("alice")).thenReturn("refresh");
+        when(refreshTokenService.issueSession("alice"))
+                .thenReturn(new RefreshTokenService.IssuedToken("refresh", "session-1"));
+        when(jwtService.generateToken("alice", "session-1")).thenReturn("jwt");
         when(deviceRegTokenService.issue("alice")).thenReturn("device-token");
 
         var response = service.completeSetup(

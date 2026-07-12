@@ -11,6 +11,7 @@ import ru.messenger.chaosmessenger.auth.dto.AuthResponse;
 import ru.messenger.chaosmessenger.auth.dto.EmailLoginRequest;
 import ru.messenger.chaosmessenger.auth.dto.EmailRegisterRequest;
 import ru.messenger.chaosmessenger.auth.service.AuthService;
+import ru.messenger.chaosmessenger.auth.service.RefreshCookieService;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -21,6 +22,7 @@ import static org.mockito.Mockito.when;
 class EmailAuthControllerTest {
 
     @Mock AuthService authService;
+    @Mock RefreshCookieService refreshCookieService;
 
     @InjectMocks EmailAuthController controller;
 
@@ -63,7 +65,7 @@ class EmailAuthControllerTest {
         assertThat(response.username()).isEqualTo("alice_profile");
         assertThat(response.email()).isEqualTo("alice@test.com");
         assertThat(response.token()).isEqualTo("jwt");
-        assertThat(response.refreshToken()).isEqualTo("refresh");
+        assertThat(response.refreshToken()).isNull();
         assertThat(response.deviceRegistrationToken()).isEqualTo("device-token");
 
         verify(authService).registerEmail(
@@ -114,7 +116,7 @@ class EmailAuthControllerTest {
         assertThat(response.username()).isEqualTo("alice");
         assertThat(response.email()).isEqualTo("alice@test.com");
         assertThat(response.token()).isEqualTo("jwt");
-        assertThat(response.refreshToken()).isEqualTo("refresh");
+        assertThat(response.refreshToken()).isNull();
         assertThat(response.deviceRegistrationToken()).isEqualTo("device-token");
 
         verify(authService).loginEmail(" Alice@Test.COM ", "secret123");

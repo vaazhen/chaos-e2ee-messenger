@@ -9,5 +9,5 @@ import java.util.Optional;
 
 public interface VerificationCodeRepository extends JpaRepository<VerificationCode, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    Optional<VerificationCode> findTopByPhoneAndUsedAtIsNullOrderByIdDesc(String phone);
+    Optional<VerificationCode> findTopByPhoneOrderByIdDesc(String phone);
 }

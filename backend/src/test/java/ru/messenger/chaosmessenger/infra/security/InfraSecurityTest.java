@@ -179,6 +179,8 @@ class InfraSecurityTest {
         JwtService jwtService = new JwtService();
         ReflectionTestUtils.setField(jwtService, "secret", secret);
         ReflectionTestUtils.setField(jwtService, "expiration", expiration);
+        ReflectionTestUtils.setField(jwtService, "issuer", "chaos-messenger");
+        ReflectionTestUtils.setField(jwtService, "audience", "chaos-messenger-api");
         return jwtService;
     }
 }

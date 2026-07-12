@@ -32,7 +32,7 @@ services:
       - app-net
 
   postgres-exporter:
-    image: prometheuscommunity/postgres-exporter:latest
+    image: prometheuscommunity/postgres-exporter:v0.20.1
     restart: *restart
     logging: *json-logging
     environment:
@@ -46,12 +46,13 @@ services:
   # ── Cache ──────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}"]
     restart: *restart
     logging: *json-logging
     volumes:
       - redisdata:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a '${REDIS_PASSWORD}' ping | grep PONG"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -60,52 +61,15 @@ services:
       - app-net
 
   redis-exporter:
-    image: oliver006/redis_exporter:latest
+    image: oliver006/redis_exporter:v1.86.0
     restart: *restart
     logging: *json-logging
     environment:
-      REDIS_ADDR: redis:6379
+      REDIS_ADDR: redis://redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?}
     depends_on:
       redis:
         condition: service_healthy
-    networks:
-      - app-net
-
-
-  # ── Durable event bus ─────────────────────────────────────
-  redpanda:
-    image: redpandadata/redpanda:v24.3.7
-    restart: *restart
-    logging: *json-logging
-    command:
-      - redpanda
-      - start
-      - --mode
-      - dev-container
-      - --smp
-      - "1"
-      - --memory
-      - 512M
-      - --reserve-memory
-      - 0M
-      - --overprovisioned
-      - --node-id
-      - "0"
-      - --check=false
-      - --kafka-addr
-      - internal://0.0.0.0:9092,external://0.0.0.0:19092
-      - --advertise-kafka-addr
-      - internal://redpanda:9092,external://localhost:19092
-    ports:
-      - "19092:19092"
-    volumes:
-      - redpanda-data:/var/lib/redpanda/data
-    healthcheck:
-      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true' || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 30s
     networks:
       - app-net
 
@@ -123,6 +87,7 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?}
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:?}
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
       CHAOS_CORS_ALLOWED_ORIGINS: ${CORS_ORIGINS:?Set CORS_ORIGINS in .env}
       CHAOS_CORS_ALLOWED_ORIGIN_PATTERNS: ${CORS_ORIGINS}
@@ -130,8 +95,6 @@ services:
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       CHAOS_ATTACHMENTS_STORAGE_PATH: /app/attachments
       CHAOS_DEMO_ENABLED: ${CHAOS_DEMO_ENABLED:-false}
-      CHAOS_KAFKA_ENABLED: ${CHAOS_KAFKA_ENABLED:-true}
-      KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
       JAVA_OPTS: >-
         -Xmx512m
         -Djava.security.egd=file:/dev/./urandom
@@ -143,10 +106,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      redpanda:
-        condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health/liveness"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:9091/actuator/health/liveness"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -187,7 +148,7 @@ services:
 
   # ── Monitoring: Metrics ────────────────────────────────────
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.13.0
     restart: *restart
     logging: *json-logging
     command:
@@ -232,7 +193,7 @@ services:
 
   # ── Visualization ──────────────────────────────────────────
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:13.1.0
     restart: *restart
     logging: *json-logging
     environment:
@@ -258,7 +219,6 @@ networks:
 volumes:
   pgdata:
   redisdata:
-  redpanda-data:
   attachments:
   prometheus-data:
   loki-data:

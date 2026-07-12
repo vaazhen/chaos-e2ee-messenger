@@ -17,6 +17,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -79,6 +81,23 @@ class SmsRateLimiterTest {
         assertThatThrownBy(() -> rateLimiter.checkAndIncrement("+79001234567"))
                 .isInstanceOf(RateLimitException.class)
                 .hasMessageContaining("temporarily unavailable");
+    }
+
+
+    @Test
+    @DisplayName("Redis keys do not contain the raw phone number")
+    void redisKeysHashPhoneNumber() {
+        mockRedisCounts(1L, 1L);
+
+        rateLimiter.checkAndIncrement("+79001234567");
+
+        verify(redisTemplate, times(2)).execute(
+                any(DefaultRedisScript.class),
+                org.mockito.ArgumentMatchers.<java.util.List<String>>argThat(keys -> keys != null
+                        && keys.size() == 1
+                        && !String.valueOf(keys.get(0)).contains("79001234567")),
+                anyString()
+        );
     }
 
     @Test

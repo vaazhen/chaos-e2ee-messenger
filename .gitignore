@@ -28,7 +28,7 @@ backend/*.log
 
 # env / local
 .env
-.env.*
+.env.local
 *.local
 
 # Maven wrapper jar is usually allowed, but keep generated files out
@@ -41,8 +41,8 @@ logs/
 # backup dirs
 "frontend — копия"
 
-# docker
-.dockerignore
+# docker (only root)
+/.dockerignore
 
 # k8s overlay (user-specific)
 k8s/overlays/
@@ -56,3 +56,5 @@ frontend/electron/tray-icon.png
 
 # opencode
 .opencode/
+# Packaged Electron endpoints (copy from .env.electron.example)
+frontend/.env.electron
