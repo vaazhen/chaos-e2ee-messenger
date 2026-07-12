@@ -33,7 +33,7 @@ class CredentialRateLimiterTest {
 
         limiter.reset("alice@example.com");
 
-        verify(redis).delete(org.mockito.ArgumentMatchers.argThat(
+        verify(redis).delete(org.mockito.ArgumentMatchers.<String>argThat(
                 key -> key.startsWith("auth:login:rate:") && !key.contains("alice@example.com")
         ));
     }
