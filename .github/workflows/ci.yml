@@ -218,8 +218,12 @@ jobs:
             echo "value=$FRONTEND_IMAGE" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Install Trivy
+        uses: aquasecurity/setup-trivy@v0.2.6
+        with:
+          version: v0.72.0
       - name: Scan for high and critical vulnerabilities
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.28.0
         with:
           image-ref: ${{ steps.resolve.outputs.value }}
           format: sarif
@@ -227,6 +231,7 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: '1'
+          skip-setup: true
 
       - name: Upload SARIF
         if: always()
