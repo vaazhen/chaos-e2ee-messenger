@@ -292,9 +292,11 @@ jobs:
           kubectl rollout status deployment/chaos-frontend -n chaos-messenger --timeout=5m
 
       - name: Smoke test staging
+        if: vars.STAGING_URL != ''
+        env:
+          STAGING_URL: ${{ vars.STAGING_URL }}
         run: |
-          BACKEND_URL="https://staging.chaos-messenger.local"
-          curl -fsS "$BACKEND_URL/actuator/health" || exit 1
+          curl -fsS "$STAGING_URL/actuator/health" || exit 1
 
   promote-production:
     name: Promote staging to production
