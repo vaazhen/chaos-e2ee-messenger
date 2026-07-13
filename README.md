@@ -6,7 +6,7 @@ Multi-device end-to-end encrypted messenger for web and desktop.
 
 React · Electron · Spring Boot · PostgreSQL · Redis · Kafka/Redpanda · Docker · Kubernetes
 
-[Русская версия](README.ru.md) · [Validation report](VALIDATION_REPORT.md) · [Security audit](SECURITY_AUDIT_EN.md)
+[Русская версия](README.ru.md)
 
 </div>
 
