@@ -35,6 +35,24 @@ public interface ChatRepository extends JpaRepository<Chat, Long> {
             @Param("offset") int offset
     );
 
+    @Query(value = """
+            select c.id
+            from chats c
+            join chat_participants cp
+              on cp.chat_id = c.id
+             and cp.user_id = :userId
+            where c.type = 'DIRECT'
+              and c.direct_status = 'PENDING'
+              and (c.direct_requested_by is null or c.direct_requested_by <> :userId)
+            order by c.created_at desc, c.id desc
+            limit :limit offset :offset
+            """, nativeQuery = true)
+    List<Long> findPendingDirectRequestChatIdsForUser(
+            @Param("userId") Long userId,
+            @Param("limit") int limit,
+            @Param("offset") int offset
+    );
+
     @Query("SELECT DISTINCT c FROM Chat c " +
             "LEFT JOIN FETCH c.participants p " +
             "LEFT JOIN FETCH p.user " +

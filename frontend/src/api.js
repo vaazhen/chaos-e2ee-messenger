@@ -140,9 +140,31 @@ export const api = {
 
   // ── Chats ─────────────────────────────────────────────────────────────────
   getChats:       ()                   => call("/chats/my"),
+  getRequests:    ()                   => call("/chats/requests"),
   createSaved:    ()                   => call("/chats/saved", { method: "POST" }),
   createDirect:   (username)           => call(`/chats/direct/by-username?username=${encodeURIComponent(username)}`, { method: "POST" }),
   createGroup:    (name, members)      => call("/chats/group", { method: "POST", body: JSON.stringify({ name, memberIds: members }) }),
+  inviteGroupParticipants: (chatId, userIds) =>
+    call(`/chats/${chatId}/group/participants`, { method: "POST", body: JSON.stringify({ userIds }) }),
+  patchGroupSettings: (chatId, payload) =>
+    call(`/chats/${chatId}/group/settings`, { method: "PATCH", body: JSON.stringify(payload || {}) }),
+  patchParticipantRole: (chatId, participantUserId, role) =>
+    call(`/chats/${chatId}/group/participants/${participantUserId}/role`, { method: "PATCH", body: JSON.stringify({ role }) }),
+  patchGroupPermissions: (chatId, payload) =>
+    call(`/chats/${chatId}/group/permissions`, { method: "PATCH", body: JSON.stringify(payload || {}) }),
+  removeGroupParticipant: (chatId, participantUserId) =>
+    call(`/chats/${chatId}/group/participants/${participantUserId}`, { method: "DELETE" }),
+  muteGroupParticipant: (chatId, participantUserId, minutes) =>
+    call(`/chats/${chatId}/group/participants/${participantUserId}/mute?minutes=${encodeURIComponent(minutes)}`, { method: "POST" }),
+  unmuteGroupParticipant: (chatId, participantUserId) =>
+    call(`/chats/${chatId}/group/participants/${participantUserId}/mute`, { method: "DELETE" }),
+  banGroupParticipant: (chatId, participantUserId, reason = "") =>
+    call(`/chats/${chatId}/group/participants/${participantUserId}/ban?reason=${encodeURIComponent(reason)}`, { method: "POST" }),
+  unbanGroupParticipant: (chatId, participantUserId) =>
+    call(`/chats/${chatId}/group/participants/${participantUserId}/ban`, { method: "DELETE" }),
+  deleteGroup: (chatId) => call(`/chats/${chatId}/group`, { method: "DELETE" }),
+  acceptRequest:  (chatId)             => call(`/chats/${chatId}/requests/accept`, { method: "POST" }),
+  declineRequest: (chatId)             => call(`/chats/${chatId}/requests/decline`, { method: "POST" }),
 
   // ── Realtime recovery ────────────────────────────────────────────────────
   syncRealtime:   (after = 0, limit = 200) =>

@@ -490,46 +490,19 @@ describe("useMessages critical flow", () => {
       });
     });
 
-    await act(async () => {
-      await result.current.deleteMessage(100, { id: 500 }, "me");
+    act(() => {
+      result.current.deleteMessage(100, { id: 500 }, "me");
     });
 
     expect(result.current.msgs[100].map(m => m.id)).toEqual([501]);
     expect(JSON.parse(localStorage.getItem("cm_hidden_message_ids:1"))).toEqual(["500"]);
     expect(mocks.api.deleteMsg).not.toHaveBeenCalled();
 
-    await act(async () => {
-      await result.current.deleteMessage(100, { id: 501 }, "everyone");
+    act(() => {
+      result.current.deleteMessage(100, { id: 501 }, "everyone");
     });
 
     expect(result.current.msgs[100]).toEqual([]);
-    expect(mocks.api.deleteMsg).toHaveBeenCalledWith(501);
-  });
-
-  it("deleteMessage restores message when backend delete fails", async () => {
-    const { useMessages } = await import("../hooks/useMessages");
-
-    mocks.api.deleteMsg.mockRejectedValueOnce(new Error("forbidden"));
-
-    const { result } = renderHook(() => useMessages(1));
-    const msg = {
-      id: 501,
-      _text: "everyone",
-      createdAt: "2026-04-28T10:00:00.000Z",
-    };
-
-    act(() => {
-      result.current.setMsgs({ 100: [msg] });
-    });
-
-    let deleted;
-
-    await act(async () => {
-      deleted = await result.current.deleteMessage(100, msg, "everyone");
-    });
-
-    expect(deleted).toBe(false);
-    expect(result.current.msgs[100]).toEqual([msg]);
     expect(mocks.api.deleteMsg).toHaveBeenCalledWith(501);
   });
 

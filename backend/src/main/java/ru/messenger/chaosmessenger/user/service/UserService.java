@@ -72,6 +72,7 @@ public class UserService {
                 user.getEmail(),
                 user.getFirstName(),
                 user.getLastName(),
+                user.getBio(),
                 user.getAvatarUrl(),
                 user.getPublicKey()
         );
@@ -92,6 +93,10 @@ public class UserService {
 
         if (request.lastName() != null) {
             user.setLastName(request.lastName().trim());
+        }
+
+        if (request.bio() != null) {
+            user.setBio(trimToNull(request.bio()));
         }
 
         if (request.avatarUrl() != null) {
@@ -129,6 +134,7 @@ public class UserService {
                 updated.email(),
                 updated.firstName(),
                 updated.lastName(),
+                updated.bio(),
                 updated.avatarUrl(),
                 token
         );
@@ -141,6 +147,7 @@ public class UserService {
                 user.getEmail(),
                 user.getFirstName(),
                 user.getLastName(),
+                user.getBio(),
                 user.getAvatarUrl()
         );
     }

@@ -136,6 +136,24 @@ class WebSocketInfraTest {
     }
 
     @Test
+    void subscribeAllowsOwnUserRequestsTopicAfterConnect() {
+        connectSession("s1", "alice", "dev-a");
+
+        Message<byte[]> subscribe = stomp(StompCommand.SUBSCRIBE, "s1", "/topic/users/alice/requests", accessor -> {});
+
+        assertThat(interceptor.preSend(subscribe, channel)).isNotNull();
+    }
+
+    @Test
+    void subscribeRejectsAnotherUsersRequestsTopic() {
+        connectSession("s1", "alice", "dev-a");
+
+        Message<byte[]> subscribe = stomp(StompCommand.SUBSCRIBE, "s1", "/topic/users/bob/requests", accessor -> {});
+
+        assertThat(interceptor.preSend(subscribe, channel)).isNull();
+    }
+
+    @Test
     void subscribeAllowsOnlyCurrentDeviceTopic() {
         connectSession("s1", "alice", "dev-a");
 

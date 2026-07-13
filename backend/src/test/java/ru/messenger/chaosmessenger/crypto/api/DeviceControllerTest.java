@@ -12,6 +12,8 @@ import ru.messenger.chaosmessenger.auth.service.DeviceRegistrationTokenService;
 import ru.messenger.chaosmessenger.crypto.device.DeviceService;
 import ru.messenger.chaosmessenger.crypto.dto.DeviceRegistrationRequest;
 import ru.messenger.chaosmessenger.crypto.dto.DeviceRegistrationResponse;
+import ru.messenger.chaosmessenger.crypto.dto.OneTimePreKeyDto;
+import ru.messenger.chaosmessenger.crypto.dto.SignedPreKeyDto;
 import ru.messenger.chaosmessenger.crypto.dto.UserDeviceResponse;
 import ru.messenger.chaosmessenger.crypto.device.UserDevice;
 
@@ -35,8 +37,9 @@ class DeviceControllerTest {
     @Test
     void registerThrowsWhenTokenIsMissing() {
         DeviceRegistrationRequest request = new DeviceRegistrationRequest(
-                "dev-a", 1, "identity", "signed-key", "sig",
-                1, "pre-key", null, "device-name"
+                "dev-a", "device-name", 1, "identity", "signed-key",
+                new SignedPreKeyDto(1, "pre-key", "sig"),
+                List.of(new OneTimePreKeyDto(1, "pre-key"))
         );
 
         assertThatThrownBy(() -> deviceController.register(null, request))
@@ -48,8 +51,9 @@ class DeviceControllerTest {
     @Test
     void registerThrowsWhenTokenIsBlank() {
         DeviceRegistrationRequest request = new DeviceRegistrationRequest(
-                "dev-a", 1, "identity", "signed-key", "sig",
-                1, "pre-key", null, "device-name"
+                "dev-a", "device-name", 1, "identity", "signed-key",
+                new SignedPreKeyDto(1, "pre-key", "sig"),
+                List.of(new OneTimePreKeyDto(1, "pre-key"))
         );
 
         assertThatThrownBy(() -> deviceController.register("   ", request))
@@ -61,8 +65,9 @@ class DeviceControllerTest {
     @Test
     void registerThrowsWhenTokenIsInvalid() {
         DeviceRegistrationRequest request = new DeviceRegistrationRequest(
-                "dev-a", 1, "identity", "signed-key", "sig",
-                1, "pre-key", null, "device-name"
+                "dev-a", "device-name", 1, "identity", "signed-key",
+                new SignedPreKeyDto(1, "pre-key", "sig"),
+                List.of(new OneTimePreKeyDto(1, "pre-key"))
         );
 
         when(deviceRegTokenService.consumeAndGetUsername("bad-token")).thenReturn(null);
@@ -76,11 +81,12 @@ class DeviceControllerTest {
     @Test
     void registerDelegatesToDeviceService() {
         DeviceRegistrationRequest request = new DeviceRegistrationRequest(
-                "dev-a", 1, "identity", "signed-key", "sig",
-                1, "pre-key", null, "device-name"
+                "dev-a", "device-name", 1, "identity", "signed-key",
+                new SignedPreKeyDto(1, "pre-key", "sig"),
+                List.of(new OneTimePreKeyDto(1, "pre-key"))
         );
         DeviceRegistrationResponse expected = new DeviceRegistrationResponse(
-                true, "alice", 1L, "dev-a"
+                "dev-a", 10L
         );
 
         when(deviceRegTokenService.consumeAndGetUsername("valid-token")).thenReturn("alice");
@@ -114,7 +120,7 @@ class DeviceControllerTest {
     @Test
     void currentReturnsDeviceWhenFound() {
         DeviceRegistrationResponse expected = new DeviceRegistrationResponse(
-                true, "alice", 1L, "dev-a"
+                "dev-a", 10L
         );
 
         when(authentication.getName()).thenReturn("alice");
@@ -147,7 +153,7 @@ class DeviceControllerTest {
     @Test
     void myDevicesDelegatesToDeviceService() {
         UserDeviceResponse device = new UserDeviceResponse(
-                1L, "dev-a", "device-name", true, null, null
+                1L, "dev-a", "device-name", true, false, null, null
         );
 
         when(authentication.getName()).thenReturn("alice");
@@ -168,7 +174,7 @@ class DeviceControllerTest {
     @Test
     void deactivateDeviceDelegatesToDeviceService() {
         UserDeviceResponse expected = new UserDeviceResponse(
-                1L, "dev-a", "device-name", false, null, null
+                1L, "dev-a", "device-name", false, false, null, null
         );
 
         when(authentication.getName()).thenReturn("alice");

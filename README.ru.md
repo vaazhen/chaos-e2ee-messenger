@@ -1,356 +1,289 @@
 <div align="center">
 
-[English README](README.md) · [Быстрый запуск](SETUP_COMPLETE.ru.md) · [Аудит безопасности](SECURITY_AUDIT_RU.md)
+# Chaos Messenger
 
-<br/>
+Мультидевайсный мессенджер со сквозным шифрованием для web и desktop.
 
-[![CI](https://github.com/vaazhen/chaos-messenger/actions/workflows/ci.yml/badge.svg)](https://github.com/vaazhen/chaos-messenger/actions/workflows/ci.yml)
-[![Java](https://img.shields.io/badge/Java-17-orange?logo=openjdk&logoColor=white)](https://openjdk.org/)
-[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-brightgreen?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
-[![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white)](https://react.dev/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Redis](https://img.shields.io/badge/Redis-7-red?logo=redis&logoColor=white)](https://redis.io/)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+React · Electron · Spring Boot · PostgreSQL · Redis · Kafka/Redpanda · Docker · Kubernetes
+
+[English](README.md) · [Отчёт о проверке](VALIDATION_REPORT.md) · [Аудит безопасности](SECURITY_AUDIT_RU.md)
 
 </div>
-
----
-
-<div align="center">
-  <img src="docs/assets/screenshots/header-ru.png" alt="Chaos Messenger" width="100%"/>
-</div>
-
-<br/>
-
-<p align="center">
-  <img src="docs/assets/screenshots/hero-ru.png" alt="Chaos Messenger — список чатов, переписка, устройства" width="100%"/>
-</p>
-
-<p align="center">
-  <sub>Список чатов с непрочитанными · Живая переписка со статусами прочтения ✓✓ · Управление устройствами E2EE</sub>
-</p>
-
----
-
-## Статья
-
-Технический разбор проекта опубликован на DEV:
-
-[Building an End-to-End Encrypted Messenger with Spring Boot and WebCrypto](https://dev.to/vaazhen/i-built-an-end-to-end-encrypted-messenger-with-spring-boot-and-webcrypto-1if5)
-
-В статье разобраны основные архитектурные решения Chaos Messenger: установка E2EE-сессии через X3DH, symmetric ratchet, зашифрованные конверты для каждого устройства, WebSocket-доставка, multi-device маршрутизация и ограничения браузерного E2EE.
-
----
-
-## О проекте
-
-**Chaos Messenger** — full-stack realtime-мессенджер, в котором сквозное шифрование — не маркетинговый тезис, а верифицируемое архитектурное свойство.
-
-Откройте DevTools. Отправьте сообщение. Сервер получает вот это:
-
-```json
-{
-  "envelope": {
-    "ciphertext": "qzgHSg7zbwU6h8j8RqCPUYBWHJLi78eR9C0tj9I=",
-    "nonce": "6KPcVjbpM4FUB0Vz",
-    "senderIdentityPublicKey": "B4pERe0xKmSdiQPR+kLWWmI0nloC8Za3RBTg+occHF0=",
-    "targetDeviceId": "device-2aa3ae0e-ee08-4261-aa09-7d8f800b61e9"
-  }
-}
-```
-
-Спросите сервер, что написано в последнем сообщении:
-
-```json
-{ "lastMessage": "[encrypted]" }
-```
-
-Не `***`. Не `[скрыто]`. Сервер возвращает `[encrypted]` — потому что у него буквально нет другого значения.
-
-**Стек:** Spring Boot 3 · React 18 · WebSocket/STOMP · X3DH · Symmetric Ratchet · AES-GCM · WebCrypto API
-
----
-
-## Архитектура
-
-> Три слоя — строго разделённые обязанности. Клиент шифрует, сервер маршрутизирует, база данных хранит блобы.
-
-<p align="center">
-  <img src="docs/assets/screenshots/architecture-ru.png" alt="Архитектура: Браузер · Spring Boot Backend · Данные и мониторинг" width="100%"/>
-</p>
-
-| Слой | Ответственность |
-|---|---|
-| **Браузер** | Создание ключей · Шифрование · Расшифровка · Хранение идентификатора устройства |
-| **Backend** | Аутентификация · Маршрутизация · Хранение конвертов · Доставка по WebSocket |
-| **PostgreSQL** | Пользователи · устройства · чаты · зашифрованные конверты |
-| **Redis** | Refresh tokens · online presence · SMS rate limits |
-
----
-
-## Как работает E2EE
-
-### Шаг 1 — Обмен ключами X3DH
-
-> Alice получает публичный prekey bundle Bob'а с сервера и выводит общий секрет локально. Сервер никогда не видит секрет.
-
-<p align="center">
-  <img src="docs/assets/screenshots/e2ee-flow-ru.png" alt="E2EE flow: устройство Alice · Сервер · устройство Bob" width="100%"/>
-</p>
-
-При первом открытии переписки ваше устройство запускает [Extended Triple Diffie-Hellman (X3DH)](https://signal.org/docs/specifications/x3dh/) против prekey bundle получателя. Общий секрет выводится локально — он никогда не покидает устройство. Сервер предоставляет публичные ключи, но не может вычислить секрет.
-
-### Шаг 2 — Symmetric Ratchet + AES-GCM
-
-> Каждое сообщение получает собственный уникальный ключ шифрования, который затем уничтожается. Компрометация одного ключа ничего не раскрывает об остальных.
-
-<p align="center">
-  <img src="docs/assets/screenshots/ratchet-ru.png" alt="Symmetric Ratchet: chainKey эволюционирует, уникальный messageKey на каждое сообщение" width="100%"/>
-</p>
-
-После установки сессии каждый ключ сообщения выводится через ratchet-цепочку:
-
-```
-nextChainKey = HMAC-SHA256(chainKey, 0x02)
-messageKey   = HMAC-SHA256(chainKey, 0x01)
-```
-
-`messageKey` шифрует ровно одно сообщение через AES-GCM, после чего уничтожается. Это обеспечивает **forward secrecy на уровне каждого сообщения**.
-
-### Шаг 3 — Слепая доставка
-
-Сервер получает непрозрачный зашифрованный конверт и доставляет копию на каждое зарегистрированное устройство получателя через WebSocket. Никакой расшифровки, никакого перешифрования — только **слепая маршрутизация**.
-
-> **Важная оговорка.** Здесь реализован *симметричный* ratchet — не полный [Double Ratchet](https://signal.org/docs/specifications/doubleratchet/) из Signal Protocol. DH ratchet step (восстановление после компрометации) — первый пункт [роадмапа](#роадмап) и описан в [аудите безопасности](SECURITY_AUDIT_RU.md).
-
----
 
 ## Возможности
 
-| | |
+- личные чаты, группы и сохранённые сообщения;
+- ответы, редактирование, удаление, реакции и статусы доставки/прочтения;
+- зашифрованные вложения и исчезающие сообщения;
+- typing, presence и обновления через WebSocket;
+- сигналинг аудио- и видеозвонков через WebRTC;
+- аутентификация по email/паролю и телефону;
+- управление устройствами и отдельная E2EE-доставка на каждое устройство;
+- зашифрованные резервные копии;
+- web-клиент и Electron-приложение;
+- Docker Compose, Kubernetes-манифесты и observability-конфигурация.
+
+## Сквозное шифрование
+
+У каждого клиентского устройства отдельная криптографическая идентичность. Клиент устанавливает сессию через X3DH-подобный обмен pre-key и шифрует сообщения реализацией Double Ratchet на WebCrypto.
+
+Backend получает и хранит:
+
+- публичные ключи устройств и pre-key;
+- зашифрованные message envelope;
+- зашифрованные вложения;
+- метаданные аккаунтов, устройств, чатов и доставки.
+
+Backend не получает открытый текст сообщений и приватные ключи клиентов.
+
+### Проверка устройств
+
+Для каждого удалённого устройства можно сравнить Safety Number вне мессенджера. Состояние доверия:
+
+```text
+UNVERIFIED -> VERIFIED -> KEY_CHANGED
+```
+
+При изменении identity key ранее подтверждённого устройства клиент блокирует криптографические операции до повторной явной проверки.
+
+### Хранение ключей на клиенте
+
+Приватные identity keys, pre-key и ratchet-сессии хранятся в IndexedDB в виде AES-GCM-зашифрованных записей. Wrapping key — non-extractable WebCrypto key. Изменения ratchet-state сериализуются между конкурентными операциями, чтобы не переиспользовать message index.
+
+Access token хранится только в памяти процесса. Refresh token передаётся через cookie с флагами `Secure`, `HttpOnly`, `SameSite=Strict` и ротируется backend.
+
+E2EE не защищает уже скомпрометированное конечное устройство. JavaScript в доверенном origin, вредоносная сборка приложения, расширение браузера или malware ОС могут получить plaintext во время работы клиента.
+
+## Realtime-доставка
+
+При включённом Kafka backend использует transactional outbox. Персональные события устройства сохраняются с монотонно возрастающим sequence.
+
+После переподключения клиент:
+
+1. читает последний сохранённый cursor;
+2. запрашивает пропущенные события через `/api/realtime/sync`;
+3. применяет durable events по порядку;
+4. обрабатывает WebSocket-события, накопленные во время recovery;
+5. сохраняет новый cursor.
+
+Realtime имеет семантику at least once. Каждое событие содержит `eventId`, а клиент отбрасывает повторную доставку.
+
+## Архитектура
+
+```mermaid
+flowchart LR
+    WEB[React web-клиент] --> EDGE[Caddy / Nginx / Ingress]
+    DESKTOP[Electron-клиент] --> EDGE
+    EDGE --> API[Spring Boot backend]
+    API --> PG[(PostgreSQL)]
+    API --> REDIS[(Redis)]
+    API --> OUTBOX[Transactional outbox]
+    OUTBOX --> KAFKA[Kafka / Redpanda]
+    KAFKA --> REALTIME[Realtime consumer]
+    REALTIME --> EDGE
+    API --> ATTACHMENTS[(Хранилище зашифрованных вложений)]
+    API --> OBS[Actuator / Prometheus / Loki]
+    OBS --> GRAFANA[Grafana]
+```
+
+## Стек
+
+| Слой | Технологии |
 |---|---|
-| **E2EE** | X3DH · Symmetric Ratchet · AES-GCM · WebCrypto · ноль внешних зависимостей |
-| **Multi-device** | Отдельный конверт на устройство · UI управления · Отзыв доступа |
-| **Авторизация** | Phone + SMS OTP · Email + пароль · JWT access/refresh · Redis rate limiting |
-| **Сообщения** | Личные и групповые чаты · Realtime WebSocket/STOMP · Typing indicator |
-| **Операции** | Ответ · Редактирование · Soft delete · Фото · Статусы прочтения ✓✓ · Presence · Поиск пользователей |
-| **Backend** | Spring Boot 3 · PostgreSQL 16 · Flyway 21 миграция · Redis 7 · Docker Compose |
-| **Наблюдаемость** | Actuator · Prometheus · Grafana (провизионирован, без настройки) |
-| **Тесты** | 24 backend (Testcontainers) · 12 frontend (Vitest) · E2E (Playwright) |
-| **DX** | GitHub Actions CI · OpenAPI 3.1 · Swagger UI · запуск одной командой |
-
----
-
-## Онбординг
-
-> Вход по телефону → SMS-верификация → настройка профиля → начало общения. Весь процесс занимает меньше минуты.
-
-<p align="center">
-  <img src="docs/assets/screenshots/screens-onboarding-ru.png" alt="Онбординг: вход по телефону · SMS-верификация · настройка профиля · новый чат" width="100%"/>
-</p>
-
----
+| Web | React 18, Vite 5, WebCrypto, IndexedDB, STOMP/SockJS |
+| Desktop | Electron 33, electron-builder |
+| Backend | Java 17, Spring Boot 3.5, Spring Security, JPA/Hibernate |
+| Data | PostgreSQL 16, Redis 7, Flyway |
+| Events | Kafka-compatible broker / Redpanda, transactional outbox |
+| Observability | Actuator, Prometheus, Grafana, Loki, Promtail |
+| Deployment | Docker Compose, Kubernetes/Kustomize, GitHub Actions |
 
 ## Быстрый запуск
 
-```bash
-git clone https://github.com/vaazhen/chaos-messenger.git
-cd chaos-messenger
-```
+### Требования
 
-**Одной командой:**
+- Docker Engine;
+- Docker Compose v2;
+- минимум 4 ГБ свободной памяти для полного локального стека.
 
-```bash
-./START.sh        # macOS / Linux
-START.bat         # Windows
-```
-
-**Или вручную:**
+### Настройка
 
 ```bash
-# 1. Инфраструктура
-cd backend && docker compose -f docker-compose.dev.yml up -d
-
-# 2. Backend
-mvn spring-boot:run
-
-# 3. Frontend (новый терминал)
-cd frontend && npm install && npm run dev
+cp .env.example .env
 ```
 
-Откройте **[http://localhost:5173](http://localhost:5173)**
+Сгенерируйте сильные секреты и замените все значения `CHANGE_ME`:
 
-> В dev-режиме SMS-коды появляются в логах backend — SMS-провайдер не нужен.
+```bash
+openssl rand -base64 32   # POSTGRES_PASSWORD
+openssl rand -base64 32   # REDIS_PASSWORD
+openssl rand -base64 48   # JWT_SECRET
+openssl rand -base64 32   # GRAFANA_ADMIN_PASSWORD
+```
 
-**Требования:** Java 17+ · Maven 3.8+ · Node.js 18+ · Docker + Compose
+Для локального запуска:
 
----
+```dotenv
+DOMAIN=localhost
+CORS_ORIGINS=https://localhost
+```
 
-## Локальные адреса
+Для публичного размещения используйте реальный DNS-домен и соответствующий HTTPS origin.
 
-| Сервис | URL |
+### Запуск
+
+```bash
+docker compose up --build -d
+docker compose ps
+docker compose logs -f backend frontend caddy
+```
+
+Откройте:
+
+```text
+https://localhost
+```
+
+Для локального имени Caddy использует локальный CA, для публичного домена получает публичный TLS-сертификат.
+
+Остановить стек:
+
+```bash
+docker compose down
+```
+
+Удалить также локальные данные:
+
+```bash
+docker compose down -v
+```
+
+## Локальная разработка
+
+### Backend
+
+```bash
+cd backend
+./mvnw spring-boot:run
+```
+
+Зависимости для разработки:
+
+```bash
+cd backend
+docker compose -f docker-compose.dev.yml up -d
+```
+
+### Frontend
+
+```bash
+cd frontend
+npm ci
+npm run dev
+```
+
+Vite проксирует `/api` и `/ws` на `http://localhost:8080`.
+
+## Electron
+
+Создайте конфигурацию desktop-сборки:
+
+```bash
+cd frontend
+cp .env.electron.example .env.electron
+```
+
+Укажите абсолютные secure endpoints:
+
+```dotenv
+VITE_BACKEND_URL=https://messenger.example.com
+VITE_API_BASE=https://messenger.example.com/api
+VITE_WS_URL=wss://messenger.example.com/ws
+```
+
+Сборка:
+
+```bash
+npm run electron:build
+```
+
+Сборка завершается ошибкой, если обязательные endpoints отсутствуют или используют небезопасные протоколы. Публичные установщики должны быть подписаны; macOS-сборки также требуют notarisation.
+
+## Конфигурация
+
+Основные переменные окружения:
+
+| Переменная | Назначение |
 |---|---|
-| Приложение | http://localhost:5173 |
-| API | http://localhost:8080 |
-| Swagger UI | http://localhost:8080/swagger-ui/index.html |
-| OpenAPI JSON | http://localhost:8080/api-docs |
-| Health | http://localhost:8080/actuator/health |
-| Prometheus | http://localhost:9090 |
-| Grafana | http://localhost:3000 · `admin / admin` |
+| `POSTGRES_PASSWORD` | Пароль PostgreSQL |
+| `REDIS_PASSWORD` | Пароль Redis |
+| `JWT_SECRET` | JWT signing secret, минимум 32 символа |
+| `DOMAIN` | Публичный hostname для Caddy |
+| `CORS_ORIGINS` | Точный доверенный frontend origin |
+| `CHAOS_DEMO_ENABLED` | Включает необязательный demo endpoint |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Данные Web Push |
+| `CHAOS_KAFKA_ENABLED` | Включает Kafka/outbox delivery |
+| `KAFKA_BOOTSTRAP_SERVERS` | Адреса Kafka-compatible broker |
+| `CHAOS_ATTACHMENTS_STORAGE_PATH` | Путь для зашифрованных вложений |
+| `CHAOS_ATTACHMENTS_MAX_BYTES` | Максимальный размер зашифрованного вложения |
 
----
+Полный список локальных параметров находится в `.env.example`, `backend/.env.example` и `frontend/.env.example`.
 
-## API
+## Проверки
 
-Каждый защищённый эндпоинт требует `Authorization: Bearer <jwt>` и `X-Device-Id: <uuid>`.
-
-| Группа | Описание |
-|---|---|
-| **Auth** | Phone OTP · Email login · JWT refresh · Logout |
-| **Devices** | Регистрация · Загрузка prekeys · Ротация signed prekey · Список |
-| **Crypto** | Получение prekey bundle для X3DH |
-| **Chats** | Создание личного/группового · Список · Информация |
-| **Messages** | Отправка · Редактирование · Удаление · Статусы |
-| **Profile** | Получение · Обновление · Аватар · Проверка username |
-| **Users** | Поиск по username |
-
-**WebSocket-топики** (STOMP, JWT аутентификация):
-
-```
-/topic/devices/{deviceId}/chats/{chatId}  ← per-device зашифрованный конверт
-/topic/devices/{deviceId}/status          ← per-device статус события
-/topic/users/{username}/chats             ← обновления списка чатов
-/topic/chats/{chatId}/typing              ← события печати
-/topic/user/status                        ← online presence
-```
-
----
-
-## Тесты
+### Backend
 
 ```bash
-cd backend && mvn test                   # JUnit 5 + Testcontainers
-cd frontend && npm test                  # Vitest
-cd frontend && npm run test:e2e          # Playwright
+cd backend
+./mvnw verify
 ```
 
-CI запускает все три при каждом push и pull request.
+### Frontend
 
----
-
-## Структура проекта
-
-```
-chaos-messenger/
-├── backend/src/main/java/ru/messenger/chaosmessenger/
-│   ├── auth/          # Phone OTP · email · JWT
-│   ├── chat/          # Управление чатами
-│   ├── message/       # Сообщения · статусы · реакции · события
-│   ├── crypto/        # Устройства · prekeys · envelope fanout
-│   ├── infra/         # WebSocket · security · фильтры
-│   ├── user/          # Пользователи · профили
-│   └── common/        # Ошибки · i18n · утилиты
-├── backend/src/main/resources/
-│   ├── db/migration/  # V1–V22 Flyway (21 файл, нет V3)
-│   ├── messages.properties      # EN сообщения об ошибках
-│   └── messages_ru.properties   # RU сообщения об ошибках
-├── frontend/src/
-│   ├── crypto-engine.js   # X3DH + Ratchet + AES-GCM, ноль зависимостей
-│   ├── components/        # AuthScreen · ChatList · MessageInput…
-│   ├── hooks/             # useAuth · useChats · useMessages · useWebSocket
-│   └── i18n/              # EN / RU
-└── docs/assets/screenshots/
-    ├── header.png              # Логобаннер
-    ├── hero.png                # Три экрана — главный баннер
-    ├── architecture.png        # Диаграмма архитектуры
-    ├── e2ee-flow.png           # Схема X3DH + шифрования
-    ├── ratchet.png             # Схема симметричного ratchet
-    └── screens-onboarding.png  # Экраны онбординга
+```bash
+cd frontend
+npm ci
+npm run lint
+npm test
+npm run test:coverage
+npm run build
 ```
 
----
+Подготовленный архив проверен с результатом **154 пройденных frontend-теста и 3 осознанно пропущенных теста**. Точные результаты и ограничения окружения зафиксированы в [VALIDATION_REPORT.md](VALIDATION_REPORT.md).
 
-## Переменные окружения
+## Kubernetes
 
-<details>
-<summary>Backend + Frontend</summary>
+Каталог `k8s/` содержит:
 
-**Backend:**
-```env
-JWT_SECRET=change-this-to-a-strong-32-plus-character-secret
-JWT_EXPIRATION=86400000
-CHAOS_CORS_ALLOWED_ORIGINS=http://localhost:5173
-SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/chaos_messenger
-SPRING_DATASOURCE_USERNAME=postgres
-SPRING_DATASOURCE_PASSWORD=postgres
-SPRING_DATA_REDIS_HOST=localhost
-SPRING_DATA_REDIS_PORT=6379
+- namespace и конфигурацию;
+- Deployments/Services backend и frontend;
+- Ingress;
+- requests/limits;
+- liveness/readiness probes;
+- Horizontal Pod Autoscalers;
+- PodDisruptionBudgets;
+- шаблон Secret.
+
+После замены image names, hostname и секретов:
+
+```bash
+kubectl apply -k k8s/
 ```
 
-**Frontend `.env`:**
-```env
-VITE_BACKEND_URL=http://localhost:8080
-VITE_API_BASE=http://localhost:8080/api
-VITE_WS_URL=http://localhost:8080/ws
-```
-</details>
+Для публичного production-развёртывания используйте managed или operator-backed PostgreSQL, Redis и Kafka, проверенные backup/PITR, внешний secret manager и независимое тестирование безопасности.
 
----
+## Безопасность
 
-## Роадмап
+- Не коммитьте `.env` и реальные секреты.
+- Не публикуйте `/actuator` и Prometheus endpoints в интернет.
+- Отдавайте web-клиент только по HTTPS.
+- Используйте точные CORS origins, без глобального wildcard.
+- Ротируйте JWT, database, Redis и VAPID secrets через secret manager.
+- Перед каждым релизом запускайте backend tests, integration tests и миграции.
+- Перед использованием для высокорисковых коммуникаций проведите независимый crypto-аудит и pentest.
 
-```
-✅  X3DH key exchange
-✅  Symmetric Ratchet + AES-GCM на каждое сообщение
-✅  Multi-device envelope fanout
-✅  Phone + email авторизация
-✅  Групповые чаты
-✅  Статусы прочтения · typing · presence
-✅  Prometheus + Grafana
-✅  Docker Compose · GitHub Actions CI
-
-🔜  Полный Double Ratchet (DH ratchet + break-in recovery)
-🔜  Android-клиент + Android Keystore
-🔜  Push-уведомления
-📅  Зашифрованные голосовые сообщения
-📅  Зашифрованное медиахранилище
-📅  WebRTC звонки + TURN/STUN
-📅  Самоуничтожающиеся сообщения
-💡  Desktop-клиент (Tauri)
-🔜  Реакции на сообщения (entity + DB готовы, API в разработке)
-```
-
----
-
-## Зачем этот проект
-
-Реализация мессенджера с настоящим E2EE — один из немногих способов получить практический опыт со всем стеком современных защищённых коммуникаций: деривация ключей, криптография на уровне протокола, multi-device управление состоянием, realtime-инфраструктура и наблюдаемость — в одной цельной кодовой базе.
-
-Хорошая точка старта для:
-- Java / Fullstack портфолио — E2EE-угол делает проект запоминающимся
-- Изучения realtime-архитектуры на Spring Boot
-- Android-клиента с интеграцией Android Keystore
-- Пошаговой реализации полного Double Ratchet
-
----
-
----
+Подробности: [SECURITY_AUDIT_RU.md](SECURITY_AUDIT_RU.md) и [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md).
 
 ## Лицензия
 
-Проект распространяется под лицензией Apache License 2.0.
-
-Copyright 2026 Evgeniy Vasilenkov
-
-Подробности см. в файле [LICENSE](LICENSE).
-
----
-
-<div align="center">
-<br/>
-
-**Если проект оказался полезным — поставьте ⭐**
-
-*Написан на Java и React с здоровым недоверием к серверам, которые обещают защищать ваши данные.*
-
-</div>
+Проект распространяется по [Apache License 2.0](LICENSE).

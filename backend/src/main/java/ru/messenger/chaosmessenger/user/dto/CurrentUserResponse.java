@@ -6,6 +6,7 @@ public record CurrentUserResponse(
         String email,
         String firstName,
         String lastName,
+        String bio,
         String avatarUrl,
         String publicKey
 ) {
