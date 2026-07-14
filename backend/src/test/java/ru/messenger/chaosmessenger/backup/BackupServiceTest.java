@@ -44,7 +44,7 @@ class BackupServiceTest {
         when(backupRepository.findTopByUserIdOrderByVersionDesc(1L))
                 .thenReturn(Optional.of(backup));
 
-        BackupExportResponse response = backupService.exportBackup(1L);
+        BackupExportResponse response = backupService.exportBackup(1L, "passphrase");
 
         assertEquals(1, response.version());
         assertEquals("encrypted-data", response.encryptedPayload());
