@@ -4,6 +4,7 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -11,21 +12,24 @@ import java.util.UUID;
  *
  * <p>Flow:
  * <ol>
- *   <li>{@code /api/auth/verify-code} succeeds → returns a {@code deviceRegistrationToken}
- *       (UUID, TTL 60 s, stored in Redis under {@code dev_reg_token:<uuid>} → username).</li>
+ *   <li>Strong auth (password/OTP) → marks {@code last_strong_auth:<username>}
+ *       in Redis with a 5-minute TTL.</li>
+ *   <li>{@code /api/auth/verify-code} or login succeeds → returns a
+ *       {@code deviceRegistrationToken} <b>only</b> if strong auth was recent.</li>
  *   <li>{@code POST /api/crypto/devices/register} reads the token from the
- *       {@code X-Device-Registration-Token} header, validates it, and consumes it
- *       (one-time use).</li>
+ *       {@code X-Device-Registration-Token} header, validates it, and consumes it.</li>
  * </ol>
  *
- * <p>This closes the bootstrap gap: device registration no longer requires a
- * fully authenticated JWT, but it still requires proof of a completed OTP flow.
+ * <p>A stolen refresh token alone cannot add a new E2EE device — the attacker
+ * must also have recently authenticated with password or OTP.
  */
 @Service
 public class DeviceRegistrationTokenService {
 
-    private static final Duration TTL    = Duration.ofSeconds(60);
-    private static final String   PREFIX = "dev_reg_token:";
+    private static final Duration TOKEN_TTL = Duration.ofSeconds(60);
+    private static final Duration STRONG_AUTH_TTL = Duration.ofMinutes(5);
+    private static final String PREFIX = "dev_reg_token:";
+    private static final String STRONG_AUTH_PREFIX = "last_strong_auth:";
 
     private final RedisTemplate<String, String> redisTemplate;
 
@@ -33,10 +37,32 @@ public class DeviceRegistrationTokenService {
         this.redisTemplate = redisTemplate;
     }
 
-    /** Generate a one-time token bound to {@code username}. */
+    /** Record that username has recently performed strong authentication. */
+    public void markStrongAuth(String username) {
+        if (username == null || username.isBlank()) {
+            return;
+        }
+        redisTemplate.opsForValue().set(
+                STRONG_AUTH_PREFIX + username,
+                Instant.now().toString(),
+                STRONG_AUTH_TTL
+        );
+    }
+
+    /**
+     * Generate a one-time token bound to {@code username}.
+     *
+     * @throws IllegalStateException if no recent strong auth exists for this user.
+     */
     public String issue(String username) {
+        String lastAuth = redisTemplate.opsForValue().get(STRONG_AUTH_PREFIX + username);
+        if (lastAuth == null) {
+            throw new IllegalStateException(
+                    "Device registration requires recent password or OTP authentication. Please re-authenticate."
+            );
+        }
         String token = UUID.randomUUID().toString();
-        redisTemplate.opsForValue().set(PREFIX + token, username, TTL);
+        redisTemplate.opsForValue().set(PREFIX + token, username, TOKEN_TTL);
         return token;
     }
 
