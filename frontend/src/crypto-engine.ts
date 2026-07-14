@@ -184,22 +184,22 @@ await (async function () {
     // ─── AAD (Additional Authenticated Data) builder for message envelopes ──────
     // Binds ciphertext to protocol context: tampering any field breaks decryption.
 
-    const ENVELOPE_AAD_VERSION = 0x01;
+    const ENVELOPE_AAD_VERSION = 0x02;
 
     function buildEnvelopeAAD({ messageType, chatId, messageIndex, previousChainLength, ratchetPublicKey }) {
         const mt = typeof messageType === 'string' ? messageType : '';
         const typeCode = mt === 'PREKEY_WHISPER' ? 1 : mt === 'WHISPER' ? 2 : mt === 'SELF_WHISPER' ? 3 : 0;
-        const cid = (chatId != null) ? (chatId >>> 0) : 0;
+        const cid = BigInt(chatId != null ? chatId : 0);
         const idx = (messageIndex != null) ? (messageIndex >>> 0) : 0;
         const pcl = (previousChainLength != null) ? (previousChainLength >>> 0) : 0;
 
-        const buf = new ArrayBuffer(14);
+        const buf = new ArrayBuffer(22);
         const dv = new DataView(buf);
         dv.setUint8(0, ENVELOPE_AAD_VERSION);
         dv.setUint8(1, typeCode);
-        dv.setUint32(2, cid, false);
-        dv.setUint32(6, idx, false);
-        dv.setUint32(10, pcl, false);
+        dv.setBigUint64(2, cid, false);
+        dv.setUint32(10, idx, false);
+        dv.setUint32(14, pcl, false);
 
         if (ratchetPublicKey) {
             const rpk = ratchetPublicKey + '';
