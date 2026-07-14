@@ -9,7 +9,7 @@ function b64urlJson(value) {
 
 async function loadCryptoEngine() {
   vi.resetModules();
-  await import("../crypto-engine.js");
+  await import("../crypto-engine.ts");
 }
 
 function bytesToB64(bytes) {
