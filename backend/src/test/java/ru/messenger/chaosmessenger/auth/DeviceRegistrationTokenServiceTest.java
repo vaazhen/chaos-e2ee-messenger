@@ -30,6 +30,7 @@ class DeviceRegistrationTokenServiceTest {
 
     @Test
     void issue_storesTokenInRedisWithTTL() {
+        when(valueOps.get("last_strong_auth:alice")).thenReturn("2026-01-01T00:00:00Z");
         service.markStrongAuth("alice");
         String token = service.issue("alice");
 
@@ -68,6 +69,7 @@ class DeviceRegistrationTokenServiceTest {
 
     @Test
     void consumeAndGetUsername_isOneTimeUse() {
+        when(valueOps.get("last_strong_auth:bob")).thenReturn("2026-01-01T00:00:00Z");
         service.markStrongAuth("bob");
         String token = service.issue("bob");
         when(valueOps.getAndDelete(contains(token))).thenReturn("bob").thenReturn(null);
