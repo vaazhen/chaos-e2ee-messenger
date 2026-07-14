@@ -273,8 +273,9 @@ jobs:
           KUBECONFIG_B64: ${{ secrets.KUBECONFIG_STAGING }}
         run: |
           if [ -z "$KUBECONFIG_B64" ]; then
-            echo "KUBECONFIG staging secret is required for deployment" >&2
-            exit 1
+            echo "KUBECONFIG staging secret not set — skipping staging deploy"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           mkdir -p "$HOME/.kube"
           printf '%s' "$KUBECONFIG_B64" | base64 -d > "$HOME/.kube/config"
