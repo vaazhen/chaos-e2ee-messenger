@@ -11,11 +11,15 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import ru.messenger.chaosmessenger.crypto.device.UserDevice;
 import ru.messenger.chaosmessenger.crypto.device.UserDeviceRepository;
 import ru.messenger.chaosmessenger.outbox.DomainEvent;
 import ru.messenger.chaosmessenger.outbox.KafkaConfig;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -34,6 +38,8 @@ public class RealtimeEventConsumer {
     private final MeterRegistry meterRegistry;
     private final Set<String> processedEvents = ConcurrentHashMap.newKeySet();
 
+    private final ThreadLocal<List<Runnable>> pendingStomp = ThreadLocal.withInitial(ArrayList::new);
+
     @KafkaListener(
             topics = {
                     KafkaConfig.MESSAGE_EVENTS_TOPIC,
@@ -48,18 +54,47 @@ public class RealtimeEventConsumer {
     @Transactional
     public void handleDomainEvent(DomainEvent event) {
         String eventId = event.eventId();
-        if (eventId != null && processedEvents.contains(eventId)) {
-            increment("chaos_kafka_consumer_duplicate_total");
-            return;
+
+        if (eventId != null) {
+            if (processedEvents.contains(eventId)) {
+                increment("chaos_kafka_consumer_duplicate_total");
+                return;
+            }
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    processedEvents.add(eventId);
+                    trimDedupCacheIfNeeded();
+                    flushPendingStomp();
+                }
+
+                @Override
+                public void afterCompletion(int status) {
+                    pendingStomp.get().clear();
+                }
+            });
+        } else {
+            if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+                flushPendingStomp();
+                pendingStomp.get().clear();
+            } else {
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        flushPendingStomp();
+                    }
+
+                    @Override
+                    public void afterCompletion(int status) {
+                        pendingStomp.get().clear();
+                    }
+                });
+            }
         }
 
         try {
             JsonNode payload = objectMapper.readTree(event.payload());
             route(event, payload);
-            if (eventId != null) {
-                processedEvents.add(eventId);
-                trimDedupCacheIfNeeded();
-            }
             increment("chaos_kafka_consumer_success_total");
         } catch (JsonProcessingException e) {
             increment("chaos_kafka_consumer_failure_total");
@@ -155,7 +190,7 @@ public class RealtimeEventConsumer {
         if ("USER_STATUS".equals(event.eventType())) {
             ObjectNode statusPayload = payload.deepCopy();
             statusPayload.put("eventId", event.eventId());
-            stompEventPublisher.publishGlobal("/topic/user/status", statusPayload);
+            pendingStomp.get().add(() -> stompEventPublisher.publishGlobal("/topic/user/status", statusPayload));
         }
     }
 
@@ -186,7 +221,18 @@ public class RealtimeEventConsumer {
             ObjectNode payload
     ) {
         ObjectNode storedPayload = realtimeEventStore.append(deviceId, eventId, destination, payload);
-        stompEventPublisher.publishToDevice(deviceId, destination, storedPayload);
+        pendingStomp.get().add(() -> stompEventPublisher.publishToDevice(deviceId, destination, storedPayload));
+    }
+
+    private void flushPendingStomp() {
+        List<Runnable> tasks = pendingStomp.get();
+        for (Runnable task : tasks) {
+            try {
+                task.run();
+            } catch (Exception e) {
+                log.error("Failed to deliver STOMP message after commit", e);
+            }
+        }
     }
 
     private void trimDedupCacheIfNeeded() {
