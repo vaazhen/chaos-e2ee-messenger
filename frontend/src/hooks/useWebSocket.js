@@ -51,7 +51,9 @@ export default function useWebSocket({
   const heartbeatRef = useRef(null);
   const hadConnectedRef = useRef(false);
   const seenEventIdsRef = useRef(new Set());
+  const inFlightRef = useRef(new Set());
   const recoveringRef = useRef(false);
+  const recoveryStateRef = useRef("LIVE");
   const liveBufferRef = useRef([]);
   const cursorRef = useRef(0);
   const handlersRef = useRef({ onMessage, onChatListUpdate, onRequestsUpdate, onStatusUpdate, onTyping, onConnectionState, onCallSignal });
@@ -77,13 +79,30 @@ export default function useWebSocket({
     const eventId = event?.eventId;
     if (!eventId) return false;
     const seen = seenEventIdsRef.current;
-    if (seen.has(eventId)) return true;
+    const inFlight = inFlightRef.current;
+    if (seen.has(eventId) || inFlight.has(eventId)) return true;
+    inFlight.add(eventId);
+    if (inFlight.size > 50000) {
+      const oldest = inFlight.values().next().value;
+      inFlight.delete(oldest);
+    }
+    return false;
+  };
+
+  const markEventApplied = (eventId) => {
+    if (!eventId) return;
+    inFlightRef.current.delete(eventId);
+    const seen = seenEventIdsRef.current;
     seen.add(eventId);
-    if (seen.size > 10000) {
+    if (seen.size > 50000) {
       const oldest = seen.values().next().value;
       seen.delete(oldest);
     }
-    return false;
+  };
+
+  const markEventFailed = (eventId) => {
+    if (!eventId) return;
+    inFlightRef.current.delete(eventId);
   };
 
   const advanceCursor = (deviceId, event) => {
@@ -94,6 +113,7 @@ export default function useWebSocket({
   };
 
   const dispatchRecoveredEvent = async (deviceId, destination, event) => {
+    const eventId = event?.eventId;
     if (!event || isDuplicateEvent(event)) {
       advanceCursor(deviceId, event);
       return;
@@ -110,7 +130,9 @@ export default function useWebSocket({
       } else if (destination === "/requests") {
         await handlersRef.current.onRequestsUpdate?.(event);
       }
+      markEventApplied(eventId);
     } catch (error) {
+      markEventFailed(eventId);
       debugLog("[WS] recovered event handler failed:", error?.message || error);
       throw error;
     }
@@ -118,11 +140,11 @@ export default function useWebSocket({
   };
 
   const handleDurableLive = (deviceId, destination, event) => {
-    if (recoveringRef.current) {
+    if (recoveringRef.current || recoveryStateRef.current === "FULL_RESYNC_REQUIRED") {
       if (liveBufferRef.current.length >= MAX_BUFFERED_LIVE_EVENTS) {
-        recoveringRef.current = false;
+        recoveryStateRef.current = "FULL_RESYNC_REQUIRED";
         liveBufferRef.current = [];
-        debugLog("[WS] live buffer overflow — switching to full resync");
+        debugLog("[WS] live buffer overflow — full resync required");
         return;
       }
       liveBufferRef.current.push({ destination, event });
@@ -140,12 +162,14 @@ export default function useWebSocket({
 
   const recoverMissedEvents = async (deviceId) => {
     recoveringRef.current = true;
+    recoveryStateRef.current = "RECOVERING";
     liveBufferRef.current = [];
     cursorRef.current = readCursor(deviceId);
+    let pageFailed = false;
     try {
       let cursor = cursorRef.current;
       let totalRecovered = 0;
-      while (totalRecovered < MAX_RECOVERY_EVENTS) {
+      while (totalRecovered < MAX_RECOVERY_EVENTS && !pageFailed) {
         const response = await api.syncRealtime(cursor, 200);
         const events = Array.isArray(response?.events) ? response.events : [];
         if (events.length === 0) break;
@@ -157,19 +181,27 @@ export default function useWebSocket({
           try {
             await dispatchRecoveredEvent(deviceId, item?.destination, payload);
           } catch (error) {
-            debugLog("[WS] recovery event apply failed — stopping cursor advance:", error?.message || error);
+            pageFailed = true;
+            recoveryStateRef.current = "FULL_RESYNC_REQUIRED";
+            debugLog("[WS] recovery event apply failed — stopping recovery:", error?.message || error);
             break;
           }
           totalRecovered++;
         }
 
-        cursor = Number(response?.nextCursor ?? cursorRef.current);
-        if (!response?.hasMore) break;
+        if (!pageFailed) {
+          cursor = Number(response?.nextCursor ?? cursorRef.current);
+          if (!response?.hasMore) break;
+        }
       }
     } catch (error) {
+      recoveryStateRef.current = "FULL_RESYNC_REQUIRED";
       debugLog("[WS] realtime recovery failed; timeline sync remains available", error?.message || error);
     } finally {
       recoveringRef.current = false;
+      if (recoveryStateRef.current !== "FULL_RESYNC_REQUIRED") {
+        recoveryStateRef.current = "LIVE";
+      }
       flushLiveBuffer(deviceId);
     }
   };
