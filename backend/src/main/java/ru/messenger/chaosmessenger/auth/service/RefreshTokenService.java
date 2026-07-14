@@ -1,8 +1,6 @@
 package ru.messenger.chaosmessenger.auth.service;
 
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -11,7 +9,6 @@ import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.Base64;
-import java.util.List;
 import java.util.UUID;
 
 /**
@@ -21,7 +18,6 @@ import java.util.UUID;
  * refresh rotates the token. Reuse of an already consumed token revokes the whole
  * family, limiting damage from token theft.</p>
  */
-@Slf4j
 @Service
 public class RefreshTokenService {
 
@@ -30,48 +26,6 @@ public class RefreshTokenService {
     private static final String USED_PREFIX = "refresh:used:";
     private static final String REVOKED_FAMILY_PREFIX = "refresh:family:revoked:";
     private static final String VALUE_VERSION = "v1";
-
-    private static final DefaultRedisScript<List> ATOMIC_ROTATE = new DefaultRedisScript<>("""
-            local active_key  = KEYS[1]
-            local used_key    = KEYS[2]
-            local new_key     = KEYS[3]
-            local ttl         = tonumber(ARGV[1])
-            local family_prefix = 'refresh:family:revoked:'
-
-            local used = redis.call('GET', used_key)
-            if used ~= false then
-                redis.call('SET', family_prefix .. used, '1', 'EX', ttl)
-                return {nil, 'reused'}
-            end
-
-            local active = redis.call('GETDEL', active_key)
-            if active == false then
-                return {nil, 'not_found'}
-            end
-
-            local sep1 = string.find(active, '|')
-            if not sep1 then return {nil, 'malformed'} end
-            local sep2 = string.find(active, '|', sep1 + 1)
-            if not sep2 then return {nil, 'malformed'} end
-
-            if string.sub(active, 1, sep1 - 1) ~= 'v1' then
-                return {nil, 'version'}
-            end
-
-            local username  = string.sub(active, sep1 + 1, sep2 - 1)
-            local family_id = string.sub(active, sep2 + 1)
-
-            if redis.call('EXISTS', family_prefix .. family_id) == 1 then
-                return {nil, 'revoked'}
-            end
-
-            redis.call('SET', used_key, family_id, 'EX', ttl)
-
-            local new_value = 'v1|' .. username .. '|' .. family_id
-            redis.call('SET', new_key, new_value, 'EX', ttl)
-
-            return {username, family_id}
-            """, List.class);
 
     private final RedisTemplate<String, String> redisTemplate;
     private final SecureRandom secureRandom = new SecureRandom();
@@ -95,31 +49,21 @@ public class RefreshTokenService {
         }
 
         String digest = digest(token);
-        String replacementToken = randomToken();
-        String replacementDigest = digest(replacementToken);
-
-        String activeKey = ACTIVE_PREFIX + digest;
-        String usedKey = USED_PREFIX + digest;
-        String newKey = ACTIVE_PREFIX + replacementDigest;
-
-        List<?> result = redisTemplate.execute(
-                ATOMIC_ROTATE,
-                List.of(activeKey, usedKey, newKey),
-                String.valueOf(REFRESH_TTL.toSeconds())
-        );
-
-        if (result == null || result.isEmpty() || result.get(0) == null) {
-            String reason = result != null && result.size() > 1 ? String.valueOf(result.get(1)) : "unknown";
-            if ("reused".equals(reason)) {
-                log.warn("Refresh token reuse detected — family revoked");
-            }
+        String usedFamily = redisTemplate.opsForValue().get(USED_PREFIX + digest);
+        if (usedFamily != null) {
+            revokeFamily(usedFamily);
             return null;
         }
 
-        String username = String.valueOf(result.get(0));
-        String familyId = String.valueOf(result.get(1));
+        String encoded = redisTemplate.opsForValue().getAndDelete(ACTIVE_PREFIX + digest);
+        TokenRecord record = decode(encoded);
+        if (record == null || isFamilyRevoked(record.familyId())) {
+            return null;
+        }
 
-        return new Rotation(username, replacementToken, familyId);
+        redisTemplate.opsForValue().set(USED_PREFIX + digest, record.familyId(), REFRESH_TTL);
+        IssuedToken replacement = issueForFamily(record.username(), record.familyId());
+        return new Rotation(record.username(), replacement.token(), record.familyId());
     }
 
     /**

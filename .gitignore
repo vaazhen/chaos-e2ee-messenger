@@ -58,3 +58,6 @@ frontend/electron/tray-icon.png
 .opencode/
 # Packaged Electron endpoints (copy from .env.electron.example)
 frontend/.env.electron
+
+# local Kubernetes secret; production secrets come from an external manager
+k8s/secret.yaml

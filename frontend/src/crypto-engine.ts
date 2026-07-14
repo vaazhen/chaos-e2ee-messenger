@@ -6,6 +6,9 @@ import {
     clearSecureStorageForTests,
     secureStorageBackend
 } from "./secure-storage.js";
+import type { AADContext } from "./types/protocol";
+
+type VerificationMethod = 'MANUAL' | 'SAFETY_NUMBER' | 'QR_CODE';
 
 await (async function () {
     // ─── UUID helper — works in both secure (https/localhost) and non-secure (http+IP) contexts ───
@@ -106,9 +109,17 @@ await (async function () {
         return crypto.subtle.importKey('pkcs8', pkcs8, { name: 'X25519' }, true, ['deriveBits']);
     }
 
-    async function generateX25519KeyPair() {
+    async function generateX25519KeyPair(): Promise<CryptoKeyPair> {
         assertWebCryptoAvailable();
-        return crypto.subtle.generateKey({ name: 'X25519' }, true, ['deriveBits']);
+        const generated = await crypto.subtle.generateKey(
+            { name: 'X25519' },
+            true,
+            ['deriveBits']
+        );
+        if (!('publicKey' in generated) || !('privateKey' in generated)) {
+            throw new Error('X25519 key generation did not return a key pair');
+        }
+        return generated;
     }
 
     async function derive32(privateKey, publicKey) {
@@ -161,7 +172,7 @@ await (async function () {
         assertWebCryptoAvailable();
         const nonce = crypto.getRandomValues(new Uint8Array(12));
         const encoded = new TextEncoder().encode(plainText);
-        const params: any = { name: 'AES-GCM', iv: nonce };
+        const params: AesGcmParams = { name: 'AES-GCM', iv: nonce };
         if (additionalData && additionalData.byteLength > 0) {
             params.additionalData = new Uint8Array(additionalData);
         }
@@ -173,7 +184,7 @@ await (async function () {
         assertWebCryptoAvailable();
         const ct    = b64ToBytes(ciphertextB64);
         const nonce = b64ToBytes(nonceB64);
-        const params: any = { name: 'AES-GCM', iv: nonce };
+        const params: AesGcmParams = { name: 'AES-GCM', iv: nonce };
         if (additionalData && additionalData.byteLength > 0) {
             params.additionalData = new Uint8Array(additionalData);
         }
@@ -186,7 +197,7 @@ await (async function () {
 
     const ENVELOPE_AAD_VERSION = 0x02;
 
-    function buildEnvelopeAAD({ messageType, chatId, messageIndex, previousChainLength, ratchetPublicKey }) {
+    function buildEnvelopeAAD({ messageType, chatId, messageIndex, previousChainLength, ratchetPublicKey }: AADContext): ArrayBuffer {
         const mt = typeof messageType === 'string' ? messageType : '';
         const typeCode = mt === 'PREKEY_WHISPER' ? 1 : mt === 'WHISPER' ? 2 : mt === 'SELF_WHISPER' ? 3 : 0;
         const cid = BigInt(chatId != null ? chatId : 0);
@@ -469,7 +480,11 @@ await (async function () {
         return current.trustState || 'UNVERIFIED';
     }
 
-    async function verifyRemoteIdentity(remoteDeviceId, identityPublicKey, method = 'MANUAL') {
+    async function verifyRemoteIdentity(
+        remoteDeviceId: string,
+        identityPublicKey: string,
+        method: VerificationMethod = 'MANUAL'
+    ): Promise<void> {
         if (!remoteDeviceId || !identityPublicKey) throw new Error('Remote device identity is required');
         identityTrustState[trustKey(remoteDeviceId)] = {
             identityPublicKey,
@@ -480,7 +495,6 @@ await (async function () {
             lastSeenAt: Date.now()
         };
         await writeSecureRecord(TRUST_RECORD, identityTrustState);
-        return 'VERIFIED';
     }
 
     function getRemoteIdentityTrust(remoteDeviceId, identityPublicKey = null) {
@@ -891,7 +905,7 @@ await (async function () {
         session.CKs = bytesToB64(kdf2.chainKey);
     }
 
-    async function encryptWithDoubleRatchet(session, plainText, aadContext = {}) {
+    async function encryptWithDoubleRatchet(session, plainText, aadContext: AADContext = {}) {
         if (!session.CKs) {
             throw new Error('Sending chain not initialized');
         }

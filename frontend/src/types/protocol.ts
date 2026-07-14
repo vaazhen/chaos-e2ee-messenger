@@ -5,6 +5,7 @@
 
 /** Versioned protocol message types transported over WebSocket / REST. */
 export type MessageType = 'WHISPER' | 'PREKEY_WHISPER' | 'SELF_WHISPER';
+export type VerificationMethod = 'MANUAL' | 'SAFETY_NUMBER' | 'QR_CODE';
 
 /** AES-GCM encrypted envelope sent to a single recipient device. */
 export interface EncryptedEnvelope {
@@ -21,6 +22,8 @@ export interface EncryptedEnvelope {
   signedPreKeyId: number | null;
   oneTimePreKeyId: number | null;
   timestamp: number;
+  /** Client-only context used to construct AAD; never trusted as server state. */
+  _chatId?: number;
 }
 
 /** Envelope as received by the decrypt path (includes sender context). */
@@ -123,8 +126,8 @@ export type TrustState = 'UNVERIFIED' | 'VERIFIED' | 'KEY_CHANGED';
 
 export interface RemoteIdentityTrust {
   trustState: TrustState;
-  verificationMethod?: 'SAFETY_NUMBER' | 'QR_CODE';
-  verifiedAt?: string;
+  verificationMethod?: VerificationMethod;
+  verifiedAt?: number;
   identityPublicKey: string;
 }
 
@@ -148,16 +151,18 @@ export interface CryptoEngine {
   getOrCreateDeviceId(): string;
   getLocalDeviceBundle(): DeviceBundle | null;
   ensureDeviceRegistered(api: (path: string, opts?: RequestInit) => Promise<any>): Promise<DeviceBundle>;
+  replenishOneTimePreKeys(api: (path: string, opts?: RequestInit) => Promise<any>): Promise<DeviceBundle | null>;
   resetLocalDeviceIdentity(): Promise<void>;
   buildFanoutRequest(api: (path: string, opts?: RequestInit) => Promise<any>, chatId: number, plainText: string): Promise<FanoutRequest>;
   decryptEnvelope(envelope: DecryptEnvelope): Promise<string>;
   encryptFile(fileArrayBuffer: ArrayBuffer): Promise<EncryptedFile>;
   decryptFile(encryptedArrayBuffer: ArrayBuffer, fileKeyBase64: string): Promise<ArrayBuffer>;
-  getRemoteIdentityTrust(deviceId: string, identityPublicKey: string): RemoteIdentityTrust;
-  verifyRemoteIdentity(deviceId: string, identityPublicKey: string, method: 'SAFETY_NUMBER' | 'QR_CODE'): Promise<void>;
+  getRemoteIdentityTrust(deviceId: string, identityPublicKey?: string | null): RemoteIdentityTrust;
+  verifyRemoteIdentity(deviceId: string, identityPublicKey: string, method?: VerificationMethod): Promise<void>;
   importLocalDeviceBundle(bundle: DeviceBundle): Promise<string>;
   getSecureStorageBackend(): string;
   // Test-only internals
+  __clearSecureStorageForTests?(): Promise<void>;
   __importSessionStateForTests?(sessions: Record<string, RatchetSession>): Promise<void>;
   __exportSessionStateForTests?(): Record<string, RatchetSession>;
   // Old API (backward compat during transition)

@@ -38,7 +38,7 @@ export default function BackupModal({ lang, theme, onClose, noWrapper }) {
     setExporting(true);
     setError("");
     try {
-      const data = await api.exportBackup();
+      const data = await api.exportBackup(passphrase.trim());
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -151,8 +151,8 @@ export default function BackupModal({ lang, theme, onClose, noWrapper }) {
 
         <p className="backup-note">
           {l(
-            "Резервная копия содержит ваши ключи шифрования и настройки устройства. Храните файл в безопасном месте. Для восстановления на новом устройстве используйте этот файл и ту же фразу-пароль.",
-            "The backup contains your encryption keys and device settings. Store the file safely. To restore on a new device, use this file and the same passphrase.",
+            "Резервная копия содержит все ваши чаты и настройки. Храните файл в безопасном месте. Для восстановления используйте тот же файл.",
+            "The backup contains all your chats and settings. Store the file in a safe place. Use the same file to restore."
           )}
         </p>
       </div>

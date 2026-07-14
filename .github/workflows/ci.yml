@@ -87,8 +87,11 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Typecheck crypto (strict)
+      - name: Typecheck crypto engine
         run: npm run typecheck:crypto
+
+      - name: Typecheck protocol DTOs (strict)
+        run: npm run typecheck:protocol
 
       - name: Test with coverage
         run: npm run test:coverage -- --run
@@ -135,7 +138,37 @@ jobs:
       - uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
-      - uses: github/codeql-action/autobuild@v3
+
+      - name: Set up Java
+        if: matrix.language == 'java-kotlin'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Build Java for CodeQL
+        if: matrix.language == 'java-kotlin'
+        run: |
+          chmod +x backend/mvnw
+          backend/mvnw --batch-mode --no-transfer-progress             -f backend/pom.xml             -Dmaven.test.skip=true             package
+
+      - name: Set up Node.js
+        if: matrix.language == 'javascript-typescript'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.11.1'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend for CodeQL
+        if: matrix.language == 'javascript-typescript'
+        working-directory: frontend
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run typecheck
+          npm run build
+
       - uses: github/codeql-action/analyze@v3
 
   docker-build:
@@ -257,6 +290,8 @@ jobs:
     name: Deploy staging
     if: github.ref == 'refs/heads/master' && github.event_name == 'push'
     needs: [docker-build, container-scan]
+    outputs:
+      deployed: ${{ steps.kubeconfig.outputs.ready }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:
@@ -312,16 +347,20 @@ jobs:
           kubectl rollout status deployment/chaos-frontend -n chaos-messenger --timeout=5m
 
       - name: Smoke test staging
-        if: vars.STAGING_URL != ''
+        if: steps.kubeconfig.outputs.ready == 'true'
         env:
           STAGING_URL: ${{ vars.STAGING_URL }}
         run: |
-          curl -fsS "$STAGING_URL/actuator/health" || exit 1
+          if [ -z "$STAGING_URL" ]; then
+            echo "STAGING_URL is required when staging deployment is enabled" >&2
+            exit 1
+          fi
+          curl --fail --silent --show-error             --retry 10 --retry-all-errors --retry-delay 5             --max-time 15             "$STAGING_URL/actuator/health"
 
   promote-production:
     name: Promote staging to production
     needs: [deploy-staging]
-    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push' && needs.deploy-staging.outputs.deployed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     environment:
@@ -359,9 +398,8 @@ jobs:
           DEPLOY_ENABLED: ${{ vars.DEPLOY_ENABLED }}
         run: |
           if [ "$DEPLOY_ENABLED" != "true" ]; then
-            echo "DEPLOY_ENABLED is not true — skipping production deploy"
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-            exit 0
+            echo "DEPLOY_ENABLED must be true for an approved production deployment" >&2
+            exit 1
           fi
           if [ -z "$KUBECONFIG_B64" ]; then
             echo "KUBECONFIG production secret is required when DEPLOY_ENABLED=true" >&2
