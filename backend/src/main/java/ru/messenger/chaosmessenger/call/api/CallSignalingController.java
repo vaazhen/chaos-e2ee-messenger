@@ -2,6 +2,7 @@ package ru.messenger.chaosmessenger.call.api;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -14,6 +15,7 @@ import java.util.Map;
 @Slf4j
 @Controller
 @RequiredArgsConstructor
+@ConditionalOnProperty(name = "chaos.calls.enabled", havingValue = "true")
 public class CallSignalingController {
 
     private final SimpMessagingTemplate messagingTemplate;
