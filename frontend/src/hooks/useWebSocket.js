@@ -5,7 +5,7 @@ import { WS_URL } from "../config";
 import { api, getToken } from "../api";
 import { getOrCreateDeviceId } from "../deviceId";
 
-const MAX_RECOVERY_PAGES = 20;
+const MAX_RECOVERY_EVENTS = 100000;
 const MAX_BUFFERED_LIVE_EVENTS = 5000;
 
 function debugLog(...args) {
@@ -93,31 +93,39 @@ export default function useWebSocket({
     writeCursor(deviceId, sequence);
   };
 
-  const dispatchRecoveredEvent = (deviceId, destination, event) => {
+  const dispatchRecoveredEvent = async (deviceId, destination, event) => {
     if (!event || isDuplicateEvent(event)) {
       advanceCursor(deviceId, event);
       return;
     }
 
-    if (/^\/chats\/\d+$/.test(destination || "")) {
-      const chatId = Number(event.chatId || String(destination).split("/").pop());
-      handlersRef.current.onMessage?.(event, chatId);
-    } else if (destination === "/status") {
-      handlersRef.current.onStatusUpdate?.({ type: "delivery", ...event });
-    } else if (destination === "/chats") {
-      handlersRef.current.onChatListUpdate?.(event);
-    } else if (destination === "/requests") {
-      handlersRef.current.onRequestsUpdate?.(event);
+    try {
+      if (/^\/chats\/\d+$/.test(destination || "")) {
+        const chatId = Number(event.chatId || String(destination).split("/").pop());
+        await handlersRef.current.onMessage?.(event, chatId);
+      } else if (destination === "/status") {
+        await handlersRef.current.onStatusUpdate?.({ type: "delivery", ...event });
+      } else if (destination === "/chats") {
+        await handlersRef.current.onChatListUpdate?.(event);
+      } else if (destination === "/requests") {
+        await handlersRef.current.onRequestsUpdate?.(event);
+      }
+    } catch (error) {
+      debugLog("[WS] recovered event handler failed:", error?.message || error);
+      throw error;
     }
     advanceCursor(deviceId, event);
   };
 
   const handleDurableLive = (deviceId, destination, event) => {
     if (recoveringRef.current) {
-      liveBufferRef.current.push({ destination, event });
-      if (liveBufferRef.current.length > MAX_BUFFERED_LIVE_EVENTS) {
-        liveBufferRef.current.shift();
+      if (liveBufferRef.current.length >= MAX_BUFFERED_LIVE_EVENTS) {
+        recoveringRef.current = false;
+        liveBufferRef.current = [];
+        debugLog("[WS] live buffer overflow — switching to full resync");
+        return;
       }
+      liveBufferRef.current.push({ destination, event });
       return;
     }
     dispatchRecoveredEvent(deviceId, destination, event);
@@ -136,21 +144,27 @@ export default function useWebSocket({
     cursorRef.current = readCursor(deviceId);
     try {
       let cursor = cursorRef.current;
-      for (let page = 0; page < MAX_RECOVERY_PAGES; page++) {
+      let totalRecovered = 0;
+      while (totalRecovered < MAX_RECOVERY_EVENTS) {
         const response = await api.syncRealtime(cursor, 200);
         const events = Array.isArray(response?.events) ? response.events : [];
+        if (events.length === 0) break;
+
         for (const item of events) {
           const payload = { ...(item?.payload || {}) };
           if (item?.eventId && !payload.eventId) payload.eventId = item.eventId;
           if (item?.sequence != null) payload.sequence = Number(item.sequence);
-          dispatchRecoveredEvent(deviceId, item?.destination, payload);
+          try {
+            await dispatchRecoveredEvent(deviceId, item?.destination, payload);
+          } catch (error) {
+            debugLog("[WS] recovery event apply failed — stopping cursor advance:", error?.message || error);
+            break;
+          }
+          totalRecovered++;
         }
+
         cursor = Number(response?.nextCursor ?? cursorRef.current);
-        if (Number.isSafeInteger(cursor) && cursor > cursorRef.current) {
-          cursorRef.current = cursor;
-          writeCursor(deviceId, cursor);
-        }
-        if (!response?.hasMore || events.length === 0) break;
+        if (!response?.hasMore) break;
       }
     } catch (error) {
       debugLog("[WS] realtime recovery failed; timeline sync remains available", error?.message || error);
