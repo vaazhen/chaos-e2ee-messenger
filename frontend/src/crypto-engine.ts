@@ -163,7 +163,7 @@ await (async function () {
         const encoded = new TextEncoder().encode(plainText);
         const params = { name: 'AES-GCM', iv: nonce };
         if (additionalData && additionalData.byteLength > 0) {
-            params.additionalData = additionalData;
+            params.additionalData = new Uint8Array(additionalData);
         }
         const ct = await crypto.subtle.encrypt(params, aesKey, encoded);
         return { ciphertext: bytesToB64(new Uint8Array(ct)), nonce: bytesToB64(nonce) };
@@ -175,7 +175,7 @@ await (async function () {
         const nonce = b64ToBytes(nonceB64);
         const params = { name: 'AES-GCM', iv: nonce };
         if (additionalData && additionalData.byteLength > 0) {
-            params.additionalData = additionalData;
+            params.additionalData = new Uint8Array(additionalData);
         }
         const plain = await crypto.subtle.decrypt(params, aesKey, ct);
         return new TextDecoder().decode(plain);
