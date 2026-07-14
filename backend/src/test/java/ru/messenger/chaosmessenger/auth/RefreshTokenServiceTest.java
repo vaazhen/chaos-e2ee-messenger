@@ -65,7 +65,7 @@ class RefreshTokenServiceTest {
         reset(valueOps, redisTemplate);
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
 
-        List<String> luaResult = java.util.List.of("alice", issued.sessionId());
+        List<String> luaResult = java.util.Arrays.asList("alice", issued.sessionId());
         when(redisTemplate.execute(
                 any(org.springframework.data.redis.core.script.RedisScript.class),
                 anyList(),
@@ -85,10 +85,10 @@ class RefreshTokenServiceTest {
         String token = "stolen-consumed-token";
         String family = "family-1";
         when(redisTemplate.execute(
-                any(org.springframework.data.redis.core.script.RedisScript.class),
+                any(RedisScript.class),
                 anyList(),
                 anyString()
-        )).thenReturn(java.util.List.of(null, "reused"));
+        )).thenReturn(java.util.Arrays.asList(null, "reused"));
 
         assertThat(service.rotate(token)).isNull();
     }

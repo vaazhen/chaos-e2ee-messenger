@@ -82,6 +82,11 @@ public class RealtimeEventConsumer {
             log.error("Failed to handle realtime event eventId={} aggregateType={} aggregateId={} eventType={}",
                     event.eventId(), event.aggregateType(), event.aggregateId(), event.eventType(), e);
             throw e;
+        } finally {
+            if (!syncActive) {
+                flushPendingStomp();
+                pendingStomp.get().clear();
+            }
         }
     }
 
