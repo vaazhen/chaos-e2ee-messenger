@@ -44,7 +44,7 @@ class BackupServiceTest {
         when(backupRepository.findTopByUserIdOrderByVersionDesc(1L))
                 .thenReturn(Optional.of(backup));
 
-        BackupExportResponse response = backupService.exportBackup(1L, "passphrase");
+        BackupExportResponse response = backupService.exportBackup(1L);
 
         assertEquals(1, response.version());
         assertEquals("encrypted-data", response.encryptedPayload());
@@ -58,7 +58,7 @@ class BackupServiceTest {
                 .thenReturn(Optional.empty());
 
         assertThrows(IllegalStateException.class, () ->
-                backupService.exportBackup(1L, "passphrase"));
+                backupService.exportBackup(1L));
     }
 
     @Test

@@ -995,7 +995,8 @@ await (async function () {
                     messageIndex: null,
                     signedPreKeyId: null,
                     oneTimePreKeyId: null,
-                    timestamp: Date.now()
+                    timestamp: Date.now(),
+                    _chatId: chatId
                 });
                 continue;
             }
@@ -1043,7 +1044,8 @@ await (async function () {
                 messageIndex,
                 signedPreKeyId: isNewSession && resolvedSignedPreKey ? resolvedSignedPreKey.preKeyId : null,
                 oneTimePreKeyId: isNewSession && resolvedOneTimePreKey ? resolvedOneTimePreKey.preKeyId : null,
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                _chatId: chatId
             });
         }
 
