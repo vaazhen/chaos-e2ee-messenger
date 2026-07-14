@@ -236,14 +236,12 @@ export const api = {
 
   // ── E2EE Backup ──────────────────────────────────────────────────────────
   getBackupInfo:   ()     => call("/backup/info"),
-  exportBackup:    async (passphrase) => {
+  exportBackup:    async () => {
     const token = getToken();
     const deviceId = getCurrentDeviceId();
     const res = await fetch(API_BASE + "/backup/export", {
       credentials: "include",
       headers: {
-        "Content-Type": "application/json",
-        "X-Backup-Passphrase": passphrase,
         ...(token ? { Authorization: "Bearer " + token } : {}),
         ...(deviceId ? { "X-Device-Id": deviceId } : {}),
       },

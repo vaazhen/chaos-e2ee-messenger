@@ -38,7 +38,7 @@ export default function BackupModal({ lang, theme, onClose, noWrapper }) {
     setExporting(true);
     setError("");
     try {
-      const data = await api.exportBackup(passphrase.trim());
+      const data = await api.exportBackup();
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
