@@ -941,13 +941,13 @@ await (async function () {
         const { messageKeyRaw, nextChainKey } = await ratchetStep(ckBytes);
 
         const mk = await importMessageKey(messageKeyRaw);
-        const aad = buildEnvelopeAAD({
+        const aad = (envelope._chatId != null) ? buildEnvelopeAAD({
             messageType: envelope.messageType,
             chatId: envelope._chatId,
             messageIndex: msgIdx,
             previousChainLength: envelope.previousChainLength ?? 0,
             ratchetPublicKey: envelope.ratchetPublicKey
-        });
+        }) : null;
         const plainText = await aesDecryptWithKey(envelope.ciphertext, envelope.nonce, mk, aad);
 
         session.CKr = bytesToB64(nextChainKey);
