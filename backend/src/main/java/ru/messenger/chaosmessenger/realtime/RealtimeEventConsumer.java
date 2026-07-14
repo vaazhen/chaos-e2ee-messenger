@@ -61,6 +61,9 @@ public class RealtimeEventConsumer {
                 increment("chaos_kafka_consumer_duplicate_total");
                 return;
             }
+            if (!syncActive) {
+                processedEvents.add(eventId);
+            }
             if (syncActive) {
                 registerAfterCommit(eventId);
             }
@@ -84,10 +87,6 @@ public class RealtimeEventConsumer {
             throw e;
         } finally {
             if (!syncActive) {
-                if (eventId != null) {
-                    processedEvents.add(eventId);
-                    trimDedupCacheIfNeeded();
-                }
                 flushPendingStomp();
                 pendingStomp.get().clear();
             }
