@@ -261,14 +261,23 @@ jobs:
         uses: aquasecurity/setup-trivy@v0.2.6
         with:
           version: v0.72.0
-      - name: Scan for high and critical vulnerabilities
+      - name: Scan for vulnerabilities (SARIF report)
+        continue-on-error: true
         run: |
           trivy image \
             --severity HIGH,CRITICAL \
             --ignore-unfixed \
             --format sarif \
             "${{ steps.resolve.outputs.value }}" \
-            > "trivy-${{ matrix.image }}.sarif" || true
+            > "trivy-${{ matrix.image }}.sarif"
+
+      - name: Vulnerability gate (blocks on HIGH/CRITICAL)
+        run: |
+          trivy image \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --exit-code 1 \
+            "${{ steps.resolve.outputs.value }}"
 
       - name: Upload SARIF
         if: always()
@@ -277,9 +286,9 @@ jobs:
           sarif_file: trivy-${{ matrix.image }}.sarif
           category: trivy-${{ matrix.image }}
 
-  deploy:
-    name: Deploy production
-    if: startsWith(github.ref, 'refs/tags/v')
+  deploy-staging:
+    name: Deploy staging
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
     needs: [docker-build, container-scan]
     outputs:
       deployed: ${{ steps.kubeconfig.outputs.ready }}
@@ -386,9 +395,14 @@ jobs:
         id: kubeconfig
         env:
           KUBECONFIG_B64: ${{ secrets.KUBECONFIG }}
+          DEPLOY_ENABLED: ${{ vars.DEPLOY_ENABLED }}
         run: |
           if [ "$DEPLOY_ENABLED" != "true" ]; then
             echo "DEPLOY_ENABLED must be true for an approved production deployment" >&2
+            exit 1
+          fi
+          if [ -z "$KUBECONFIG_B64" ]; then
+            echo "KUBECONFIG production secret is required when DEPLOY_ENABLED=true" >&2
             exit 1
           fi
           mkdir -p "$HOME/.kube"
@@ -397,27 +411,20 @@ jobs:
           kubectl auth can-i patch deployment -n chaos-messenger | grep -qx yes
           echo "ready=true" >> "$GITHUB_OUTPUT"
 
-      - name: Deploy immutable images
+      - name: Deploy to production
         if: steps.kubeconfig.outputs.ready == 'true'
         env:
           REGISTRY: ${{ env.REGISTRY }}
           REPOSITORY: ${{ github.repository }}
           TAG: ${{ github.sha }}
         run: |
-          test -n "$REGISTRY" -a -n "$REPOSITORY" -a -n "$TAG"
-          kubectl kustomize k8s > /tmp/chaos-manifests.yaml
-          python3 - <<'PY'
-          import os
-          from pathlib import Path
-
-          path = Path('/tmp/chaos-manifests.yaml')
-          rendered = path.read_text()
+          kubectl kustomize k8s | python3 -c "
+          import os, sys
+          rendered = sys.stdin.read()
           for name in ('REGISTRY', 'REPOSITORY', 'TAG'):
-              rendered = rendered.replace('${' + name + '}', os.environ[name])
-          if '${' in rendered:
-              raise SystemExit('Unresolved manifest placeholder remains')
-          path.write_text(rendered)
-          PY
+              rendered = rendered.replace('\${' + name + '}', os.environ[name])
+          sys.stdout.write(rendered)
+          " > /tmp/chaos-manifests.yaml
           kubectl apply --server-side --field-manager=github-actions -f /tmp/chaos-manifests.yaml
           kubectl rollout status deployment/chaos-backend -n chaos-messenger --timeout=7m
           kubectl rollout status deployment/chaos-frontend -n chaos-messenger --timeout=5m
