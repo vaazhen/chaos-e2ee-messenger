@@ -233,7 +233,6 @@ jobs:
             > "trivy-${{ matrix.image }}.sarif"
 
       - name: Vulnerability gate (blocks on HIGH/CRITICAL)
-        continue-on-error: true
         run: |
           trivy image \
             --severity HIGH,CRITICAL \
@@ -271,11 +270,16 @@ jobs:
         id: kubeconfig
         env:
           KUBECONFIG_B64: ${{ secrets.KUBECONFIG_STAGING }}
+          DEPLOY_ENABLED: ${{ vars.DEPLOY_ENABLED }}
         run: |
-          if [ -z "$KUBECONFIG_B64" ]; then
-            echo "KUBECONFIG staging secret not set — skipping staging deploy"
+          if [ "$DEPLOY_ENABLED" != "true" ]; then
+            echo "DEPLOY_ENABLED is not true — skipping staging deploy"
             echo "ready=false" >> "$GITHUB_OUTPUT"
             exit 0
+          fi
+          if [ -z "$KUBECONFIG_B64" ]; then
+            echo "KUBECONFIG_STAGING secret is required when DEPLOY_ENABLED=true" >&2
+            exit 1
           fi
           mkdir -p "$HOME/.kube"
           printf '%s' "$KUBECONFIG_B64" | base64 -d > "$HOME/.kube/config"
@@ -346,11 +350,16 @@ jobs:
         id: kubeconfig
         env:
           KUBECONFIG_B64: ${{ secrets.KUBECONFIG }}
+          DEPLOY_ENABLED: ${{ vars.DEPLOY_ENABLED }}
         run: |
-          if [ -z "$KUBECONFIG_B64" ]; then
-            echo "KUBECONFIG production secret not set — skipping deploy"
+          if [ "$DEPLOY_ENABLED" != "true" ]; then
+            echo "DEPLOY_ENABLED is not true — skipping production deploy"
             echo "ready=false" >> "$GITHUB_OUTPUT"
             exit 0
+          fi
+          if [ -z "$KUBECONFIG_B64" ]; then
+            echo "KUBECONFIG production secret is required when DEPLOY_ENABLED=true" >&2
+            exit 1
           fi
           mkdir -p "$HOME/.kube"
           printf '%s' "$KUBECONFIG_B64" | base64 -d > "$HOME/.kube/config"
