@@ -28,6 +28,8 @@
     "electron:build": "node scripts/validate-electron-env.mjs && vite build --mode electron && electron-builder",
     "electron:build:win": "node scripts/validate-electron-env.mjs && vite build --mode electron && electron-builder --win",
     "postinstall": "electron-builder install-app-deps",
+    "typecheck": "tsc --noEmit",
+    "typecheck:crypto": "tsc -p tsconfig.crypto.json",
     "typecheck:protocol": "tsc -p tsconfig.protocol.json"
   },
   "dependencies": {
