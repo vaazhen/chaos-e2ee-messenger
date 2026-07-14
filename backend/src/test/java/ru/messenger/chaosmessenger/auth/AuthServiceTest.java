@@ -85,7 +85,7 @@ class AuthServiceTest {
         when(refreshTokenService.issueSession("alice"))
                 .thenReturn(new RefreshTokenService.IssuedToken("refresh", "session-1"));
         when(jwtService.generateToken("alice", "session-1")).thenReturn("jwt");
-        when(deviceRegTokenService.issue("alice")).thenReturn("device-token");
+        when(deviceRegTokenService.issue(eq("alice"), anyString())).thenReturn("device-token");
 
         var response = service.completeSetup(
                 "setup-token",

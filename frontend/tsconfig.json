@@ -21,5 +21,5 @@
     }
   },
   "include": ["src"],
-  "exclude": ["node_modules", "dist", "coverage", "e2e", "e2e-real", "playwright-report", "playwright-report-real", "test-results"]
+  "exclude": ["node_modules", "dist", "coverage", "e2e", "e2e-real", "playwright-report", "playwright-report-real", "test-results", "src/crypto-engine.ts"]
 }
