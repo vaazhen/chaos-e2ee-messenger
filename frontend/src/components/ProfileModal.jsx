@@ -52,8 +52,8 @@ const FAQ_ITEMS = [
   {
     q: "Можно ли восстановить чаты при смене устройства?",
     qEn: "Can I restore chats when changing devices?",
-    a: "Да. Используйте функцию резервного копирования в разделе Система → Резервное копирование. Создайте резервную копию на старом устройстве и восстановите её на новом. Резервная копия шифруется вашей фразой-паролем.",
-    aEn: "Yes. Use the backup feature in System → Backup. Create a backup on your old device and restore it on the new one. The backup is encrypted with your passphrase.",
+    a: "Да. Используйте резервное копирование в разделе Система → Резервное копирование для сохранения ключей. Новое устройство создаст свежие сессии с контактами.",
+    aEn: "Yes. Use Backup in System → Backup to save your keys. A new device will establish fresh sessions with your contacts.",
   },
   {
     q: "Поддерживаются ли групповые чаты?",

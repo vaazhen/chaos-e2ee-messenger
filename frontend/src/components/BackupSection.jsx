@@ -38,7 +38,7 @@ export default function BackupSection({ l, effectiveLang }) {
       </div>
 
       <div className="profile-security-note">
-        {l("Резервная копия содержит identity-ключи, pre-key'и и registration ID. После импорта устройство сможет расшифровывать старые сообщения.", "The backup contains identity keys, pre-keys and registration ID. After import, the device can decrypt old messages.")}
+        {l("Резервная копия содержит identity-ключи, signed pre-key и registration ID. Старые сессии не восстанавливаются — для истории сообщений после смены устройства используйте синхронизацию.", "The backup contains your identity keys, signed pre-key and registration ID. Past sessions are not restored — contact sync is needed for message history after device change.")}
       </div>
 
       <div className="profile-backup-tabs" style={{display:"flex",gap:8,margin:"14px 0 10px",padding:"0 4px"}}>
