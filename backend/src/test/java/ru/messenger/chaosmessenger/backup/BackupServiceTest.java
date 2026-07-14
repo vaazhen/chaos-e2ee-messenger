@@ -58,7 +58,7 @@ class BackupServiceTest {
                 .thenReturn(Optional.empty());
 
         assertThrows(IllegalStateException.class, () ->
-                backupService.exportBackup(1L));
+                backupService.exportBackup(1L, "passphrase"));
     }
 
     @Test
