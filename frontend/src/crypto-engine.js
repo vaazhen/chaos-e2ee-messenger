@@ -157,20 +157,61 @@ await (async function () {
 
     // ─── AES-GCM encrypt / decrypt ───────────────────────────────────────────
 
-    async function aesEncryptWithKey(plainText, aesKey) {
+    async function aesEncryptWithKey(plainText, aesKey, additionalData = null) {
         assertWebCryptoAvailable();
         const nonce = crypto.getRandomValues(new Uint8Array(12));
         const encoded = new TextEncoder().encode(plainText);
-        const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, aesKey, encoded);
+        const params = { name: 'AES-GCM', iv: nonce };
+        if (additionalData && additionalData.byteLength > 0) {
+            params.additionalData = additionalData;
+        }
+        const ct = await crypto.subtle.encrypt(params, aesKey, encoded);
         return { ciphertext: bytesToB64(new Uint8Array(ct)), nonce: bytesToB64(nonce) };
     }
 
-    async function aesDecryptWithKey(ciphertextB64, nonceB64, aesKey) {
+    async function aesDecryptWithKey(ciphertextB64, nonceB64, aesKey, additionalData = null) {
         assertWebCryptoAvailable();
         const ct    = b64ToBytes(ciphertextB64);
         const nonce = b64ToBytes(nonceB64);
-        const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: nonce }, aesKey, ct);
+        const params = { name: 'AES-GCM', iv: nonce };
+        if (additionalData && additionalData.byteLength > 0) {
+            params.additionalData = additionalData;
+        }
+        const plain = await crypto.subtle.decrypt(params, aesKey, ct);
         return new TextDecoder().decode(plain);
+    }
+
+    // ─── AAD (Additional Authenticated Data) builder for message envelopes ──────
+    // Binds ciphertext to protocol context: tampering any field breaks decryption.
+
+    const ENVELOPE_AAD_VERSION = 0x01;
+
+    function buildEnvelopeAAD({ messageType, chatId, messageIndex, previousChainLength, ratchetPublicKey }) {
+        const mt = typeof messageType === 'string' ? messageType : '';
+        const typeCode = mt === 'PREKEY_WHISPER' ? 1 : mt === 'WHISPER' ? 2 : mt === 'SELF_WHISPER' ? 3 : 0;
+        const cid = (chatId != null) ? (chatId >>> 0) : 0;
+        const idx = (messageIndex != null) ? (messageIndex >>> 0) : 0;
+        const pcl = (previousChainLength != null) ? (previousChainLength >>> 0) : 0;
+
+        const buf = new ArrayBuffer(14);
+        const dv = new DataView(buf);
+        dv.setUint8(0, ENVELOPE_AAD_VERSION);
+        dv.setUint8(1, typeCode);
+        dv.setUint32(2, cid, false);
+        dv.setUint32(6, idx, false);
+        dv.setUint32(10, pcl, false);
+
+        if (ratchetPublicKey) {
+            const rpk = ratchetPublicKey + '';
+            const rpkLen = rpk.length;
+            const ext = new ArrayBuffer(buf.byteLength + 4 + rpkLen);
+            new Uint8Array(ext).set(new Uint8Array(buf), 0);
+            const edv = new DataView(ext);
+            edv.setUint32(buf.byteLength, rpkLen, false);
+            for (let i = 0; i < rpkLen; i++) edv.setUint8(buf.byteLength + 4 + i, rpk.charCodeAt(i));
+            return ext;
+        }
+        return buf;
     }
 
     // ─── Self-envelope encryption (for cross-device sync) ─────────────────────
@@ -843,7 +884,7 @@ await (async function () {
         session.CKs = bytesToB64(kdf2.chainKey);
     }
 
-    async function encryptWithDoubleRatchet(session, plainText) {
+    async function encryptWithDoubleRatchet(session, plainText, aadContext = {}) {
         if (!session.CKs) {
             throw new Error('Sending chain not initialized');
         }
@@ -853,7 +894,14 @@ await (async function () {
         const messageIndex = session.Ns;
 
         const mk = await importMessageKey(messageKeyRaw);
-        const encrypted = await aesEncryptWithKey(plainText, mk);
+        const aad = buildEnvelopeAAD({
+            messageType: aadContext.messageType || 'WHISPER',
+            chatId: aadContext.chatId,
+            messageIndex,
+            previousChainLength: session.PN || 0,
+            ratchetPublicKey: session.DHs.publicKey
+        });
+        const encrypted = await aesEncryptWithKey(plainText, mk, aad);
 
         session.CKs = bytesToB64(nextChainKey);
         session.Ns = (session.Ns || 0) + 1;
@@ -893,7 +941,14 @@ await (async function () {
         const { messageKeyRaw, nextChainKey } = await ratchetStep(ckBytes);
 
         const mk = await importMessageKey(messageKeyRaw);
-        const plainText = await aesDecryptWithKey(envelope.ciphertext, envelope.nonce, mk);
+        const aad = buildEnvelopeAAD({
+            messageType: envelope.messageType,
+            chatId: envelope._chatId,
+            messageIndex: msgIdx,
+            previousChainLength: envelope.previousChainLength ?? 0,
+            ratchetPublicKey: envelope.ratchetPublicKey
+        });
+        const plainText = await aesDecryptWithKey(envelope.ciphertext, envelope.nonce, mk, aad);
 
         session.CKr = bytesToB64(nextChainKey);
         session.Nr = (session.Nr || 0) + 1;
@@ -969,7 +1024,10 @@ await (async function () {
             }
 
             const { encrypted, messageIndex, ratchetPublicKey, previousChainLength } =
-                await encryptWithDoubleRatchet(session, plainText);
+                await encryptWithDoubleRatchet(session, plainText, {
+                    messageType: isNewSession ? 'PREKEY_WHISPER' : 'WHISPER',
+                    chatId
+                });
             await storeSession(localBundle.deviceId, targetDevice.deviceId, session);
 
             envelopes.push({
