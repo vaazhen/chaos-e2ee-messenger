@@ -229,19 +229,24 @@ Chaos separates durable state from low-latency notification.
 
 ```mermaid
 flowchart LR
-    CMD[Message command] --> TX[Database transaction]
-    TX --> MSG[(Messages and envelopes)]
-    TX --> OUT[(Outbox event)]
-    OUT --> PUB[Outbox publisher]
-    PUB --> BUS[Kafka / Redpanda]
-    BUS --> CONSUMER[Realtime consumer]
-    CONSUMER --> STORE[(Device event store)]
-    CONSUMER --> WS[STOMP / WebSocket]
-    STORE --> SYNC[/api/realtime/sync]
-    WS --> QUEUE[Client event queue]
+    CMD["Send Message Command"] --> TX["Database Transaction"]
+
+    TX --> MSG[("Messages and E2EE Envelopes")]
+    TX --> OUT[("Outbox Event")]
+
+    OUT --> PUB["Outbox Publisher"]
+    PUB --> BUS["Kafka / Redpanda"]
+    BUS --> CONSUMER["Realtime Consumer"]
+
+    CONSUMER --> STORE[("Device Event Store")]
+    CONSUMER --> WS["STOMP / WebSocket"]
+
+    STORE --> SYNC["GET /api/realtime/sync"]
+    WS --> QUEUE["Client Event Queue"]
     SYNC --> QUEUE
-    QUEUE --> APPLY[Decrypt and durable local apply]
-    APPLY --> CURSOR[Advance cursor]
+
+    QUEUE --> APPLY["Decrypt and Durable Local Apply"]
+    APPLY --> CURSOR["Advance Cursor"]
 ```
 
 ### Delivery guarantees
