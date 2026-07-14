@@ -54,42 +54,18 @@ public class RealtimeEventConsumer {
     @Transactional
     public void handleDomainEvent(DomainEvent event) {
         String eventId = event.eventId();
+        boolean syncActive = TransactionSynchronizationManager.isSynchronizationActive();
 
         if (eventId != null) {
             if (processedEvents.contains(eventId)) {
                 increment("chaos_kafka_consumer_duplicate_total");
                 return;
             }
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    processedEvents.add(eventId);
-                    trimDedupCacheIfNeeded();
-                    flushPendingStomp();
-                }
-
-                @Override
-                public void afterCompletion(int status) {
-                    pendingStomp.get().clear();
-                }
-            });
-        } else {
-            if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-                flushPendingStomp();
-                pendingStomp.get().clear();
-            } else {
-                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                    @Override
-                    public void afterCommit() {
-                        flushPendingStomp();
-                    }
-
-                    @Override
-                    public void afterCompletion(int status) {
-                        pendingStomp.get().clear();
-                    }
-                });
+            if (syncActive) {
+                registerAfterCommit(eventId);
             }
+        } else if (syncActive) {
+            registerFlushOnly();
         }
 
         try {
@@ -212,6 +188,36 @@ public class RealtimeEventConsumer {
                 publishDurableToDevice(device.getDeviceId(), event.eventId(), destination, eventPayload);
             }
         }
+    }
+
+    private void registerAfterCommit(String eventId) {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                processedEvents.add(eventId);
+                trimDedupCacheIfNeeded();
+                flushPendingStomp();
+            }
+
+            @Override
+            public void afterCompletion(int status) {
+                pendingStomp.get().clear();
+            }
+        });
+    }
+
+    private void registerFlushOnly() {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                flushPendingStomp();
+            }
+
+            @Override
+            public void afterCompletion(int status) {
+                pendingStomp.get().clear();
+            }
+        });
     }
 
     private void publishDurableToDevice(

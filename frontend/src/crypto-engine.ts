@@ -824,7 +824,14 @@ await (async function () {
         const mkRawB64 = session.MKSKIPPED[kid];
         if (!mkRawB64) return null;
         const mk = await importMessageKey(b64ToBytes(mkRawB64));
-        const plainText = await aesDecryptWithKey(envelope.ciphertext, envelope.nonce, mk);
+        const aad = (envelope._chatId != null) ? buildEnvelopeAAD({
+            messageType: envelope.messageType,
+            chatId: envelope._chatId,
+            messageIndex: envelope.messageIndex,
+            previousChainLength: envelope.previousChainLength ?? 0,
+            ratchetPublicKey: envelope.ratchetPublicKey
+        }) : null;
+        const plainText = await aesDecryptWithKey(envelope.ciphertext, envelope.nonce, mk, aad);
         delete session.MKSKIPPED[kid];
         return plainText;
     }
