@@ -51,7 +51,7 @@ export default defineConfig(({ mode }) => ({
       provider: "v8",
       reporter: ["text", "html", "json-summary"],
       reportsDirectory: "./coverage",
-      include: ["src/**/*.{js,jsx}"],
+      include: ["src/**/*.{js,jsx,ts,tsx}"],
       exclude: [
         "e2e/**",
         "e2e-real/**",
@@ -60,6 +60,7 @@ export default defineConfig(({ mode }) => ({
         "test-results/**",
         "src/main.jsx",
         "src/styles.js",
+        "src/types/**",
         "src/test/**",
       ],
       thresholds: {
