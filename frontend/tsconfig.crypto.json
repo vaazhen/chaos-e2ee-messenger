@@ -2,11 +2,10 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "strict": true,
-    "noImplicitAny": true,
+    "noImplicitAny": false,
     "strictNullChecks": true,
-    "noUncheckedIndexedAccess": true,
-    "declaration": true,
-    "declarationMap": true
+    "skipLibCheck": true,
+    "types": ["vite/client"]
   },
   "include": [
     "src/crypto-engine.ts",

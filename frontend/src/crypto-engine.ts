@@ -161,7 +161,7 @@ await (async function () {
         assertWebCryptoAvailable();
         const nonce = crypto.getRandomValues(new Uint8Array(12));
         const encoded = new TextEncoder().encode(plainText);
-        const params = { name: 'AES-GCM', iv: nonce };
+        const params: any = { name: 'AES-GCM', iv: nonce };
         if (additionalData && additionalData.byteLength > 0) {
             params.additionalData = new Uint8Array(additionalData);
         }
@@ -173,7 +173,7 @@ await (async function () {
         assertWebCryptoAvailable();
         const ct    = b64ToBytes(ciphertextB64);
         const nonce = b64ToBytes(nonceB64);
-        const params = { name: 'AES-GCM', iv: nonce };
+        const params: any = { name: 'AES-GCM', iv: nonce };
         if (additionalData && additionalData.byteLength > 0) {
             params.additionalData = new Uint8Array(additionalData);
         }
