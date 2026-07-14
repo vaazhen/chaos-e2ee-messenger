@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "noUncheckedIndexedAccess": true,
+    "declaration": true,
+    "declarationMap": true
+  },
+  "include": [
+    "src/crypto-engine.ts",
+    "src/types/**/*.ts"
+  ]
+}

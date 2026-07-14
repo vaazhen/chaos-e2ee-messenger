@@ -84,6 +84,12 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Typecheck crypto (strict)
+        run: npm run typecheck:crypto
+
       - name: Test with coverage
         run: npm run test:coverage -- --run
 

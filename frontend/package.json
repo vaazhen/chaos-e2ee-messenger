@@ -15,6 +15,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage --pool=threads --poolOptions.threads.singleThread=true",
     "typecheck": "tsc --noEmit",
+    "typecheck:crypto": "tsc -p tsconfig.crypto.json",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:ui": "playwright test --ui",
