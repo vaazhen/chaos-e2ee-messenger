@@ -5,18 +5,14 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
-import org.springframework.data.redis.core.script.RedisScript;
 import ru.messenger.chaosmessenger.auth.service.RefreshTokenService;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.Base64;
-import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -60,17 +56,14 @@ class RefreshTokenServiceTest {
     @Test
     void rotateConsumesOldTokenAndIssuesReplacementInSameFamily() {
         RefreshTokenService.IssuedToken issued = service.issueSession("alice");
+        String activeKey = "refresh:active:" + digest(issued.token());
         String encoded = "v1|alice|" + issued.sessionId();
 
         reset(valueOps, redisTemplate);
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
-
-        List<String> luaResult = java.util.Arrays.asList("alice", issued.sessionId());
-        when(redisTemplate.execute(
-                any(org.springframework.data.redis.core.script.RedisScript.class),
-                anyList(),
-                anyString()
-        )).thenReturn(luaResult);
+        when(valueOps.get("refresh:used:" + digest(issued.token()))).thenReturn(null);
+        when(valueOps.getAndDelete(activeKey)).thenReturn(encoded);
+        when(redisTemplate.hasKey("refresh:family:revoked:" + issued.sessionId())).thenReturn(false);
 
         RefreshTokenService.Rotation rotation = service.rotate(issued.token());
 
@@ -78,19 +71,28 @@ class RefreshTokenServiceTest {
         assertThat(rotation.username()).isEqualTo("alice");
         assertThat(rotation.sessionId()).isEqualTo(issued.sessionId());
         assertThat(rotation.token()).isNotEqualTo(issued.token());
+        verify(valueOps).set(
+                "refresh:used:" + digest(issued.token()),
+                issued.sessionId(),
+                Duration.ofDays(30)
+        );
+        verify(valueOps).set(
+                eq("refresh:active:" + digest(rotation.token())),
+                eq("v1|alice|" + issued.sessionId()),
+                eq(Duration.ofDays(30))
+        );
     }
 
     @Test
     void reuseOfConsumedTokenRevokesWholeFamily() {
         String token = "stolen-consumed-token";
         String family = "family-1";
-        when(redisTemplate.execute(
-                any(RedisScript.class),
-                anyList(),
-                anyString()
-        )).thenReturn(java.util.Arrays.asList(null, "reused"));
+        when(valueOps.get("refresh:used:" + digest(token))).thenReturn(family);
 
         assertThat(service.rotate(token)).isNull();
+
+        verify(valueOps).set("refresh:family:revoked:" + family, "1", Duration.ofDays(30));
+        verify(valueOps, never()).getAndDelete(anyString());
     }
 
     @Test

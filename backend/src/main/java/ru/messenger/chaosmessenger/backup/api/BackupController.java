@@ -9,6 +9,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import ru.messenger.chaosmessenger.backup.dto.BackupExportResponse;
@@ -35,11 +36,14 @@ public class BackupController {
         return backupService.getBackupInfo(user.getId());
     }
 
-    @Operation(summary = "Export latest encrypted backup")
+    @Operation(summary = "Export latest backup (requires passphrase header)")
     @GetMapping("/export")
-    public BackupExportResponse exportBackup(Authentication auth) {
+    public BackupExportResponse exportBackup(
+            Authentication auth,
+            @RequestHeader("X-Backup-Passphrase") String passphrase
+    ) {
         User user = userIdentityService.require(auth.getName());
-        return backupService.exportBackup(user.getId());
+        return backupService.exportBackup(user.getId(), passphrase);
     }
 
     @Operation(summary = "Import/upload encrypted backup")

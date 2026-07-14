@@ -23,7 +23,7 @@ public class BackupService {
     private final EncryptedBackupRepository backupRepository;
 
     @Transactional
-    public BackupExportResponse exportBackup(Long userId) {
+    public BackupExportResponse exportBackup(Long userId, String passphrase) {
         EncryptedBackup backup = backupRepository.findTopByUserIdOrderByVersionDesc(userId)
                 .orElseThrow(() -> new IllegalStateException("No backup found for user " + userId));
 

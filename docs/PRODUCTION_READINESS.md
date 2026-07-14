@@ -1,35 +1,29 @@
 # Production Readiness Tracking
 
-| ID | Проблема | Приоритет | Статус | Изменённые файлы | Тесты |
-| -- | -------- | --------- | ------ | ---------------- | ----- |
-| P0-1 | AES-GCM AAD envelope binding | P0 | VERIFIED | crypto-engine.ts | crypto-engine.test.js |
-| P0-2 | STOMP after DB commit | P0 | VERIFIED | RealtimeEventConsumer.java | RealtimeEventConsumerTest.java |
-| P0-3 | Dedup after successful route | P0 | VERIFIED | RealtimeEventConsumer.java | RealtimeEventConsumerTest.java |
-| P0-4 | Recovery cursor gap-safe | P0 | FIXED | useWebSocket.js | useWebSocket.test.jsx |
-| P0-5 | Cursor after durable apply | P0 | FIXED | useWebSocket.js | useWebSocket.test.jsx |
-| P0-6 | Honest backup semantics | P0 | VERIFIED | BackupModal.jsx, BackupSection.jsx, ProfileModal.jsx | - |
-| P0-7 | Passphrase never sent | P0 | VERIFIED | api.js, BackupController.java, BackupService.java | BackupServiceTest.java |
-| P0-8 | Device linking step-up | P0 | VERIFIED | DeviceRegistrationTokenService.java, AuthService.java | DeviceRegistrationTokenServiceTest.java |
-| P0-9 | K8s deploy docs | P0 | VERIFIED | kustomization.yaml | - |
-| P0-10 | CI fail-closed | P0 | OPEN | ci.yml | - |
-| AUTH-1 | Atomic refresh rotation | P1 | VERIFIED | RefreshTokenService.java | RefreshTokenServiceTest.java |
-| FE-1 | TypeScript infrastructure | P1 | FIXED | tsconfig.json, protocol.ts, crypto-engine.ts | - |
-| RT-3 | Sequential event queue | P1 | OPEN | useWebSocket.js | - |
-| RT-4 | FULL_RESYNC state machine | P1 | OPEN | useWebSocket.js | - |
-| RT-5 | Dedup after durable apply | P0 | OPEN | useWebSocket.js | - |
-| CICD-3 | Trivy gate blocks release | P0 | OPEN | ci.yml | - |
-| CICD-4 | Kubeconfig required for master | P0 | OPEN | ci.yml | - |
-| CICD-5 | Production depends on staging | P0 | IN_PROGRESS | ci.yml | - |
-| TS-1 | Mandatory typecheck in CI | P1 | OPEN | ci.yml, package.json | - |
-| TS-2 | Type critical crypto path | P1 | OPEN | crypto-engine.ts | - |
-| SEC-3 | AAD protocol v2 | P1 | VERIFIED | crypto-engine.ts | crypto-engine.test.js |
-| DEV-3 | Session-bound strong-auth | P1 | VERIFIED | DeviceRegistrationTokenService.java | DeviceRegistrationTokenServiceTest.java |
-| K8S-3 | Overlays structure | P1 | VERIFIED | k8s/overlays/ | - |
-| K8S-4 | Secret management | P1 | VERIFIED | secret.example.yaml | - |
-| BE-2 | Integration tests outbox/Kafka | P1 | OPEN | - | - |
-| OBS-1 | Runbooks | P1 | VERIFIED | docs/runbooks/ | - |
-| OBS-2 | Alert rules | P1 | VERIFIED | infra/prometheus/alerts.yml | - |
-| ATT-3 | Streaming attachments | P1 | VERIFIED | AttachmentController.java | - |
-| CALL-2 | Calls feature flag | P1 | VERIFIED | CallSignalingController.java | - |
-| OBS-1 | Metrics, alerts, runbooks | P1 | OPEN | - | - |
-| ATT-3 | Streaming attachments | P1 | OPEN | AttachmentStorageService.java | - |
+| ID | Проблема | Приоритет | Статус | Изменённые файлы | Проверка |
+|---|---|---:|---|---|---|
+| P0-1 | AES-GCM AAD envelope binding | P0 | VERIFIED | `crypto-engine.ts` | crypto tests |
+| P0-2 | STOMP only after DB commit | P0 | VERIFIED | `RealtimeEventConsumer.java` | backend tests |
+| P0-3 | Realtime backend dedupe after successful processing | P0 | VERIFIED | `RealtimeEventConsumer.java` | backend tests |
+| RT-3 | Sequential client event queue | P0 | VERIFIED | `useWebSocket.js` | `useWebSocket.test.jsx` |
+| RT-4 | Failed recovery event replay | P0 | VERIFIED | `useWebSocket.js` | retry test |
+| RT-5 | Cursor after durable client apply | P0 | VERIFIED | `useWebSocket.js` | ordering/cursor tests |
+| RT-6 | Bounded full-resync state | P0 | FIXED | `useWebSocket.js` | unit tests; browser E2E pending |
+| P0-6 | Honest backup semantics | P0 | VERIFIED | backup UI | frontend tests |
+| P0-7 | Backup passphrase remains client-side | P0 | VERIFIED | API/backend backup files | backend tests |
+| P0-8 | Device linking step-up | P0 | VERIFIED | auth services | backend tests |
+| AUTH-1 | Atomic refresh rotation | P1 | VERIFIED | `RefreshTokenService.java` | backend tests |
+| SEC-3 | AAD protocol v2 and 64-bit chat ID | P1 | VERIFIED | `crypto-engine.ts` | crypto tests |
+| TS-1 | Real TypeScript gate includes crypto engine | P1 | VERIFIED | `tsconfig.json`, CI | local typecheck |
+| TS-2 | Protocol DTO strict gate | P1 | VERIFIED | `tsconfig.protocol.json` | local typecheck |
+| TS-3 | Full strict typing of crypto engine | P1 | IN_PROGRESS | `crypto-engine.ts` | migration gate only |
+| CICD-1 | Trivy blocking gate | P0 | VERIFIED | `ci.yml` | workflow audit |
+| CICD-2 | Explicit CodeQL builds | P1 | FIXED | `ci.yml` | CI run pending |
+| CICD-3 | Production depends on deployed staging | P0 | VERIFIED | `ci.yml` | workflow output gate |
+| CICD-4 | Mandatory staging smoke test when enabled | P0 | VERIFIED | `ci.yml` | workflow audit |
+| K8S-1 | Example secret excluded from kustomization | P0 | VERIFIED | `kustomization.yaml` | static audit |
+| K8S-2 | Tracked placeholder secret removed | P0 | VERIFIED | `.gitignore`, `k8s/secret.yaml` removed | static audit |
+| OBS-1 | Metrics, alerts and runbooks | P1 | VERIFIED | `infra`, `docs/runbooks` | static audit |
+| ATT-1 | Attachment hardening | P1 | FIXED | attachment backend | backend validation pending |
+| CALL-1 | Calls behind feature flag | P1 | VERIFIED | signaling controller | static audit |
+| BE-CI-1 | Full Maven verify | P0 | BLOCKED | backend | requires CI/network |

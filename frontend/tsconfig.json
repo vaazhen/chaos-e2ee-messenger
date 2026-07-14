@@ -4,6 +4,7 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["vite/client"],
     "jsx": "react-jsx",
     "strict": false,
     "noEmit": true,
@@ -21,5 +22,5 @@
     }
   },
   "include": ["src"],
-  "exclude": ["node_modules", "dist", "coverage", "e2e", "e2e-real", "playwright-report", "playwright-report-real", "test-results", "src/crypto-engine.ts"]
+  "exclude": ["node_modules", "dist", "coverage", "e2e", "e2e-real", "playwright-report", "playwright-report-real", "test-results"]
 }

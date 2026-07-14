@@ -160,7 +160,6 @@ export function useMessages(myId) {
         const envelope = {
           ...event.envelope,
           senderDeviceId: event.senderDeviceId || event.envelope?.senderDeviceId,
-          _chatId: chatId,
         };
         decryptedText = await window.e2ee.decryptEnvelope(envelope);
       } catch (e) {
@@ -625,7 +624,6 @@ async function decryptMsg(msg, myId, fallbackChatId) {
       const envelope = {
         ...msg.envelope,
         senderDeviceId: msg.senderDeviceId || msg.envelope?.senderDeviceId,
-        _chatId: fallbackChatId || msg.chatId,
       };
       decryptedText = await window.e2ee.decryptEnvelope(envelope);
     } catch (e) {

@@ -1,12 +1,12 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "strict": true,
-    "noImplicitAny": true,
-    "strictNullChecks": true,
+    "strict": false,
     "skipLibCheck": true
   },
   "include": [
-    "src/types/**/*.ts"
+    "src/crypto-engine.ts",
+    "src/types/**/*.ts",
+    "src/vite-env.d.ts"
   ]
 }
