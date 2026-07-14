@@ -222,14 +222,23 @@ jobs:
         uses: aquasecurity/setup-trivy@v0.2.6
         with:
           version: v0.72.0
-      - name: Scan for high and critical vulnerabilities
+      - name: Scan for vulnerabilities (SARIF report)
+        continue-on-error: true
         run: |
           trivy image \
             --severity HIGH,CRITICAL \
             --ignore-unfixed \
             --format sarif \
             "${{ steps.resolve.outputs.value }}" \
-            > "trivy-${{ matrix.image }}.sarif" || true
+            > "trivy-${{ matrix.image }}.sarif"
+
+      - name: Vulnerability gate (blocks on HIGH/CRITICAL)
+        run: |
+          trivy image \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --exit-code 1 \
+            "${{ steps.resolve.outputs.value }}"
 
       - name: Upload SARIF
         if: always()
@@ -263,9 +272,8 @@ jobs:
           KUBECONFIG_B64: ${{ secrets.KUBECONFIG_STAGING }}
         run: |
           if [ -z "$KUBECONFIG_B64" ]; then
-            echo "KUBECONFIG staging secret not set — skipping deploy"
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-            exit 0
+            echo "KUBECONFIG staging secret is required for deployment" >&2
+            exit 1
           fi
           mkdir -p "$HOME/.kube"
           printf '%s' "$KUBECONFIG_B64" | base64 -d > "$HOME/.kube/config"
