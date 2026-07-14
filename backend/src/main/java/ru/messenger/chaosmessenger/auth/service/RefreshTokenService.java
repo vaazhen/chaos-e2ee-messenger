@@ -1,5 +1,6 @@
 package ru.messenger.chaosmessenger.auth.service;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
@@ -10,7 +11,6 @@ import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.Base64;
-import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
@@ -21,6 +21,7 @@ import java.util.UUID;
  * refresh rotates the token. Reuse of an already consumed token revokes the whole
  * family, limiting damage from token theft.</p>
  */
+@Slf4j
 @Service
 public class RefreshTokenService {
 
