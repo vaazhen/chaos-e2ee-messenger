@@ -84,6 +84,10 @@ public class RealtimeEventConsumer {
             throw e;
         } finally {
             if (!syncActive) {
+                if (eventId != null) {
+                    processedEvents.add(eventId);
+                    trimDedupCacheIfNeeded();
+                }
                 flushPendingStomp();
                 pendingStomp.get().clear();
             }
