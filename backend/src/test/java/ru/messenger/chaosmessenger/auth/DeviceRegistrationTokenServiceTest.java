@@ -10,6 +10,7 @@ import ru.messenger.chaosmessenger.auth.service.DeviceRegistrationTokenService;
 import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -29,6 +30,7 @@ class DeviceRegistrationTokenServiceTest {
 
     @Test
     void issue_storesTokenInRedisWithTTL() {
+        service.markStrongAuth("alice");
         String token = service.issue("alice");
 
         assertThat(token).isNotBlank();
@@ -66,6 +68,7 @@ class DeviceRegistrationTokenServiceTest {
 
     @Test
     void consumeAndGetUsername_isOneTimeUse() {
+        service.markStrongAuth("bob");
         String token = service.issue("bob");
         when(valueOps.getAndDelete(contains(token))).thenReturn("bob").thenReturn(null);
 
@@ -74,5 +77,22 @@ class DeviceRegistrationTokenServiceTest {
 
         assertThat(first).isEqualTo("bob");
         assertThat(second).isNull();
+    }
+
+    @Test
+    void markStrongAuth_storesTimestampWithTTL() {
+        service.markStrongAuth("alice");
+        verify(valueOps).set(
+                eq("last_strong_auth:alice"),
+                anyString(),
+                eq(Duration.ofMinutes(5))
+        );
+    }
+
+    @Test
+    void issue_rejectsWhenNoRecentStrongAuth() {
+        assertThatThrownBy(() -> service.issue("alice"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("re-authenticate");
     }
 }

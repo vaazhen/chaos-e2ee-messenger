@@ -74,6 +74,7 @@ public class AuthService {
                 RefreshTokenService.IssuedToken session = refreshTokenService.issueSession(result.username());
                 token = jwtService.generateToken(result.username(), session.sessionId());
                 refreshToken = session.token();
+                deviceRegTokenService.markStrongAuth(result.username());
                 deviceRegistrationToken = deviceRegTokenService.issue(result.username());
                 userId = result.userId();
                 username = result.username();
@@ -164,10 +165,12 @@ public class AuthService {
         user.setStatus(UserStatus.ACTIVE);
         user.setCreatedAt(LocalDateTime.now());
 
-        return buildAuthResponse(userRepository.save(user), true);
+        User saved = userRepository.save(user);
+        deviceRegTokenService.markStrongAuth(saved.getUsername());
+        return buildAuthResponse(saved, true);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public AuthResponse loginEmail(String rawEmail, String password) {
         String email = normalizeEmail(rawEmail);
         credentialRateLimiter.checkAndIncrement(email);
@@ -183,6 +186,7 @@ public class AuthService {
         }
 
         credentialRateLimiter.reset(email);
+        deviceRegTokenService.markStrongAuth(user.getUsername());
         return buildAuthResponse(user, false);
     }
 
