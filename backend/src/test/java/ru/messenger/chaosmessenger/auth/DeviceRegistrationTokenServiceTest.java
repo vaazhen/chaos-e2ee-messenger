@@ -30,9 +30,8 @@ class DeviceRegistrationTokenServiceTest {
 
     @Test
     void issue_storesTokenInRedisWithTTL() {
-        when(valueOps.get("last_strong_auth:alice")).thenReturn("2026-01-01T00:00:00Z");
-        service.markStrongAuth("alice");
-        String token = service.issue("alice");
+        String challenge = service.markStrongAuth("alice");
+        String token = service.issue("alice", challenge);
 
         assertThat(token).isNotBlank();
         verify(valueOps).set(contains(token), eq("alice"), eq(Duration.ofSeconds(60)));
@@ -69,9 +68,8 @@ class DeviceRegistrationTokenServiceTest {
 
     @Test
     void consumeAndGetUsername_isOneTimeUse() {
-        when(valueOps.get("last_strong_auth:bob")).thenReturn("2026-01-01T00:00:00Z");
-        service.markStrongAuth("bob");
-        String token = service.issue("bob");
+        String challenge = service.markStrongAuth("bob");
+        String token = service.issue("bob", challenge);
         when(valueOps.getAndDelete(contains(token))).thenReturn("bob").thenReturn(null);
 
         String first  = service.consumeAndGetUsername(token);
@@ -82,18 +80,19 @@ class DeviceRegistrationTokenServiceTest {
     }
 
     @Test
-    void markStrongAuth_storesTimestampWithTTL() {
-        service.markStrongAuth("alice");
+    void markStrongAuth_returnsChallengeAndStoresInRedis() {
+        String challenge = service.markStrongAuth("alice");
+        assertThat(challenge).isNotBlank();
         verify(valueOps).set(
                 eq("last_strong_auth:alice"),
-                anyString(),
+                eq(challenge),
                 eq(Duration.ofMinutes(5))
         );
     }
 
     @Test
     void issue_rejectsWhenNoRecentStrongAuth() {
-        assertThatThrownBy(() -> service.issue("alice"))
+        assertThatThrownBy(() -> service.issue("alice", "wrong-challenge"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("re-authenticate");
     }

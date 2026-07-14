@@ -37,30 +37,38 @@ public class DeviceRegistrationTokenService {
         this.redisTemplate = redisTemplate;
     }
 
-    /** Record that username has recently performed strong authentication. */
-    public void markStrongAuth(String username) {
+    /** Record that username has recently performed strong auth. Returns a one-time challenge token. */
+    public String markStrongAuth(String username) {
         if (username == null || username.isBlank()) {
-            return;
+            throw new IllegalArgumentException("username is required");
         }
+        String challenge = UUID.randomUUID().toString();
         redisTemplate.opsForValue().set(
                 STRONG_AUTH_PREFIX + username,
-                Instant.now().toString(),
+                challenge,
                 STRONG_AUTH_TTL
         );
+        return challenge;
     }
 
     /**
-     * Generate a one-time token bound to {@code username}.
+     * Generate a one-time device registration token bound to a specific strong-auth challenge.
      *
-     * @throws IllegalStateException if no recent strong auth exists for this user.
+     * @param challengeToken the token returned by {@link #markStrongAuth(String)}
+     * @throws IllegalStateException if strong auth has expired or challenge is wrong
      */
-    public String issue(String username) {
-        String lastAuth = redisTemplate.opsForValue().get(STRONG_AUTH_PREFIX + username);
-        if (lastAuth == null) {
+    public String issue(String username, String challengeToken) {
+        if (challengeToken == null || challengeToken.isBlank()) {
+            throw new IllegalStateException("Device registration requires recent authentication");
+        }
+        String stored = redisTemplate.opsForValue().get(STRONG_AUTH_PREFIX + username);
+        if (stored == null || !stored.equals(challengeToken)) {
             throw new IllegalStateException(
                     "Device registration requires recent password or OTP authentication. Please re-authenticate."
             );
         }
+        // One-time consumption
+        redisTemplate.delete(STRONG_AUTH_PREFIX + username);
         String token = UUID.randomUUID().toString();
         redisTemplate.opsForValue().set(PREFIX + token, username, TOKEN_TTL);
         return token;
