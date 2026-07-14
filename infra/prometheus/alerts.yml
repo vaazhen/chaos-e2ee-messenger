@@ -1,0 +1,106 @@
+groups:
+  - name: chaos-messenger
+    rules:
+      # ── Outbox ──────────────────────────────────────────────────────────
+      - alert: OutboxBacklogHigh
+        expr: chaos_outbox_oldest_pending_seconds > 120
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Outbox backlog older than 2 minutes"
+          description: "Oldest pending outbox event is {{ $value }}s old. Check Kafka connectivity."
+          runbook: docs/runbooks/OUTBOX_BACKLOG.md
+
+      - alert: OutboxDeadEvents
+        expr: chaos_outbox_dead_count > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Outbox has DEAD events"
+          description: "{{ $value }} events permanently failed. Check runbook."
+          runbook: docs/runbooks/OUTBOX_BACKLOG.md
+
+      # ── Kafka ───────────────────────────────────────────────────────────
+      - alert: KafkaConsumerLag
+        expr: chaos_kafka_consumer_lag > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Kafka consumer lag exceeds 1000"
+          description: "Consumer group lag is {{ $value }}. Processing may be delayed."
+          runbook: docs/runbooks/OUTBOX_BACKLOG.md
+
+      # ── Refresh ─────────────────────────────────────────────────────────
+      - alert: RefreshReuseSpike
+        expr: rate(chaos_auth_refresh_reuse_total[5m]) > 3
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Refresh token reuse spike detected"
+          description: "Rate of {{ $value }}/s. Possible token theft."
+          runbook: docs/runbooks/REFRESH_TOKEN_REUSE_SPIKE.md
+
+      # ── Realtime ────────────────────────────────────────────────────────
+      - alert: RealtimeRecoveryFailureRate
+        expr: rate(chaos_realtime_recovery_failures_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Real-time recovery failure rate elevated"
+          description: "Rate {{ $value }}/s. Clients may miss events after reconnect."
+          runbook: docs/runbooks/REALTIME_RECOVERY_FAILURE.md
+
+      - alert: FullResyncRate
+        expr: rate(chaos_realtime_full_resync_total[10m]) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "FULL_RESYNC rate elevated"
+          description: "{{ $value }}/s clients requiring full resync."
+          runbook: docs/runbooks/REALTIME_RECOVERY_FAILURE.md
+
+      # ── Infrastructure ──────────────────────────────────────────────────
+      - alert: DatabaseDown
+        expr: up{job="chaos-backend"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Backend is down"
+          description: "Backend health check failing for 2 minutes."
+          runbook: docs/runbooks/DATABASE_OUTAGE.md
+
+      - alert: HighErrorRate
+        expr: rate(http_server_requests_seconds_count{status=~"5.."}[5m]) > 5
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High 5xx error rate"
+          description: "5xx rate {{ $value }}/s. Check logs."
+          runbook: docs/runbooks/ROLLBACK.md
+
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(http_server_requests_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p95 latency above 2s"
+          description: "p95 latency is {{ $value }}s."
+
+      - alert: ConnectionPoolExhaustion
+        expr: hikaricp_connections_pending > 10
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DB connection pool under pressure"
+          description: "{{ $value }} threads waiting for connection."
+          runbook: docs/runbooks/DATABASE_OUTAGE.md

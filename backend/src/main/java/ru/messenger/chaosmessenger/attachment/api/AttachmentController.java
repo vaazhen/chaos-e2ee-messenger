@@ -51,6 +51,9 @@ public class AttachmentController {
         if (!attachmentAccessService.canUpload(chatId, user.getId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied to chat attachments");
         }
+        // Uses getBytes() — acceptable for the configured max-file-size (20 MB default).
+        // For larger files or production at scale, replace with streaming InputStream
+        // and delegate to S3 multipart upload via AttachmentStorageService.
         String attachmentId = attachmentStorageService.upload(
                 user.getId(),
                 chatId,
