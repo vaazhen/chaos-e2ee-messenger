@@ -150,10 +150,10 @@ describe("useWebSocket", () => {
       username: "bob",
       online: true,
     });
-    expect(onMessage).toHaveBeenCalledWith({
+    await waitFor(() => expect(onMessage).toHaveBeenCalledWith({
       type: "MESSAGE_CREATED",
       chatId: 100,
-    }, 100);
+    }, 100));
     expect(onTyping).toHaveBeenCalledWith({
       username: "bob",
       typing: true,
@@ -183,7 +183,75 @@ describe("useWebSocket", () => {
       callback(frame);
     });
 
-    expect(onMessage).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onMessage).toHaveBeenCalledTimes(1));
+  });
+
+  it("serializes durable live events before advancing to the next event", async () => {
+    const { default: useWebSocket } = await import("../hooks/useWebSocket");
+    let releaseFirst;
+    const firstGate = new Promise((resolve) => { releaseFirst = resolve; });
+    const received = [];
+    const onMessage = vi.fn(async (event) => {
+      received.push(event.eventId);
+      if (event.eventId === "event-1") await firstGate;
+    });
+
+    renderHook(() => useWebSocket({
+      me: { username: "alice" },
+      chatIds: [100],
+      onMessage,
+      enabled: true,
+    }));
+
+    const client = wsMocks.clients[0];
+    await waitFor(() => expect(wsMocks.syncRealtime).toHaveBeenCalled());
+    const callback = client.subscriptions["/topic/devices/device-a/chats/100"].cb;
+
+    act(() => {
+      callback({ body: JSON.stringify({ sequence: 1, eventId: "event-1", type: "MESSAGE_CREATED", chatId: 100 }) });
+      callback({ body: JSON.stringify({ sequence: 2, eventId: "event-2", type: "MESSAGE_CREATED", chatId: 100 }) });
+    });
+
+    await waitFor(() => expect(onMessage).toHaveBeenCalledTimes(1));
+    expect(received).toEqual(["event-1"]);
+    expect(localStorage.getItem("cm_realtime_cursor:device-a")).not.toBe("2");
+
+    releaseFirst();
+    await waitFor(() => expect(received).toEqual(["event-1", "event-2"]));
+    expect(localStorage.getItem("cm_realtime_cursor:device-a")).toBe("2");
+  });
+
+  it("retries a failed recovered event without advancing or poisoning dedupe", async () => {
+    const recoveredPage = {
+      events: [{
+        sequence: 4,
+        eventId: "retry-4",
+        destination: "/chats/100",
+        payload: { type: "MESSAGE_CREATED", chatId: 100 },
+      }],
+      nextCursor: 4,
+      hasMore: false,
+    };
+    wsMocks.syncRealtime
+      .mockResolvedValueOnce(recoveredPage)
+      .mockResolvedValueOnce(recoveredPage);
+
+    const { default: useWebSocket } = await import("../hooks/useWebSocket");
+    const onMessage = vi.fn()
+      .mockRejectedValueOnce(new Error("indexeddb unavailable"))
+      .mockResolvedValueOnce(undefined);
+
+    renderHook(() => useWebSocket({
+      me: { username: "alice" },
+      chatIds: [100],
+      onMessage,
+      enabled: true,
+    }));
+
+    await waitFor(() => expect(onMessage).toHaveBeenCalledTimes(2));
+    expect(wsMocks.syncRealtime).toHaveBeenNthCalledWith(1, 0, 200);
+    expect(wsMocks.syncRealtime).toHaveBeenNthCalledWith(2, 0, 200);
+    expect(localStorage.getItem("cm_realtime_cursor:device-a")).toBe("4");
   });
 
   it("replays missed durable events before buffered live events and persists the cursor", async () => {

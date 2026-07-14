@@ -7,6 +7,8 @@ import { getOrCreateDeviceId } from "../deviceId";
 
 const MAX_RECOVERY_EVENTS = 100000;
 const MAX_BUFFERED_LIVE_EVENTS = 5000;
+const MAX_FULL_RESYNC_ATTEMPTS = 3;
+const FULL_RESYNC_RETRY_DELAY_MS = import.meta.env.MODE === "test" ? 10 : 2000;
 
 function debugLog(...args) {
   if (import.meta.env.DEV) console.warn(...args);
@@ -56,6 +58,9 @@ export default function useWebSocket({
   const recoveryStateRef = useRef("LIVE");
   const liveBufferRef = useRef([]);
   const cursorRef = useRef(0);
+  const eventQueueRef = useRef(Promise.resolve());
+  const fullResyncTimerRef = useRef(null);
+  const fullResyncAttemptsRef = useRef(0);
   const handlersRef = useRef({ onMessage, onChatListUpdate, onRequestsUpdate, onStatusUpdate, onTyping, onConnectionState, onCallSignal });
 
   useEffect(() => {
@@ -75,18 +80,18 @@ export default function useWebSocket({
     Object.keys(subsRef.current).forEach(unsub);
   };
 
-  const isDuplicateEvent = (event) => {
+  const claimEvent = (event) => {
     const eventId = event?.eventId;
-    if (!eventId) return false;
-    const seen = seenEventIdsRef.current;
-    const inFlight = inFlightRef.current;
-    if (seen.has(eventId) || inFlight.has(eventId)) return true;
-    inFlight.add(eventId);
-    if (inFlight.size > 50000) {
-      const oldest = inFlight.values().next().value;
-      inFlight.delete(oldest);
+    if (!eventId) return "NEW";
+    if (seenEventIdsRef.current.has(eventId)) return "APPLIED";
+    if (inFlightRef.current.has(eventId)) return "IN_FLIGHT";
+
+    inFlightRef.current.add(eventId);
+    if (inFlightRef.current.size > 50000) {
+      const oldest = inFlightRef.current.values().next().value;
+      if (oldest) inFlightRef.current.delete(oldest);
     }
-    return false;
+    return "NEW";
   };
 
   const markEventApplied = (eventId) => {
@@ -96,13 +101,12 @@ export default function useWebSocket({
     seen.add(eventId);
     if (seen.size > 50000) {
       const oldest = seen.values().next().value;
-      seen.delete(oldest);
+      if (oldest) seen.delete(oldest);
     }
   };
 
   const markEventFailed = (eventId) => {
-    if (!eventId) return;
-    inFlightRef.current.delete(eventId);
+    if (eventId) inFlightRef.current.delete(eventId);
   };
 
   const advanceCursor = (deviceId, event) => {
@@ -112,12 +116,14 @@ export default function useWebSocket({
     writeCursor(deviceId, sequence);
   };
 
-  const dispatchRecoveredEvent = async (deviceId, destination, event) => {
-    const eventId = event?.eventId;
-    if (!event || isDuplicateEvent(event)) {
-      advanceCursor(deviceId, event);
-      return;
-    }
+  const dispatchDurableEvent = async (deviceId, destination, event) => {
+    if (!event) return;
+
+    const eventId = event.eventId;
+    const claim = claimEvent(event);
+    // A duplicate must never advance the cursor by itself. The original event
+    // either already advanced it after durable apply or is still in-flight.
+    if (claim !== "NEW") return;
 
     try {
       if (/^\/chats\/\d+$/.test(destination || "")) {
@@ -131,45 +137,98 @@ export default function useWebSocket({
         await handlersRef.current.onRequestsUpdate?.(event);
       }
       markEventApplied(eventId);
+      advanceCursor(deviceId, event);
     } catch (error) {
       markEventFailed(eventId);
-      debugLog("[WS] recovered event handler failed:", error?.message || error);
+      debugLog("[WS] durable event handler failed:", error?.message || error);
       throw error;
     }
-    advanceCursor(deviceId, event);
+  };
+
+  const enqueueDurableEvent = (deviceId, destination, event) => {
+    const task = eventQueueRef.current.then(() => dispatchDurableEvent(deviceId, destination, event));
+    // Keep the chain usable after a rejected task. The returned task still
+    // rejects so the caller can trigger recovery.
+    eventQueueRef.current = task.catch(() => undefined);
+    return task;
+  };
+
+  const clearFullResyncTimer = () => {
+    if (fullResyncTimerRef.current) {
+      clearTimeout(fullResyncTimerRef.current);
+      fullResyncTimerRef.current = null;
+    }
+  };
+
+  const requestFullResync = (deviceId, reason) => {
+    recoveryStateRef.current = "FULL_RESYNC_REQUIRED";
+    recoveringRef.current = true;
+    debugLog("[WS] full resync required:", reason?.message || reason || "unknown reason");
+
+    if (fullResyncTimerRef.current) return;
+    if (fullResyncAttemptsRef.current >= MAX_FULL_RESYNC_ATTEMPTS) {
+      recoveringRef.current = false;
+      recoveryStateRef.current = "FAILED";
+      handlersRef.current.onConnectionState?.({
+        connected: clientRef.current?.connected ?? false,
+        recoveryFailed: true,
+      });
+      return;
+    }
+
+    fullResyncTimerRef.current = setTimeout(() => {
+      fullResyncTimerRef.current = null;
+      fullResyncAttemptsRef.current += 1;
+      void recoverMissedEvents(deviceId, { fullResync: true });
+    }, FULL_RESYNC_RETRY_DELAY_MS);
   };
 
   const handleDurableLive = (deviceId, destination, event) => {
-    if (recoveringRef.current || recoveryStateRef.current === "FULL_RESYNC_REQUIRED") {
+    if (recoveringRef.current || recoveryStateRef.current !== "LIVE") {
       if (liveBufferRef.current.length >= MAX_BUFFERED_LIVE_EVENTS) {
-        recoveryStateRef.current = "FULL_RESYNC_REQUIRED";
         liveBufferRef.current = [];
-        debugLog("[WS] live buffer overflow — full resync required");
+        requestFullResync(deviceId, new Error("LIVE_BUFFER_OVERFLOW"));
         return;
       }
       liveBufferRef.current.push({ destination, event });
       return;
     }
-    dispatchRecoveredEvent(deviceId, destination, event);
+
+    void enqueueDurableEvent(deviceId, destination, event)
+      .catch((error) => requestFullResync(deviceId, error));
   };
 
-  const flushLiveBuffer = (deviceId) => {
+  const flushLiveBuffer = async (deviceId) => {
     const buffered = liveBufferRef.current.splice(0);
     buffered.sort((left, right) => Number(left.event?.sequence || Number.MAX_SAFE_INTEGER)
       - Number(right.event?.sequence || Number.MAX_SAFE_INTEGER));
-    buffered.forEach(({ destination, event }) => dispatchRecoveredEvent(deviceId, destination, event));
+
+    for (const { destination, event } of buffered) {
+      await enqueueDurableEvent(deviceId, destination, event);
+    }
   };
 
-  const recoverMissedEvents = async (deviceId) => {
+  async function recoverMissedEvents(deviceId, { fullResync = false } = {}) {
+    clearFullResyncTimer();
     recoveringRef.current = true;
     recoveryStateRef.current = "RECOVERING";
-    liveBufferRef.current = [];
-    cursorRef.current = readCursor(deviceId);
-    let pageFailed = false;
+
+    if (fullResync) {
+      cursorRef.current = 0;
+      writeCursor(deviceId, 0);
+      seenEventIdsRef.current.clear();
+      inFlightRef.current.clear();
+    } else {
+      cursorRef.current = readCursor(deviceId);
+      fullResyncAttemptsRef.current = 0;
+    }
+
+    let failed = false;
     try {
       let cursor = cursorRef.current;
       let totalRecovered = 0;
-      while (totalRecovered < MAX_RECOVERY_EVENTS && !pageFailed) {
+
+      while (totalRecovered < MAX_RECOVERY_EVENTS) {
         const response = await api.syncRealtime(cursor, 200);
         const events = Array.isArray(response?.events) ? response.events : [];
         if (events.length === 0) break;
@@ -178,33 +237,32 @@ export default function useWebSocket({
           const payload = { ...(item?.payload || {}) };
           if (item?.eventId && !payload.eventId) payload.eventId = item.eventId;
           if (item?.sequence != null) payload.sequence = Number(item.sequence);
-          try {
-            await dispatchRecoveredEvent(deviceId, item?.destination, payload);
-          } catch (error) {
-            pageFailed = true;
-            recoveryStateRef.current = "FULL_RESYNC_REQUIRED";
-            debugLog("[WS] recovery event apply failed — stopping recovery:", error?.message || error);
-            break;
-          }
-          totalRecovered++;
+          await enqueueDurableEvent(deviceId, item?.destination, payload);
+          totalRecovered += 1;
         }
 
-        if (!pageFailed) {
-          cursor = Number(response?.nextCursor ?? cursorRef.current);
-          if (!response?.hasMore) break;
-        }
+        // nextCursor is trusted only after the whole page was durably applied.
+        cursor = Number(response?.nextCursor ?? cursorRef.current);
+        if (!response?.hasMore) break;
       }
+
+      if (totalRecovered >= MAX_RECOVERY_EVENTS) {
+        throw new Error("RECOVERY_SAFETY_CAP_REACHED");
+      }
+
+      await flushLiveBuffer(deviceId);
+      recoveryStateRef.current = "LIVE";
+      fullResyncAttemptsRef.current = 0;
     } catch (error) {
-      recoveryStateRef.current = "FULL_RESYNC_REQUIRED";
-      debugLog("[WS] realtime recovery failed; timeline sync remains available", error?.message || error);
+      failed = true;
+      debugLog("[WS] realtime recovery failed:", error?.message || error);
+      requestFullResync(deviceId, error);
     } finally {
-      recoveringRef.current = false;
-      if (recoveryStateRef.current !== "FULL_RESYNC_REQUIRED") {
-        recoveryStateRef.current = "LIVE";
+      if (!failed && recoveryStateRef.current === "LIVE") {
+        recoveringRef.current = false;
       }
-      flushLiveBuffer(deviceId);
     }
-  };
+  }
 
   const stopPresenceHeartbeat = () => {
     if (heartbeatRef.current) {
@@ -234,7 +292,11 @@ export default function useWebSocket({
     subsRef.current.userStatus = client.subscribe("/topic/user/status", (msg) => {
       try {
         const event = { type: "user_status", ...JSON.parse(msg.body || "{}") };
-        if (!isDuplicateEvent(event)) handlersRef.current.onStatusUpdate?.(event);
+        const claim = claimEvent(event);
+        if (claim === "NEW") {
+          handlersRef.current.onStatusUpdate?.(event);
+          markEventApplied(event.eventId);
+        }
       } catch (_) { /* ignore malformed websocket payload */ }
     });
 
@@ -263,13 +325,21 @@ export default function useWebSocket({
     subsRef.current.chats = client.subscribe(`/topic/users/${username}/chats`, (msg) => {
       try {
         const data = JSON.parse(msg?.body || "{}");
-        if (!isDuplicateEvent(data)) handlersRef.current.onChatListUpdate?.(data);
+        const claim = claimEvent(data);
+        if (claim === "NEW") {
+          handlersRef.current.onChatListUpdate?.(data);
+          markEventApplied(data.eventId);
+        }
       } catch (_) { handlersRef.current.onChatListUpdate?.(); }
     });
     subsRef.current.requests = client.subscribe(`/topic/users/${username}/requests`, (msg) => {
       try {
         const data = JSON.parse(msg?.body || "{}");
-        if (!isDuplicateEvent(data)) handlersRef.current.onRequestsUpdate?.(data);
+        const claim = claimEvent(data);
+        if (claim === "NEW") {
+          handlersRef.current.onRequestsUpdate?.(data);
+          markEventApplied(data.eventId);
+        }
       } catch (_) { handlersRef.current.onRequestsUpdate?.(); }
     });
 
@@ -330,6 +400,8 @@ export default function useWebSocket({
 
     client.onConnect = () => {
       clientRef.current = client;
+      clearFullResyncTimer();
+      fullResyncAttemptsRef.current = 0;
       recoveringRef.current = true;
       setupPresence(client, username);
       setupChatSubscriptions(client, chatIdsRef.current);
@@ -349,9 +421,12 @@ export default function useWebSocket({
 
     return () => {
       stopPresenceHeartbeat();
+      clearFullResyncTimer();
       unsubAll();
       liveBufferRef.current = [];
       recoveringRef.current = false;
+      recoveryStateRef.current = "DISCONNECTED";
+      eventQueueRef.current = Promise.resolve();
       try { client.deactivate(); } catch (_) { /* ignore optional failure */ }
       clientRef.current = null;
     };
