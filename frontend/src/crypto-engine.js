@@ -6,6 +6,9 @@ import {
     clearSecureStorageForTests,
     secureStorageBackend
 } from "./secure-storage.js";
+import type { AADContext } from "./types/protocol";
+
+type VerificationMethod = 'MANUAL' | 'SAFETY_NUMBER' | 'QR_CODE';
 
 await (async function () {
     // ─── UUID helper — works in both secure (https/localhost) and non-secure (http+IP) contexts ───
@@ -106,9 +109,17 @@ await (async function () {
         return crypto.subtle.importKey('pkcs8', pkcs8, { name: 'X25519' }, true, ['deriveBits']);
     }
 
-    async function generateX25519KeyPair() {
+    async function generateX25519KeyPair(): Promise<CryptoKeyPair> {
         assertWebCryptoAvailable();
-        return crypto.subtle.generateKey({ name: 'X25519' }, true, ['deriveBits']);
+        const generated = await crypto.subtle.generateKey(
+            { name: 'X25519' },
+            true,
+            ['deriveBits']
+        );
+        if (!('publicKey' in generated) || !('privateKey' in generated)) {
+            throw new Error('X25519 key generation did not return a key pair');
+        }
+        return generated;
     }
 
     async function derive32(privateKey, publicKey) {
@@ -161,7 +172,15 @@ await (async function () {
         assertWebCryptoAvailable();
         const nonce = crypto.getRandomValues(new Uint8Array(12));
         const encoded = new TextEncoder().encode(plainText);
+<<<<<<< Updated upstream:frontend/src/crypto-engine.js
         const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, aesKey, encoded);
+=======
+        const params: AesGcmParams = { name: 'AES-GCM', iv: nonce };
+        if (additionalData && additionalData.byteLength > 0) {
+            params.additionalData = new Uint8Array(additionalData);
+        }
+        const ct = await crypto.subtle.encrypt(params, aesKey, encoded);
+>>>>>>> Stashed changes:frontend/src/crypto-engine.ts
         return { ciphertext: bytesToB64(new Uint8Array(ct)), nonce: bytesToB64(nonce) };
     }
 
@@ -169,10 +188,54 @@ await (async function () {
         assertWebCryptoAvailable();
         const ct    = b64ToBytes(ciphertextB64);
         const nonce = b64ToBytes(nonceB64);
+<<<<<<< Updated upstream:frontend/src/crypto-engine.js
         const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: nonce }, aesKey, ct);
         return new TextDecoder().decode(plain);
     }
 
+=======
+        const params: AesGcmParams = { name: 'AES-GCM', iv: nonce };
+        if (additionalData && additionalData.byteLength > 0) {
+            params.additionalData = new Uint8Array(additionalData);
+        }
+        const plain = await crypto.subtle.decrypt(params, aesKey, ct);
+        return new TextDecoder().decode(plain);
+    }
+
+    // ─── AAD (Additional Authenticated Data) builder for message envelopes ──────
+    // Binds ciphertext to protocol context: tampering any field breaks decryption.
+
+    const ENVELOPE_AAD_VERSION = 0x02;
+
+    function buildEnvelopeAAD({ messageType, chatId, messageIndex, previousChainLength, ratchetPublicKey }: AADContext): ArrayBuffer {
+        const mt = typeof messageType === 'string' ? messageType : '';
+        const typeCode = mt === 'PREKEY_WHISPER' ? 1 : mt === 'WHISPER' ? 2 : mt === 'SELF_WHISPER' ? 3 : 0;
+        const cid = BigInt(chatId != null ? chatId : 0);
+        const idx = (messageIndex != null) ? (messageIndex >>> 0) : 0;
+        const pcl = (previousChainLength != null) ? (previousChainLength >>> 0) : 0;
+
+        const buf = new ArrayBuffer(22);
+        const dv = new DataView(buf);
+        dv.setUint8(0, ENVELOPE_AAD_VERSION);
+        dv.setUint8(1, typeCode);
+        dv.setBigUint64(2, cid, false);
+        dv.setUint32(10, idx, false);
+        dv.setUint32(14, pcl, false);
+
+        if (ratchetPublicKey) {
+            const rpk = ratchetPublicKey + '';
+            const rpkLen = rpk.length;
+            const ext = new ArrayBuffer(buf.byteLength + 4 + rpkLen);
+            new Uint8Array(ext).set(new Uint8Array(buf), 0);
+            const edv = new DataView(ext);
+            edv.setUint32(buf.byteLength, rpkLen, false);
+            for (let i = 0; i < rpkLen; i++) edv.setUint8(buf.byteLength + 4 + i, rpk.charCodeAt(i));
+            return ext;
+        }
+        return buf;
+    }
+
+>>>>>>> Stashed changes:frontend/src/crypto-engine.ts
     // ─── Self-envelope encryption (for cross-device sync) ─────────────────────
 
     async function deriveSelfEnvelopeKey(localBundle) {
@@ -428,7 +491,11 @@ await (async function () {
         return current.trustState || 'UNVERIFIED';
     }
 
-    async function verifyRemoteIdentity(remoteDeviceId, identityPublicKey, method = 'MANUAL') {
+    async function verifyRemoteIdentity(
+        remoteDeviceId: string,
+        identityPublicKey: string,
+        method: VerificationMethod = 'MANUAL'
+    ): Promise<void> {
         if (!remoteDeviceId || !identityPublicKey) throw new Error('Remote device identity is required');
         identityTrustState[trustKey(remoteDeviceId)] = {
             identityPublicKey,
@@ -439,7 +506,6 @@ await (async function () {
             lastSeenAt: Date.now()
         };
         await writeSecureRecord(TRUST_RECORD, identityTrustState);
-        return 'VERIFIED';
     }
 
     function getRemoteIdentityTrust(remoteDeviceId, identityPublicKey = null) {
@@ -843,7 +909,11 @@ await (async function () {
         session.CKs = bytesToB64(kdf2.chainKey);
     }
 
+<<<<<<< Updated upstream:frontend/src/crypto-engine.js
     async function encryptWithDoubleRatchet(session, plainText) {
+=======
+    async function encryptWithDoubleRatchet(session, plainText, aadContext: AADContext = {}) {
+>>>>>>> Stashed changes:frontend/src/crypto-engine.ts
         if (!session.CKs) {
             throw new Error('Sending chain not initialized');
         }

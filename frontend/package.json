@@ -27,7 +27,8 @@
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "electron:build": "node scripts/validate-electron-env.mjs && vite build --mode electron && electron-builder",
     "electron:build:win": "node scripts/validate-electron-env.mjs && vite build --mode electron && electron-builder --win",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "electron-builder install-app-deps",
+    "typecheck:protocol": "tsc -p tsconfig.protocol.json"
   },
   "dependencies": {
     "@stomp/stompjs": "^7.0.0",
