@@ -61,9 +61,6 @@ public class RealtimeEventConsumer {
                 increment("chaos_kafka_consumer_duplicate_total");
                 return;
             }
-            if (!syncActive) {
-                processedEvents.add(eventId);
-            }
             if (syncActive) {
                 registerAfterCommit(eventId);
             }
@@ -74,6 +71,9 @@ public class RealtimeEventConsumer {
         try {
             JsonNode payload = objectMapper.readTree(event.payload());
             route(event, payload);
+            if (!syncActive && eventId != null) {
+                processedEvents.add(eventId);
+            }
             increment("chaos_kafka_consumer_success_total");
         } catch (JsonProcessingException e) {
             increment("chaos_kafka_consumer_failure_total");
