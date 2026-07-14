@@ -74,8 +74,8 @@ public class AuthService {
                 RefreshTokenService.IssuedToken session = refreshTokenService.issueSession(result.username());
                 token = jwtService.generateToken(result.username(), session.sessionId());
                 refreshToken = session.token();
-                deviceRegTokenService.markStrongAuth(result.username());
-                deviceRegistrationToken = deviceRegTokenService.issue(result.username());
+                String challenge = deviceRegTokenService.markStrongAuth(result.username());
+                deviceRegistrationToken = deviceRegTokenService.issue(result.username(), challenge);
                 userId = result.userId();
                 username = result.username();
             }
@@ -125,7 +125,9 @@ public class AuthService {
         user.setLastName(trimToNull(lastName));
         user.setAvatarUrl(trimToNull(avatarUrl));
 
-        return buildAuthResponse(userRepository.save(user), false);
+        User savedUser = userRepository.save(user);
+        String devChallenge = deviceRegTokenService.markStrongAuth(savedUser.getUsername());
+        return buildAuthResponse(savedUser, false, devChallenge);
     }
 
     @Transactional
@@ -138,7 +140,7 @@ public class AuthService {
         return new TokenRefreshResponse(
                 jwtService.generateToken(rotation.username(), rotation.sessionId()),
                 rotation.token(),
-                deviceRegTokenService.issue(rotation.username())
+                null
         );
     }
 
@@ -166,8 +168,8 @@ public class AuthService {
         user.setCreatedAt(LocalDateTime.now());
 
         User saved = userRepository.save(user);
-        deviceRegTokenService.markStrongAuth(saved.getUsername());
-        return buildAuthResponse(saved, true);
+        String devChallenge = deviceRegTokenService.markStrongAuth(saved.getUsername());
+        return buildAuthResponse(saved, true, devChallenge);
     }
 
     @Transactional
@@ -186,11 +188,11 @@ public class AuthService {
         }
 
         credentialRateLimiter.reset(email);
-        deviceRegTokenService.markStrongAuth(user.getUsername());
-        return buildAuthResponse(user, false);
+        String devChallenge = deviceRegTokenService.markStrongAuth(user.getUsername());
+        return buildAuthResponse(user, false, devChallenge);
     }
 
-    private AuthResponse buildAuthResponse(User user, boolean isNewUser) {
+    private AuthResponse buildAuthResponse(User user, boolean isNewUser, String deviceChallenge) {
         RefreshTokenService.IssuedToken session = refreshTokenService.issueSession(user.getUsername());
         return new AuthResponse(
                 "ok",
@@ -201,7 +203,7 @@ public class AuthService {
                 user.getEmail(),
                 jwtService.generateToken(user.getUsername(), session.sessionId()),
                 session.token(),
-                deviceRegTokenService.issue(user.getUsername())
+                deviceChallenge != null ? deviceRegTokenService.issue(user.getUsername(), deviceChallenge) : null
         );
     }
 
