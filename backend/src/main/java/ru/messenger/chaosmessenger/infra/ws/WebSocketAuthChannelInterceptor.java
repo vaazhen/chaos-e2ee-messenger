@@ -147,7 +147,7 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
         }
 
         if (dest.startsWith("/topic/users/")
-                && (dest.endsWith("/chats") || dest.endsWith("/requests") || dest.endsWith("/calls"))) {
+                && (dest.endsWith("/chats") || dest.endsWith("/requests"))) {
             String destinationUsername = pathSegment(dest, 3);
             return username.equals(destinationUsername);
         }
