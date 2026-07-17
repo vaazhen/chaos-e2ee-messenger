@@ -178,7 +178,7 @@ export default function useWebSocket({
 
   const setupPresence = (client, username) => {
     if (!client?.connected || !username) return;
-    ["userStatus", "myStatus", "chats", "deviceChats", "requests", "deviceRequests", "calls"]
+    ["userStatus", "myStatus", "chats", "deviceChats", "requests", "deviceRequests"]
       .forEach(unsub);
 
     const did = getOrCreateDeviceId();
