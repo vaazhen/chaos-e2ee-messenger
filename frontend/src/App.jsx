@@ -25,8 +25,6 @@ import DeleteMessageModal from "./components/DeleteMessageModal";
 import ContextMenu from "./components/ContextMenu";
 import ChatInfoPanel from "./components/ChatInfoPanel";
 import ChatSearchBar from "./components/ChatSearchBar";
-import useWebRTC from "./hooks/useWebRTC";
-import CallOverlay from "./components/CallOverlay";
 import SettingsPage from "./components/SettingsPage";
 import BottomNav from "./components/BottomNav";
 import { api } from "./api";
@@ -612,15 +610,6 @@ const [safetyModal, setSafetyModal] = useState({ open: false, devices: [], selec
     }
   }, [chatStore.activeId]); // eslint-disable-line
 
-  const wsCallSignalRef = useRef(null);
-
-  const call = useWebRTC({
-    publish: (dest, body) => ws?.publish(dest, body),
-    onCallEnded: () => {},
-  });
-
-  wsCallSignalRef.current = call.handleSignalingMessage;
-
   const ws = useWebSocket({
     me:       auth.me,
     activeId: chatStore.activeId,
@@ -728,7 +717,6 @@ const [safetyModal, setSafetyModal] = useState({ open: false, devices: [], selec
         msgStore.loadMessages(chatStore.activeId);
       }
     },
-    onCallSignal: (msg) => wsCallSignalRef.current?.(msg),
   });
 
   const onVerifyOtpSuccess = async (meData, isNew) => {
@@ -1137,16 +1125,6 @@ const [safetyModal, setSafetyModal] = useState({ open: false, devices: [], selec
                   l={l}
                   chat={{ ...activeChat, name: activeChatName || activeChat.name }}
                   onClose={() => setProfileOpen(false)}
-                  onCall={() => {
-                    const otherUser = activeChat?.username;
-                    if (otherUser) call.startCall(chatStore.activeId, otherUser, false);
-                    setProfileOpen(false);
-                  }}
-                  onVideoCall={() => {
-                    const otherUser = activeChat?.username;
-                    if (otherUser) call.startCall(chatStore.activeId, otherUser, true);
-                    setProfileOpen(false);
-                  }}
                   onOpenSearch={() => { setProfileOpen(false); setChatSearchOpen(true); }}
                   chatBg={chatBg}
                   onChangeBg={(val) => setChatBgs(prev => ({...prev, [String(chatStore.activeId)]: val}))}
@@ -1297,23 +1275,6 @@ const [safetyModal, setSafetyModal] = useState({ open: false, devices: [], selec
         l={l}
       />
 
-      <CallOverlay
-        callState={call.callState}
-        remoteUsername={call.remoteUsername}
-        isVideo={call.isVideo}
-        isMuted={call.isMuted}
-        isScreenSharing={call.isScreenSharing}
-        callDuration={call.callDuration}
-        localVideoRef={call.localVideoRef}
-        remoteVideoRef={call.remoteVideoRef}
-        onAnswer={call.answerCall}
-        onDecline={call.endCall}
-        onEnd={call.endCall}
-        onToggleMute={call.toggleMute}
-        onToggleVideo={call.toggleVideo}
-        onToggleScreenShare={call.toggleScreenShare}
-        lang={lang}
-      />
     </div>
   );
 }
