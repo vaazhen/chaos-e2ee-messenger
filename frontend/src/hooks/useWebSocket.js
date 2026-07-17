@@ -42,7 +42,6 @@ export default function useWebSocket({
   onStatusUpdate,
   onTyping,
   onConnectionState,
-  onCallSignal,
   enabled,
 }) {
   const clientRef = useRef(null);
@@ -54,11 +53,11 @@ export default function useWebSocket({
   const recoveringRef = useRef(false);
   const liveBufferRef = useRef([]);
   const cursorRef = useRef(0);
-  const handlersRef = useRef({ onMessage, onChatListUpdate, onRequestsUpdate, onStatusUpdate, onTyping, onConnectionState, onCallSignal });
+  const handlersRef = useRef({ onMessage, onChatListUpdate, onRequestsUpdate, onStatusUpdate, onTyping, onConnectionState });
 
   useEffect(() => {
-    handlersRef.current = { onMessage, onChatListUpdate, onRequestsUpdate, onStatusUpdate, onTyping, onConnectionState, onCallSignal };
-  }, [onMessage, onChatListUpdate, onRequestsUpdate, onStatusUpdate, onTyping, onConnectionState, onCallSignal]);
+    handlersRef.current = { onMessage, onChatListUpdate, onRequestsUpdate, onStatusUpdate, onTyping, onConnectionState };
+  }, [onMessage, onChatListUpdate, onRequestsUpdate, onStatusUpdate, onTyping, onConnectionState]);
 
   useEffect(() => { chatIdsRef.current = chatIds; }, [chatIds]);
 
@@ -206,11 +205,6 @@ export default function useWebSocket({
         catch (_) { /* ignore malformed websocket payload */ }
       });
     }
-
-    subsRef.current.calls = client.subscribe(`/topic/users/${username}/calls`, (msg) => {
-      try { handlersRef.current.onCallSignal?.(JSON.parse(msg.body || "{}")); }
-      catch (_) { /* ignore optional failure */ }
-    });
 
     // Legacy user topics remain subscribed during rolling upgrades. Event IDs
     // deduplicate them against the new device-scoped durable topics.
