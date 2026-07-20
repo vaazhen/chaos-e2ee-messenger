@@ -6,7 +6,8 @@ COPY . .
 RUN npm run lint && npm test -- --run && npm run build
 
 FROM nginx:1.27-alpine
-RUN rm -f /etc/nginx/conf.d/default.conf && \
+RUN apk upgrade --no-cache && \
+    rm -f /etc/nginx/conf.d/default.conf && \
     mkdir -p /var/cache/nginx /var/run /tmp && \
     chown -R nginx:nginx /var/cache/nginx /var/run /tmp /usr/share/nginx/html
 COPY --from=build --chown=nginx:nginx /app/dist /usr/share/nginx/html
