@@ -5,7 +5,7 @@ COPY src ./src
 RUN mvn -B --no-transfer-progress -Dcheckstyle.skip=true verify
 
 FROM eclipse-temurin:17-jre
-RUN apt-get update && apt-get install -y --no-install-recommends curl && \
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends curl && \
     rm -rf /var/lib/apt/lists/* && \
     addgroup --system --gid 1001 chaos && \
     adduser --system --uid 1001 --ingroup chaos chaos && \
