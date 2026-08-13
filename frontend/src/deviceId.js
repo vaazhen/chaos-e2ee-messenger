@@ -56,6 +56,7 @@ export async function ensureDeviceRegistered(deviceRegistrationToken) {
       headers: {
         "Content-Type": "application/json",
         Authorization: "Bearer " + token,
+        "X-Device-Id": getOrCreateDeviceId(),
         ...extraHeaders,
         ...opts.headers,
       },

@@ -26,7 +26,11 @@ export function useMessages(myId) {
       try {
         const data = await api.getMessages(chatId);
         if (!Array.isArray(data)) return;
-        const existingIds = new Map(cached.map(m => [String(m.id || m.messageId), true]));
+        const existingIds = new Map(
+          cached
+            .filter(m => !isEncryptedPlaceholder(m))
+            .map(m => [String(m.id || m.messageId), true])
+        );
         const hidden = loadHiddenMessageIds(myId);
         const newOnes = data.filter(msg => !existingIds.has(String(msg.id || msg.messageId)))
           .filter(msg => !hidden.has(String(msg.id || msg.messageId)))
@@ -36,13 +40,14 @@ export function useMessages(myId) {
         for (const msg of newOnes) {
           decrypted.push(await decryptMsg(msg, myId, chatId));
         }
-        await localStore.saveMessages(decrypted);
+        await persistDecryptedMessages(decrypted);
         setMsgs(prev => {
           const existing = prev[chatId] || [];
           const merged = [...existing];
           for (const d of decrypted) {
             const idx = merged.findIndex(m => String(m.id || m.messageId) === String(d.id || d.messageId));
             if (idx === -1) merged.push(d);
+            else merged[idx] = mergeIncomingMessage(merged[idx], d);
           }
           return { ...prev, [chatId]: merged };
         });
@@ -104,11 +109,10 @@ export function useMessages(myId) {
         for (const msg of filtered) {
           decrypted.push(await decryptMsg(msg, myId, chatId));
         }
-        await localStore.saveMessages(decrypted);
+        await persistDecryptedMessages(decrypted);
         setMsgs(prev => ({ ...prev, [chatId]: decrypted }));
       }
       if (fromApi) {
-        try { await api.markRead(chatId); } catch (_) { /* ignore optional failure */ }
         try { await api.markDelivered(chatId); } catch (_) { /* ignore optional failure */ }
       }
     } catch (e) {
@@ -157,10 +161,11 @@ export function useMessages(myId) {
     let decryptedText = "[encrypted]";
     if (event.envelope && window.e2ee?.decryptEnvelope) {
       try {
-        const envelope = {
-          ...event.envelope,
-          senderDeviceId: event.senderDeviceId || event.envelope?.senderDeviceId,
-        };
+        const envelope = envelopeForDecrypt(
+          event.envelope,
+          event.senderDeviceId,
+          chatId
+        );
         decryptedText = await window.e2ee.decryptEnvelope(envelope);
       } catch (e) {
         console.warn("[WS] decrypt:", e.message);
@@ -616,15 +621,31 @@ export function useMessages(myId) {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
+function envelopeForDecrypt(envelope, senderDeviceId, chatId) {
+  if (!envelope) return envelope;
+  return {
+    ...envelope,
+    senderDeviceId: senderDeviceId || envelope.senderDeviceId,
+    _chatId: chatId ?? envelope._chatId,
+  };
+}
+
+async function persistDecryptedMessages(messages) {
+  const persistable = (messages || []).filter(m => m && !isEncryptedPlaceholder(m));
+  if (persistable.length === 0) return;
+  await localStore.saveMessages(persistable);
+}
+
 async function decryptMsg(msg, myId, fallbackChatId) {
   let decryptedText = msg.content || "[encrypted]";
 
   if (decryptedText === "[encrypted]" && msg.envelope && window.e2ee?.decryptEnvelope) {
     try {
-      const envelope = {
-        ...msg.envelope,
-        senderDeviceId: msg.senderDeviceId || msg.envelope?.senderDeviceId,
-      };
+      const envelope = envelopeForDecrypt(
+        msg.envelope,
+        msg.senderDeviceId,
+        msg.chatId || fallbackChatId
+      );
       decryptedText = await window.e2ee.decryptEnvelope(envelope);
     } catch (e) {
       console.warn("[Timeline] decrypt:", e.message);
