@@ -81,7 +81,7 @@ Chaos создаётся как серьёзный инженерный прое
 
 - Java 17 и Spring Boot;
 - PostgreSQL с Flyway migrations;
-- Redis для rate limits, session/token state;
+- Redis для rate limits, session/token state и WebSocket fan-out;
 - transactional outbox;
 - Kafka/Redpanda-compatible transport;
 - retry и dead-letter paths;
@@ -239,7 +239,8 @@ flowchart LR
     BUS --> CONSUMER["Realtime Consumer"]
 
     CONSUMER --> STORE[("Device Event Store")]
-    CONSUMER --> WS["STOMP / WebSocket"]
+    CONSUMER --> FANOUT["Redis pub/sub"]
+    FANOUT --> WS["Native STOMP / WebSocket"]
 
     STORE --> SYNC["GET /api/realtime/sync"]
     WS --> QUEUE["Client Event Queue"]
@@ -337,7 +338,7 @@ flowchart TB
 
 | Слой | Технологии |
 |---|---|
-| Web client | React 18, Vite, WebCrypto, IndexedDB, STOMP/SockJS |
+| Web client | React 18, Vite, WebCrypto, IndexedDB, native STOMP WebSocket |
 | Desktop | Electron, electron-builder |
 | Protocol types | Постепенная TypeScript-миграция и строгий DTO gate |
 | Backend | Java 17, Spring Boot 3.5, Spring Security, JPA/Hibernate |
