@@ -66,24 +66,22 @@ function httpError(status, statusText, body) {
 
 async function tryAutoRefresh() {
   if (_refreshPromise) return _refreshPromise;
-  _refreshPromise = (async () => {
-    try {
-      const response = await fetch(API_BASE + "/auth/refresh", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (!response.ok) return false;
-      const data = await response.json();
-      if (data?.token) {
-        setToken(data.token);
-        return true;
-      }
-      return false;
-    } catch { return false; }
-    finally { _refreshPromise = null; }
-  })();
+  _refreshPromise = call("/auth/refresh", { method: "POST" })
+    .finally(() => { _refreshPromise = null; });
   return _refreshPromise;
+}
+
+async function tryAutoRefresh() {
+  try {
+    const data = await refreshSessionCall();
+    if (data?.token) {
+      setToken(data.token);
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
 }
 
 export async function call(path, opts = {}) {
@@ -143,7 +141,7 @@ export const api = {
   registerEmail:  (email, password) => call("/auth/register", { method: "POST", body: JSON.stringify({ email, password }) }),
   loginEmail:     (email, password) => call("/auth/login",    { method: "POST", body: JSON.stringify({ email, password }) }),
 
-  refreshToken:   () => call("/auth/refresh", { method: "POST" }),
+  refreshToken:   () => refreshSessionCall(),
   logout:         () => call("/auth/logout",  { method: "POST" }),
 
   // ── Profile ───────────────────────────────────────────────────────────────
