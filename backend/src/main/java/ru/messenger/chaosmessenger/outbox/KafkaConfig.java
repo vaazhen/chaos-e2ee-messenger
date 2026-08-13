@@ -153,6 +153,7 @@ public class KafkaConfig {
                 new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(consumerFactory());
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.RECORD);
+        factory.getContainerProperties().setShutdownTimeout(5_000);
         factory.setCommonErrorHandler(defaultErrorHandler(kafkaTemplate));
         return factory;
     }
