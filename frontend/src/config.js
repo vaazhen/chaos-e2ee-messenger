@@ -7,6 +7,23 @@ function isAbsoluteUrl(value, protocols) {
   }
 }
 
+export function toStompBrokerUrl(wsUrl, location = globalThis.location) {
+  const resolved = wsUrl || "/ws";
+  if (resolved.startsWith("ws://") || resolved.startsWith("wss://")) {
+    return resolved;
+  }
+  if (resolved.startsWith("http://")) {
+    return `ws://${resolved.slice("http://".length)}`;
+  }
+  if (resolved.startsWith("https://")) {
+    return `wss://${resolved.slice("https://".length)}`;
+  }
+  const protocol = location?.protocol === "https:" ? "wss:" : "ws:";
+  const host = location?.host || "localhost";
+  const path = resolved.startsWith("/") ? resolved : `/${resolved}`;
+  return `${protocol}//${host}${path}`;
+}
+
 export function resolveRuntimeEndpoints({
   apiBase,
   wsUrl,
