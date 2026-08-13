@@ -27,12 +27,13 @@ import java.time.LocalDateTime;
  *   <li>Encrypts the message and stores {@link #ciphertext} + {@link #nonce}</li>
  * </ol>
  *
- * <p>The constraint {@code (message_id, target_device_id)} is unique —
- * only one envelope per device per message is allowed.
+ * <p>The constraint {@code (chat_id, message_id, target_device_id)} is unique —
+ * only one envelope per device per message is allowed. {@code chat_id} is part of
+ * the key because {@code message_envelopes} is HASH-partitioned by chat.
  */
 @Entity
 @Table(name = "message_envelopes", uniqueConstraints = {
-        @UniqueConstraint(columnNames = {"message_id", "target_device_id"})
+        @UniqueConstraint(columnNames = {"chat_id", "message_id", "target_device_id"})
 })
 @Getter
 @Setter

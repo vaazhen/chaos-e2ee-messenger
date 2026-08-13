@@ -9,7 +9,7 @@ spec:
     kind: Deployment
     name: chaos-backend
   minReplicas: 2
-  maxReplicas: 10
+  maxReplicas: 40
   behavior:
     scaleDown:
       stabilizationWindowSeconds: 300
