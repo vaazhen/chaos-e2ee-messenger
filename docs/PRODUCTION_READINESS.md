@@ -3,8 +3,8 @@
 | ID | Проблема | Приоритет | Статус | Изменённые файлы | Проверка |
 |---|---|---:|---|---|---|
 | P0-1 | AES-GCM AAD envelope binding | P0 | VERIFIED | `crypto-engine.ts` | crypto tests |
-| P0-2 | STOMP only after DB commit | P0 | VERIFIED | `RealtimeEventConsumer.java` | backend tests |
-| P0-3 | Realtime backend dedupe after successful processing | P0 | VERIFIED | `RealtimeEventConsumer.java` | backend tests |
+| P0-2 | STOMP only after durable persist | P0 | VERIFIED | `DomainEventProcessor.java` | backend tests |
+| P0-3 | Durable insert gates unread/push on retry | P0 | VERIFIED | `RealtimeEventStore.java`, `DomainEventProcessor.java` | backend tests |
 | RT-3 | Sequential client event queue | P0 | VERIFIED | `useWebSocket.js` | `useWebSocket.test.jsx` |
 | RT-4 | Failed recovery event replay | P0 | VERIFIED | `useWebSocket.js` | retry test |
 | RT-5 | Cursor after durable client apply | P0 | VERIFIED | `useWebSocket.js` | ordering/cursor tests |
@@ -26,4 +26,6 @@
 | OBS-1 | Metrics, alerts and runbooks | P1 | VERIFIED | `infra`, `docs/runbooks` | static audit |
 | ATT-1 | Attachment hardening | P1 | FIXED | attachment backend | backend validation pending |
 | CALL-1 | Calls behind feature flag | P1 | VERIFIED | signaling controller | static audit |
-| BE-CI-1 | Full Maven verify | P0 | BLOCKED | backend | requires CI/network |
+| BE-CI-1 | Full Maven verify | P0 | VERIFIED | backend | local `mvn verify` |
+| DELIVERY-1 | Single outbox path through Kafka | P0 | VERIFIED | `EventPublisher`, `OutboxPublisher`, `RealtimeEventConsumer`, `DomainEventProcessor` | `DurableRealtimeDeliveryTest` |
+| AUTH-2 | JWT denied after refresh-family revoke | P0 | VERIFIED | `JwtAuthenticationFilter`, WS interceptor | backend tests |

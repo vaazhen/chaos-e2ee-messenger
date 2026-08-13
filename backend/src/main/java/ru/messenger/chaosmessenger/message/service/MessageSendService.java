@@ -5,13 +5,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import ru.messenger.chaosmessenger.chat.access.ChatAccessService;
 import ru.messenger.chaosmessenger.chat.domain.Chat;
 import ru.messenger.chaosmessenger.chat.domain.GroupPolicy;
 import ru.messenger.chaosmessenger.chat.domain.Message;
 import ru.messenger.chaosmessenger.chat.repository.ChatParticipantRepository;
 import ru.messenger.chaosmessenger.chat.repository.ChatRepository;
-import ru.messenger.chaosmessenger.common.TransactionUtils;
+import ru.messenger.chaosmessenger.chat.service.ChatOutboxService;
 import ru.messenger.chaosmessenger.common.exception.ChatException;
 import ru.messenger.chaosmessenger.common.exception.MessageException;
 import ru.messenger.chaosmessenger.crypto.device.UserDevice;
@@ -40,7 +39,7 @@ public class MessageSendService {
     private final MessageAccessService messageAccessService;
     private final MessageFanoutService messageFanoutService;
     private final MessageOutboxService messageOutboxService;
-    private final ChatAccessService chatAccessService;
+    private final ChatOutboxService chatOutboxService;
     private final MessageEnvelopeService messageEnvelopeService;
 
     @Transactional
@@ -94,29 +93,12 @@ public class MessageSendService {
 
         messageOutboxService.messageCreated(message, byDevice);
         messageOutboxService.chatListUpdated(message.getChatId(), "message_created");
-
-        final Message msgFinal = message;
-        final Map<String, MessageEnvelope> byDeviceFinal = byDevice;
-        final Chat chat = chatRepository.findById(request.chatId()).orElse(null);
-        TransactionUtils.afterCommit(() -> {
-            try {
-                messageFanoutService.incrementUnreadForOthers(msgFinal.getChatId(), sender.getId());
-                messageFanoutService.fanoutCreatedEvent(msgFinal, byDeviceFinal);
-                messageFanoutService.notifyChatListUpdated(msgFinal.getChatId(), "message_created");
-                if (chat != null
-                        && "DIRECT".equals(chat.getType())
-                        && "PENDING".equalsIgnoreCase(chat.getDirectStatus())) {
-                    participantRepository.findDistinctUsernamesByChatId(msgFinal.getChatId()).forEach(participantUsername -> {
-                        if (!Objects.equals(participantUsername, sender.getUsername())) {
-                            chatAccessService.notifyRequestsUpdated(participantUsername, msgFinal.getChatId(), "request_message");
-                        }
-                    });
-                }
-                messageFanoutService.notifyOfflineUsersViaPush(msgFinal, sender);
-            } catch (Exception e) {
-                log.error("afterCommit fanout failed for message {} in chat {}", msgFinal.getId(), msgFinal.getChatId(), e);
-            }
-        });
+        Chat chat = chatRepository.findById(request.chatId()).orElse(null);
+        if (chat != null
+                && "DIRECT".equals(chat.getType())
+                && "PENDING".equalsIgnoreCase(chat.getDirectStatus())) {
+            chatOutboxService.requestUpdated(message.getChatId(), "request_message");
+        }
 
         return messageFanoutService.toDeviceEvent("MESSAGE_CREATED", message, byDevice.get(currentDevice.getDeviceId()), sender.getId());
     }

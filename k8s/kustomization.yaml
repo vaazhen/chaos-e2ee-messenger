@@ -6,7 +6,7 @@ namespace: chaos-messenger
 # PREREQUISITES (managed externally — NOT created by this kustomization):
 #   - PostgreSQL 16  (set SPRING_DATASOURCE_URL/USERNAME/PASSWORD)
 #   - Redis 7        (set SPRING_DATA_REDIS_HOST/PORT/PASSWORD)
-#   - Kafka/Redpanda (set CHAOS_KAFKA_BOOTSTRAP_SERVERS, enable with CHAOS_KAFKA_ENABLED=true)
+#   - Kafka/Redpanda (set KAFKA_BOOTSTRAP_SERVERS)
 # ═══════════════════════════════════════════════════════════════════════
 
 resources:

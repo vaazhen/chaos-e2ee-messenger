@@ -158,7 +158,6 @@ class GroupModerationServiceTest {
             ));
             when(userRepository.findAllById(List.of(3L))).thenReturn(List.of(charlie));
             when(participantRepository.saveAll(anyList())).thenAnswer(inv -> inv.getArgument(0));
-            when(participantRepository.findDistinctUsernamesByChatId(20L)).thenReturn(List.of("alice", "bob", "charlie"));
             when(chatQueryService.getChatForUser("alice", 20L)).thenReturn(mock(ChatResponse.class));
 
             ChatResponse response = groupModerationService.inviteGroupParticipants(
@@ -166,6 +165,7 @@ class GroupModerationServiceTest {
             );
             assertThat(response).isNotNull();
             verify(participantRepository).saveAll(anyList());
+            verify(chatOutboxService).chatListUpdated(20L, "group_participants_invited");
         }
     }
 

@@ -7,12 +7,15 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.MDC;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.UUID;
 
+@Order(Ordered.HIGHEST_PRECEDENCE)
 @Component
 public class RequestLoggingFilter extends OncePerRequestFilter {
     private static final Logger LOG = LoggerFactory.getLogger(RequestLoggingFilter.class);
@@ -21,6 +24,7 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
         String rid = UUID.randomUUID().toString();
         MDC.put("requestId", rid);
+        MDC.put("correlationId", rid);
         try {
             String uri = request.getRequestURI();
             // suppress noisy logging for Prometheus scrapes and static assets
@@ -35,6 +39,7 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
             }
         } finally {
             MDC.remove("requestId");
+            MDC.remove("correlationId");
         }
     }
 }

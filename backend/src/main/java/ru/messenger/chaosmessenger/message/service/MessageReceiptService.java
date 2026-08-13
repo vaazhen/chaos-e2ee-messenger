@@ -69,17 +69,7 @@ public class MessageReceiptService {
         }
         messageOutboxService.chatListUpdated(chatId, "chat_read");
 
-        TransactionUtils.afterCommit(() -> {
-            try {
-                unreadService.reset(user.getId(), chatId);
-                if (directOrSavedChat) {
-                    messageFanoutService.sendBulkStatusToSenderDevices(affectedSenderIds, chatId, Message.MessageStatus.READ.name(), user.getId());
-                }
-                messageFanoutService.notifyChatListUpdated(chatId, "chat_read");
-            } catch (Exception e) {
-                log.error("afterCommit read fanout failed for chat {}", chatId, e);
-            }
-        });
+        TransactionUtils.afterCommit(() -> unreadService.reset(user.getId(), chatId));
     }
 
     @Transactional
@@ -112,15 +102,6 @@ public class MessageReceiptService {
                 user.getId()
         );
         messageOutboxService.chatListUpdated(chatId, "chat_delivered");
-
-        TransactionUtils.afterCommit(() -> {
-            try {
-                messageFanoutService.sendBulkStatusToSenderDevices(affectedSenderIds, chatId, Message.MessageStatus.DELIVERED.name(), user.getId());
-                messageFanoutService.notifyChatListUpdated(chatId, "chat_delivered");
-            } catch (Exception e) {
-                log.error("afterCommit delivered fanout failed for chat {}", chatId, e);
-            }
-        });
     }
 
     @Transactional
@@ -151,13 +132,6 @@ public class MessageReceiptService {
         updateAggregateStatus(message);
         String aggregateStatus = message.getStatus().name();
         messageOutboxService.messageStatus(message, aggregateStatus);
-        TransactionUtils.afterCommit(() -> {
-            try {
-                messageFanoutService.sendStatusToSenderDevices(message, aggregateStatus);
-            } catch (Exception e) {
-                log.error("afterCommit status fanout failed for message {}", message.getId(), e);
-            }
-        });
     }
 
     private void updateAggregateStatus(Message message) {

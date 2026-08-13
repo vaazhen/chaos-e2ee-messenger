@@ -3,12 +3,10 @@ package ru.messenger.chaosmessenger.chat.service;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import ru.messenger.chaosmessenger.chat.access.ChatAccessService;
 import ru.messenger.chaosmessenger.chat.domain.Chat;
 import ru.messenger.chaosmessenger.chat.domain.ChatParticipant;
 import ru.messenger.chaosmessenger.chat.repository.ChatParticipantRepository;
 import ru.messenger.chaosmessenger.chat.repository.ChatRepository;
-import ru.messenger.chaosmessenger.common.TransactionUtils;
 import ru.messenger.chaosmessenger.common.exception.ChatException;
 import ru.messenger.chaosmessenger.user.domain.User;
 import ru.messenger.chaosmessenger.user.repository.UserRepository;
@@ -23,7 +21,6 @@ public class SavedMessagesService {
     private final ChatRepository chatRepository;
     private final ChatParticipantRepository participantRepository;
     private final UserRepository userRepository;
-    private final ChatAccessService chatAccessService;
     private final ChatOutboxService chatOutboxService;
 
     @Transactional
@@ -34,9 +31,7 @@ public class SavedMessagesService {
         Optional<Long> existing = participantRepository.findSavedChatId(user.getId());
         if (existing.isPresent()) {
             Long chatId = existing.get();
-            String username = user.getUsername();
             chatOutboxService.chatListUpdated(chatId, "saved_chat_exists");
-            TransactionUtils.afterCommit(() -> chatAccessService.notifyChatListUpdated(username, chatId, "saved_chat_exists"));
             return chatId;
         }
 
@@ -49,10 +44,7 @@ public class SavedMessagesService {
         participantRepository.save(new ChatParticipant(chat.getId(), user.getId()));
 
         Long chatId = chat.getId();
-        String username = user.getUsername();
         chatOutboxService.chatListUpdated(chatId, "saved_chat_created");
-        TransactionUtils.afterCommit(() -> chatAccessService.notifyChatListUpdated(username, chatId, "saved_chat_created"));
-
         return chatId;
     }
 }

@@ -2,11 +2,11 @@ package ru.messenger.chaosmessenger.message.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import ru.messenger.chaosmessenger.chat.domain.Message;
-import ru.messenger.chaosmessenger.common.TransactionUtils;
 import ru.messenger.chaosmessenger.message.repository.MessageRepository;
 
 import java.time.LocalDateTime;
@@ -19,13 +19,20 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class SelfDestructScheduler {
 
+    private static final long LOCK_KEY = 0x43484F53L;
+
     private final MessageRepository messageRepository;
-    private final MessageFanoutService messageFanoutService;
     private final MessageOutboxService messageOutboxService;
+    private final JdbcTemplate jdbcTemplate;
 
     @Scheduled(fixedRate = 30000)
     @Transactional
     public void deleteExpiredMessages() {
+        Boolean locked = jdbcTemplate.queryForObject("SELECT pg_try_advisory_xact_lock(?)", Boolean.class, LOCK_KEY);
+        if (!Boolean.TRUE.equals(locked)) {
+            return;
+        }
+
         List<Message> expired = messageRepository.findByExpiresAtBeforeAndDeletedAtIsNull(LocalDateTime.now());
         if (expired.isEmpty()) {
             return;
@@ -43,23 +50,5 @@ public class SelfDestructScheduler {
 
         expired.forEach(messageOutboxService::messageDeleted);
         affectedChatIds.forEach(chatId -> messageOutboxService.chatListUpdated(chatId, "message_deleted"));
-
-        List<Message> expiredCopy = List.copyOf(expired);
-        TransactionUtils.afterCommit(() -> {
-            expiredCopy.forEach(msg -> {
-                try {
-                    messageFanoutService.fanoutDeleteEvent(msg);
-                } catch (Exception e) {
-                    log.error("afterCommit self-destruct fanout failed for message {}", msg.getId(), e);
-                }
-            });
-            affectedChatIds.forEach(chatId -> {
-                try {
-                    messageFanoutService.notifyChatListUpdated(chatId, "message_deleted");
-                } catch (Exception e) {
-                    log.error("afterCommit self-destruct fanout failed for chat {}", chatId, e);
-                }
-            });
-        });
     }
 }

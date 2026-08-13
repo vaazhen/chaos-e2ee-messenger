@@ -9,6 +9,7 @@ import ru.messenger.chaosmessenger.crypto.device.UserDevice;
 import ru.messenger.chaosmessenger.crypto.device.UserDeviceRepository;
 import ru.messenger.chaosmessenger.message.domain.MessageEnvelope;
 import ru.messenger.chaosmessenger.message.dto.ReactionEvent;
+import ru.messenger.chaosmessenger.outbox.OutboxIds;
 import ru.messenger.chaosmessenger.outbox.OutboxService;
 
 import java.util.Collection;
@@ -48,7 +49,14 @@ public class MessageOutboxService {
         payload.put("active", event.active());
         payload.put("reactions", event.reactions());
         payload.put("timestamp", event.timestamp());
-        outboxService.write("message", String.valueOf(chatId), "MESSAGE_REACTION", payload);
+        outboxService.write(
+                "message",
+                String.valueOf(chatId),
+                "MESSAGE_REACTION",
+                payload,
+                null,
+                OutboxIds.key("msg", event.messageId(), "REACT", event.actorUserId(), event.emoji(), event.active())
+        );
     }
 
     public void messageStatus(Message message, String status) {
@@ -63,7 +71,14 @@ public class MessageOutboxService {
                 .stream()
                 .map(UserDevice::getDeviceId)
                 .toList());
-        outboxService.write("message", String.valueOf(message.getChatId()), "MESSAGE_STATUS", payload);
+        outboxService.write(
+                "message",
+                String.valueOf(message.getChatId()),
+                "MESSAGE_STATUS",
+                payload,
+                null,
+                OutboxIds.key("msg", message.getId(), "STATUS", status)
+        );
     }
 
     public void bulkMessageStatus(Collection<Long> senderIds, Long chatId, String status, Long actorUserId) {
@@ -81,7 +96,14 @@ public class MessageOutboxService {
                 .stream()
                 .map(UserDevice::getDeviceId)
                 .toList());
-        outboxService.write("message", String.valueOf(chatId), "MESSAGE_BULK_STATUS", payload);
+        outboxService.write(
+                "message",
+                String.valueOf(chatId),
+                "MESSAGE_BULK_STATUS",
+                payload,
+                null,
+                OutboxIds.key("msg", "bulk", chatId, status, actorUserId, senderIds.hashCode())
+        );
     }
 
     public void chatListUpdated(Long chatId, String reason) {
@@ -90,7 +112,14 @@ public class MessageOutboxService {
         payload.put("eventType", reason.toUpperCase());
         payload.put("reason", reason);
         payload.put("participantUsernames", participantRepository.findDistinctUsernamesByChatId(chatId));
-        outboxService.write("chat", String.valueOf(chatId), reason.toUpperCase(), payload);
+        outboxService.write(
+                "chat",
+                String.valueOf(chatId),
+                reason.toUpperCase(),
+                payload,
+                null,
+                OutboxIds.chatKey(chatId, reason)
+        );
     }
 
     private void writeMessageEvent(String eventType, Message message, Map<String, MessageEnvelope> byDevice) {
@@ -112,7 +141,14 @@ public class MessageOutboxService {
         payload.put("myReactions", List.of());
         payload.put("deviceIds", byDevice.keySet());
         payload.put("envelopes", envelopePayloads(byDevice));
-        outboxService.write("message", String.valueOf(message.getChatId()), eventType, payload);
+        outboxService.write(
+                "message",
+                String.valueOf(message.getChatId()),
+                eventType,
+                payload,
+                null,
+                OutboxIds.key("msg", message.getId(), eventType, message.getVersion())
+        );
     }
 
     private Map<String, Object> envelopePayloads(Map<String, MessageEnvelope> byDevice) {

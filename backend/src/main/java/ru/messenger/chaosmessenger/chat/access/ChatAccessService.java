@@ -2,7 +2,6 @@ package ru.messenger.chaosmessenger.chat.access;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.stereotype.Service;
@@ -10,11 +9,9 @@ import ru.messenger.chaosmessenger.chat.domain.Chat;
 import ru.messenger.chaosmessenger.chat.domain.ChatParticipant;
 import ru.messenger.chaosmessenger.chat.domain.GroupPolicy;
 import ru.messenger.chaosmessenger.chat.domain.GroupRole;
-import ru.messenger.chaosmessenger.chat.dto.ChatListUpdateEvent;
 import ru.messenger.chaosmessenger.chat.repository.ChatParticipantRepository;
 import ru.messenger.chaosmessenger.chat.repository.ChatRepository;
 import ru.messenger.chaosmessenger.common.exception.ChatException;
-import ru.messenger.chaosmessenger.realtime.StompEventPublisher;
 import java.util.Objects;
 
 @Slf4j
@@ -24,11 +21,7 @@ public class ChatAccessService {
 
     private final ChatRepository chatRepository;
     private final ChatParticipantRepository participantRepository;
-    private final StompEventPublisher stompEventPublisher;
     private final MessageSource messageSource;
-
-    @Value("${chaos.kafka.enabled:false}")
-    private boolean kafkaEnabled;
 
     public Chat requireActiveGroup(Long chatId) {
         Chat chat = chatRepository.findById(chatId)
@@ -149,25 +142,5 @@ public class ChatAccessService {
 
     public String savedChatName() {
         return messageSource.getMessage("chat.saved.name", null, "Saved Messages", LocaleContextHolder.getLocale());
-    }
-
-    public void notifyChatListUpdated(String username, Long chatId, String reason) {
-        if (!kafkaEnabled) {
-            stompEventPublisher.publishToUser(
-                    username,
-                    "/chats",
-                    ChatListUpdateEvent.forChat(chatId, reason)
-            );
-        }
-    }
-
-    public void notifyRequestsUpdated(String username, Long chatId, String reason) {
-        if (!kafkaEnabled) {
-            stompEventPublisher.publishToUser(
-                    username,
-                    "/requests",
-                    ChatListUpdateEvent.forChat(chatId, reason)
-            );
-        }
     }
 }

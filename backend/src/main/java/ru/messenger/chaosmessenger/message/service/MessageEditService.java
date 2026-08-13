@@ -5,7 +5,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.messenger.chaosmessenger.chat.domain.Message;
-import ru.messenger.chaosmessenger.common.TransactionUtils;
 import ru.messenger.chaosmessenger.common.exception.MessageException;
 import ru.messenger.chaosmessenger.crypto.device.UserDevice;
 import ru.messenger.chaosmessenger.crypto.dto.EncryptedEditMessageRequestV2;
@@ -70,17 +69,6 @@ public class MessageEditService {
 
         messageOutboxService.messageEdited(message, byDevice);
         messageOutboxService.chatListUpdated(message.getChatId(), "message_edited");
-
-        final Message msgEditFinal = message;
-        final Map<String, MessageEnvelope> byDeviceEditFinal = byDevice;
-        TransactionUtils.afterCommit(() -> {
-            try {
-                messageFanoutService.fanoutEditedEvent(msgEditFinal, byDeviceEditFinal);
-                messageFanoutService.notifyChatListUpdated(msgEditFinal.getChatId(), "message_edited");
-            } catch (Exception e) {
-                log.error("afterCommit edit fanout failed for message {}", msgEditFinal.getId(), e);
-            }
-        });
 
         return messageFanoutService.toDeviceEvent("MESSAGE_EDITED", message, byDevice.get(currentDevice.getDeviceId()), sender.getId());
     }

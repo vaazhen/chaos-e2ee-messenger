@@ -4,18 +4,15 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import ru.messenger.chaosmessenger.chat.access.ChatAccessService;
 import ru.messenger.chaosmessenger.chat.domain.Chat;
 import ru.messenger.chaosmessenger.chat.domain.ChatParticipant;
 import ru.messenger.chaosmessenger.chat.repository.ChatParticipantRepository;
 import ru.messenger.chaosmessenger.chat.repository.ChatRepository;
-import ru.messenger.chaosmessenger.common.TransactionUtils;
 import ru.messenger.chaosmessenger.common.exception.ChatException;
 import ru.messenger.chaosmessenger.user.domain.User;
 import ru.messenger.chaosmessenger.user.repository.UserRepository;
 
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -26,7 +23,6 @@ public class DirectChatService {
     private final ChatRepository chatRepository;
     private final ChatParticipantRepository participantRepository;
     private final UserRepository userRepository;
-    private final ChatAccessService chatAccessService;
     private final ChatOutboxService chatOutboxService;
 
     @Transactional
@@ -64,8 +60,6 @@ public class DirectChatService {
                     chatRepository.save(existingChat);
                 }
             }
-            String currentUsr = currentUser.getUsername();
-            String targetUsr = targetUser.getUsername();
             Chat updated = chatRepository.findById(chatId).orElse(null);
             boolean targetOnlyRequest =
                     updated != null
@@ -77,15 +71,6 @@ public class DirectChatService {
             if (targetOnlyRequest) {
                 chatOutboxService.requestUpdated(chatId, "request_exists");
             }
-
-            TransactionUtils.afterCommit(() -> {
-                chatAccessService.notifyChatListUpdated(currentUsr, chatId, "chat_exists");
-                if (targetOnlyRequest) {
-                    chatAccessService.notifyRequestsUpdated(targetUsr, chatId, "request_exists");
-                } else {
-                    chatAccessService.notifyChatListUpdated(targetUsr, chatId, "chat_exists");
-                }
-            });
             return chatId;
         }
 
@@ -108,15 +93,8 @@ public class DirectChatService {
         participantRepository.save(new ChatParticipant(chat.getId(), targetUser.getId()));
 
         final Long chatId = chat.getId();
-        final String currentUsr = currentUser.getUsername();
-        final String targetUsr = targetUser.getUsername();
         chatOutboxService.chatListUpdated(chatId, "chat_created");
         chatOutboxService.requestUpdated(chatId, "request_created");
-
-        TransactionUtils.afterCommit(() -> {
-            chatAccessService.notifyChatListUpdated(currentUsr, chatId, "chat_created");
-            chatAccessService.notifyRequestsUpdated(targetUsr, chatId, "request_created");
-        });
 
         return chatId;
     }
@@ -150,16 +128,8 @@ public class DirectChatService {
 
         chat.setDirectStatus("ACCEPTED");
         chatRepository.save(chat);
-        List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
         chatOutboxService.requestUpdated(chatId, "request_accepted");
         chatOutboxService.chatListUpdated(chatId, "request_accepted");
-
-        TransactionUtils.afterCommit(() -> {
-            chatAccessService.notifyRequestsUpdated(username, chatId, "request_accepted");
-            participantUsernames.forEach(u ->
-                    chatAccessService.notifyChatListUpdated(u, chatId, "request_accepted")
-            );
-        });
     }
 
     @Transactional
@@ -184,15 +154,7 @@ public class DirectChatService {
 
         chat.setDirectStatus("DECLINED");
         chatRepository.save(chat);
-        List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
         chatOutboxService.requestUpdated(chatId, "request_declined");
         chatOutboxService.chatListUpdated(chatId, "request_declined");
-
-        TransactionUtils.afterCommit(() -> {
-            chatAccessService.notifyRequestsUpdated(username, chatId, "request_declined");
-            participantUsernames.forEach(u ->
-                    chatAccessService.notifyChatListUpdated(u, chatId, "request_declined")
-            );
-        });
     }
 }

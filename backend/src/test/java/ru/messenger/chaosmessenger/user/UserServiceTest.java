@@ -11,17 +11,21 @@ import ru.messenger.chaosmessenger.user.domain.User;
 import ru.messenger.chaosmessenger.chat.repository.ChatParticipantRepository;
 import ru.messenger.chaosmessenger.infra.security.JwtService;
 import ru.messenger.chaosmessenger.outbox.OutboxService;
-import ru.messenger.chaosmessenger.realtime.StompEventPublisher;
 import ru.messenger.chaosmessenger.user.dto.UpdateProfileRequest;
 import ru.messenger.chaosmessenger.user.repository.UserRepository;
 import ru.messenger.chaosmessenger.user.service.UserIdentityService;
 import ru.messenger.chaosmessenger.user.service.UserService;
 
+import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -33,7 +37,6 @@ class UserServiceTest {
     @Mock UserIdentityService userIdentityService;
     @Mock JwtService jwtService;
     @Mock ChatParticipantRepository participantRepository;
-    @Mock StompEventPublisher stompEventPublisher;
     @Mock OutboxService outboxService;
 
     @InjectMocks UserService userService;
@@ -48,6 +51,7 @@ class UserServiceTest {
         alice.setLastName("Smith");
         alice.setAvatarUrl("avatar.png");
         alice.setPublicKey("legacy-public-key");
+        lenient().when(participantRepository.findDistinctUsernamesSharingChatsWithUserId(anyLong())).thenReturn(List.of());
     }
 
     @Test
@@ -106,6 +110,7 @@ class UserServiceTest {
         when(userRepository.existsByUsername("new_name")).thenReturn(false);
         when(userRepository.save(alice)).thenReturn(alice);
         when(jwtService.generateToken("new_name")).thenReturn("jwt-new-name");
+        when(participantRepository.findDistinctUsernamesSharingChatsWithUserId(1L)).thenReturn(List.of());
 
         var response = userService.updateProfile("alice", request);
 
@@ -119,6 +124,15 @@ class UserServiceTest {
         assertThat(response.lastName()).isEqualTo("Doe");
 
         verify(userRepository).save(alice);
+        verify(outboxService).write(
+                eq("user"),
+                eq("1"),
+                eq("PROFILE_UPDATED"),
+                org.mockito.ArgumentMatchers.argThat(payload -> payload instanceof java.util.Map
+                        && ((java.util.Map<?, ?>) payload).get("participantUsernames").equals(List.of())),
+                org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.startsWith("user:1:PROFILE_UPDATED:")
+        );
     }
 
     @Test
@@ -174,6 +188,7 @@ class UserServiceTest {
                 .hasMessageContaining("Username must be 3-32 chars");
 
         verify(userRepository, never()).save(alice);
+        verify(outboxService, never()).write(any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -188,6 +203,7 @@ class UserServiceTest {
                 .hasMessageContaining("Username \"bob\" is already taken");
 
         verify(userRepository, never()).save(alice);
+        verify(outboxService, never()).write(any(), any(), any(), any(), any(), any());
     }
 }
 

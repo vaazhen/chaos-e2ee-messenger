@@ -39,6 +39,7 @@ class InfraSecurityTest {
         String token = jwtService.generateToken("alice");
 
         assertThat(jwtService.extractUsername(token)).isEqualTo("alice");
+        assertThat(jwtService.extractSessionId(token)).isNotBlank();
         assertThat(jwtService.isTokenValid(token, "alice")).isTrue();
         assertThat(jwtService.isTokenValid(token, "bob")).isFalse();
     }
@@ -95,7 +96,7 @@ class InfraSecurityTest {
     @Test
     void jwtAuthenticationFilterLeavesRequestUnauthenticatedWhenHeaderIsMissing() throws Exception {
         JwtService jwtService = mock(JwtService.class);
-        JwtAuthenticationFilter filter = new JwtAuthenticationFilter(jwtService);
+        JwtAuthenticationFilter filter = new JwtAuthenticationFilter(jwtService, mock(ru.messenger.chaosmessenger.auth.service.RefreshTokenService.class));
 
         MockHttpServletRequest request = new MockHttpServletRequest();
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -110,7 +111,7 @@ class InfraSecurityTest {
     @Test
     void jwtAuthenticationFilterSetsAuthenticationForValidBearerToken() throws Exception {
         JwtService jwtService = mock(JwtService.class);
-        JwtAuthenticationFilter filter = new JwtAuthenticationFilter(jwtService);
+        JwtAuthenticationFilter filter = new JwtAuthenticationFilter(jwtService, mock(ru.messenger.chaosmessenger.auth.service.RefreshTokenService.class));
 
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("Authorization", "Bearer jwt-token");
@@ -119,6 +120,7 @@ class InfraSecurityTest {
 
         when(jwtService.extractUsername("jwt-token")).thenReturn("alice");
         when(jwtService.isTokenValid("jwt-token", "alice")).thenReturn(true);
+        when(jwtService.extractSessionId("jwt-token")).thenReturn("family-1");
 
         filter.doFilter(request, response, chain);
 
@@ -128,9 +130,55 @@ class InfraSecurityTest {
     }
 
     @Test
+    void jwtAuthenticationFilterDeniesRevokedSessionFamily() throws Exception {
+        JwtService jwtService = mock(JwtService.class);
+        ru.messenger.chaosmessenger.auth.service.RefreshTokenService refreshTokenService =
+                mock(ru.messenger.chaosmessenger.auth.service.RefreshTokenService.class);
+        JwtAuthenticationFilter filter = new JwtAuthenticationFilter(jwtService, refreshTokenService);
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("Authorization", "Bearer jwt-token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        FilterChain chain = mock(FilterChain.class);
+
+        when(jwtService.extractUsername("jwt-token")).thenReturn("alice");
+        when(jwtService.isTokenValid("jwt-token", "alice")).thenReturn(true);
+        when(jwtService.extractSessionId("jwt-token")).thenReturn("family-1");
+        when(refreshTokenService.isFamilyRevoked("family-1")).thenReturn(true);
+
+        filter.doFilter(request, response, chain);
+
+        verify(chain).doFilter(request, response);
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+    }
+
+    @Test
+    void jwtAuthenticationFilterDeniesWhenRefreshFamilyLookupFails() throws Exception {
+        JwtService jwtService = mock(JwtService.class);
+        ru.messenger.chaosmessenger.auth.service.RefreshTokenService refreshTokenService =
+                mock(ru.messenger.chaosmessenger.auth.service.RefreshTokenService.class);
+        JwtAuthenticationFilter filter = new JwtAuthenticationFilter(jwtService, refreshTokenService);
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("Authorization", "Bearer jwt-token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        FilterChain chain = mock(FilterChain.class);
+
+        when(jwtService.extractUsername("jwt-token")).thenReturn("alice");
+        when(jwtService.isTokenValid("jwt-token", "alice")).thenReturn(true);
+        when(jwtService.extractSessionId("jwt-token")).thenReturn("family-1");
+        when(refreshTokenService.isFamilyRevoked("family-1")).thenThrow(new RuntimeException("redis down"));
+
+        filter.doFilter(request, response, chain);
+
+        verify(chain).doFilter(request, response);
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+    }
+
+    @Test
     void jwtAuthenticationFilterIgnoresInvalidTokenAndContinuesChain() throws Exception {
         JwtService jwtService = mock(JwtService.class);
-        JwtAuthenticationFilter filter = new JwtAuthenticationFilter(jwtService);
+        JwtAuthenticationFilter filter = new JwtAuthenticationFilter(jwtService, mock(ru.messenger.chaosmessenger.auth.service.RefreshTokenService.class));
 
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("Authorization", "Bearer broken");

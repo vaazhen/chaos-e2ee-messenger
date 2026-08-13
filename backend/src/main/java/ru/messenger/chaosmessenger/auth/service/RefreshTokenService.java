@@ -119,7 +119,7 @@ public class RefreshTokenService {
         redisTemplate.opsForValue().set(REVOKED_FAMILY_PREFIX + familyId, "1", REFRESH_TTL);
     }
 
-    private boolean isFamilyRevoked(String familyId) {
+    public boolean isFamilyRevoked(String familyId) {
         return Boolean.TRUE.equals(redisTemplate.hasKey(REVOKED_FAMILY_PREFIX + familyId));
     }
 

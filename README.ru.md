@@ -298,8 +298,10 @@ flowchart TB
 
     subgraph Events[События]
         OUTBOX[(Transactional outbox)]
+        PUB[OutboxPublisher]
         KAFKA[Kafka / Redpanda]
-        WORKERS[Event consumers]
+        PROC[DomainEventProcessor]
+        DURABLE[(realtime_device_events)]
     end
 
     subgraph Observability
@@ -322,9 +324,11 @@ flowchart TB
     CHAT --> PG
     CHAT --> BLOB
     CHAT --> OUTBOX
-    OUTBOX --> KAFKA
-    KAFKA --> WORKERS
-    WORKERS --> RT
+    OUTBOX --> PUB
+    PUB --> KAFKA
+    KAFKA --> PROC
+    PROC --> DURABLE
+    PROC --> RT
     RT --> PG
     RT --> NGINX
     API --> ACT
@@ -333,6 +337,14 @@ flowchart TB
     PROM --> GRAFANA
     LOKI --> GRAFANA
 ```
+
+### Контракт доставки
+
+Один путь для durable-событий. Доменные сервисы пишут outbox в той же транзакции, что и команду. После commit `OutboxPublisher` отправляет в Kafka. `RealtimeEventConsumer` — единственный consumer: сначала device-scoped durable log, потом STOMP/Redis и push. Typing и presence остаются эфемерными и в outbox не идут.
+
+Kafka обязательна. In-process fallback нет. Если брокер лежит, строки outbox остаются PENDING и ретраятся.
+
+Идемпотентность — бизнес-ключ строки outbox. Redis fan-out WebSocket — канал уведомления, не второй источник истины. Клиенты догоняют пропущенные события через `/api/realtime/sync`.
 
 ### Технологический стек
 
@@ -402,7 +414,7 @@ openssl rand -base64 32   # GRAFANA_ADMIN_PASSWORD
 DOMAIN=localhost
 CORS_ORIGINS=https://localhost
 CHAOS_DEMO_ENABLED=false
-CHAOS_KAFKA_ENABLED=true
+KAFKA_BOOTSTRAP_SERVERS=localhost:19092
 ```
 
 ### 2. Запуск stack
@@ -650,7 +662,6 @@ Reference stack включает:
 | `DOMAIN` | Public hostname для Caddy |
 | `CORS_ORIGINS` | Точный доверенный web origin |
 | `CHAOS_DEMO_ENABLED` | Включение optional demo endpoints |
-| `CHAOS_KAFKA_ENABLED` | Kafka/outbox event delivery |
 | `KAFKA_BOOTSTRAP_SERVERS` | Адреса Kafka-compatible brokers |
 | `CHAOS_ATTACHMENTS_STORAGE_PATH` | Reference ciphertext storage directory |
 | `CHAOS_ATTACHMENTS_MAX_BYTES` | Максимальный размер encrypted upload |

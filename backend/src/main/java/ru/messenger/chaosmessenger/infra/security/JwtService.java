@@ -72,6 +72,10 @@ public class JwtService {
         return extractAllClaims(token).getSubject();
     }
 
+    public String extractSessionId(String token) {
+        return extractAllClaims(token).get("session_id", String.class);
+    }
+
     public boolean isTokenValid(String token, String username) {
         Claims claims = extractAllClaims(token);
         return username != null

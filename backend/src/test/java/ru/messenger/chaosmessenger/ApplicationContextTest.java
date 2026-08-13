@@ -10,15 +10,9 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.kafka.KafkaContainer;
+import org.testcontainers.utility.DockerImageName;
 
-/**
- * Smoke test: verifies that the Spring context starts with real containers.
- * Uses Testcontainers; PostgreSQL and Redis start automatically.
- *
- * <p>The test is skipped when Docker is unavailable
- * in the current environment, for example in CI without a Docker daemon.
- * Docker must be running for local execution.
- */
 @SpringBootTest
 @Testcontainers(disabledWithoutDocker = true)
 @ActiveProfiles("test")
@@ -36,20 +30,23 @@ class ApplicationContextTest {
     static GenericContainer<?> redis = new GenericContainer<>("redis:7-alpine")
             .withExposedPorts(6379);
 
+    @Container
+    static KafkaContainer kafka = new KafkaContainer(DockerImageName.parse("apache/kafka:3.8.1"));
+
     @DynamicPropertySource
     static void props(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url",      postgres::getJdbcUrl);
+        registry.add("spring.datasource.url", postgres::getJdbcUrl);
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("spring.data.redis.host",     redis::getHost);
-        registry.add("spring.data.redis.port",     () -> redis.getMappedPort(6379));
-        registry.add("jwt.secret",                 () -> "test-secret-key-must-be-32-chars-long!!");
+        registry.add("spring.data.redis.host", redis::getHost);
+        registry.add("spring.data.redis.port", () -> redis.getMappedPort(6379));
+        registry.add("jwt.secret", () -> "test-secret-key-must-be-32-chars-long!!");
+        registry.add("chaos.kafka.bootstrap-servers", kafka::getBootstrapServers);
+        registry.add("chaos.kafka.topic.replicas", () -> "1");
     }
 
     @Test
     @DisplayName("Spring context starts without errors")
     void contextLoads() {
-        // If this line is reached, the context has started.
-        // Flyway applied all migrations and all beans were created.
     }
 }

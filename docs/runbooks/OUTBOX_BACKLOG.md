@@ -9,38 +9,36 @@
 - `chaos_outbox_pending_count` — current pending events
 - `chaos_outbox_oldest_pending_seconds` — age of oldest pending event
 - `chaos_outbox_dead_count` — events permanently failed
-- `chaos_outbox_publish_latency_seconds` — publish operation duration
-- `chaos_kafka_consumer_lag` — Kafka consumer lag
+- `chaos_outbox_publish_success_total` / `chaos_outbox_publish_failure_total`
+- `chaos_kafka_consumer_success_total` — DomainEventProcessor throughput
 
 ## Probable causes
 1. Kafka broker unavailable or slow
 2. Kafka topic partition leader election
 3. Network partition between backend and Kafka
-4. OutboxPublisher thread pool exhaustion
-5. Database connection pool exhaustion during outbox query
-6. Schema registry unavailable (if used)
+4. Database connection pool exhaustion during outbox claim
+5. Processor failure while appending `realtime_device_events`
 
 ## Safe actions
-1. Check Kafka broker health: `kubectl get pods -n chaos-messenger | grep kafka`
-2. Check Kafka topic: `kubectl exec -it kafka-0 -- kafka-topics --describe --topic chaos.message.events`
-3. Check outbox query performance: DB slow query log for `SELECT * FROM outbox_events WHERE status = 'PENDING'`
-4. Check publisher logs for Kafka connection errors
-5. Restart outbox publisher (next scheduled run will recover)
+1. Check backend logs for `Outbox publish failed`
+2. Check outbox query performance: DB slow query log for `outbox_events` claim
+3. Check Kafka/Redpanda health and topic `chaos.message.events`
+4. Restart one backend pod — SKIP LOCKED will recover remaining rows
 
 ## What NOT to do
 - Do NOT manually clear the outbox table — events will be lost
 - Do NOT delete Kafka topics — consumers will lose offsets
-- Do NOT restart all backend pods simultaneously — outbox lock ownership will reset
+- Do NOT restart all backend pods simultaneously — in-flight PROCESSING rows wait for stale-lock recovery
 
 ## Recovery procedure
-1. Verify Kafka connectivity: `kubectl exec -it backend-0 -- curl -s kafka:9092`
-2. Verify topic exists: check Kafka UI or CLI
-3. Check publisher thread: look for "acquireLock failed" warnings (another instance is publishing)
-4. If stale lock: `UPDATE outbox_events SET status='PENDING', locked_at=NULL WHERE status='PROCESSING' AND locked_at < NOW() - INTERVAL '5 minutes'`
-5. Monitor: `chaos_outbox_pending_count` should decrease after restore
+1. Confirm PostgreSQL is accepting connections
+2. Confirm Kafka bootstrap connectivity from a backend pod
+3. If stale lock: wait for `chaos.kafka.outbox.stale-lock-seconds` (default 120) or
+   `UPDATE outbox_events SET status='PENDING', locked_at=NULL, locked_by=NULL WHERE status='PROCESSING' AND locked_at < NOW() - INTERVAL '5 minutes'`
+4. Monitor: `chaos_outbox_pending_count` should decrease after restore
 
 ## Post-recovery verification
 - `chaos_outbox_pending_count` returns to near-zero
-- WebSocket message delivery resumes
+- Clients recover via `/api/realtime/sync` even if live STOMP was missed
 - No new `chaos_outbox_dead_count` increments
 - Alert `OutboxBacklogHigh` resolves

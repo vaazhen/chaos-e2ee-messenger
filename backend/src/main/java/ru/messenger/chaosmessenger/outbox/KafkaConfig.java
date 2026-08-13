@@ -1,6 +1,7 @@
 package ru.messenger.chaosmessenger.outbox;
 
 import jakarta.annotation.PostConstruct;
+import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -8,16 +9,18 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.kafka.annotation.EnableKafka;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.config.TopicBuilder;
 import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaProducerFactory;
+import org.springframework.kafka.core.KafkaAdmin;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.core.ProducerFactory;
+import org.springframework.kafka.listener.ContainerProperties;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.support.serializer.JsonDeserializer;
@@ -28,7 +31,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 @Configuration
-@ConditionalOnProperty(name = "chaos.kafka.enabled", havingValue = "true", matchIfMissing = false)
+@EnableKafka
 public class KafkaConfig {
 
     public static final String MESSAGE_EVENTS_TOPIC = "chaos.message.events";
@@ -52,9 +55,7 @@ public class KafkaConfig {
     @PostConstruct
     void validateConfiguration() {
         if (bootstrapServers == null || bootstrapServers.isBlank()) {
-            throw new IllegalStateException(
-                    "KAFKA_BOOTSTRAP_SERVERS is required when chaos.kafka.enabled=true"
-            );
+            throw new IllegalStateException("KAFKA_BOOTSTRAP_SERVERS is required");
         }
         if (replicas < 1) {
             throw new IllegalStateException("chaos.kafka.topic.replicas must be at least 1");
@@ -102,6 +103,13 @@ public class KafkaConfig {
     }
 
     @Bean
+    public KafkaAdmin kafkaAdmin() {
+        Map<String, Object> configs = new HashMap<>();
+        configs.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        return new KafkaAdmin(configs);
+    }
+
+    @Bean
     public ProducerFactory<String, DomainEvent> producerFactory() {
         Map<String, Object> props = new HashMap<>();
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
@@ -130,6 +138,7 @@ public class KafkaConfig {
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, JsonDeserializer.class);
         props.put(JsonDeserializer.TRUSTED_PACKAGES, "ru.messenger.chaosmessenger.outbox");
+        props.put(JsonDeserializer.VALUE_DEFAULT_TYPE, DomainEvent.class.getName());
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
         props.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, 100);
@@ -143,6 +152,7 @@ public class KafkaConfig {
         ConcurrentKafkaListenerContainerFactory<String, DomainEvent> factory =
                 new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(consumerFactory());
+        factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.RECORD);
         factory.setCommonErrorHandler(defaultErrorHandler(kafkaTemplate));
         return factory;
     }

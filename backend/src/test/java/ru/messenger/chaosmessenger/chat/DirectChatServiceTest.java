@@ -67,6 +67,8 @@ class DirectChatServiceTest {
             assertThat(chatId).isEqualTo(10L);
             verify(chatRepository).save(any());
             verify(participantRepository, times(2)).save(any());
+            verify(chatOutboxService).chatListUpdated(10L, "chat_created");
+            verify(chatOutboxService).requestUpdated(10L, "request_created");
         }
 
         @Test
@@ -82,6 +84,8 @@ class DirectChatServiceTest {
 
             assertThat(chatId).isEqualTo(99L);
             verify(chatRepository, times(1)).save(any());
+            verify(chatOutboxService).chatListUpdated(99L, "chat_exists");
+            verify(chatOutboxService, never()).requestUpdated(any(), any());
         }
 
         @Test

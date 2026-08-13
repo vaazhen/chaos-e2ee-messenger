@@ -13,6 +13,7 @@ import ru.messenger.chaosmessenger.chat.repository.ChatParticipantRepository;
 import ru.messenger.chaosmessenger.crypto.device.UserDevice;
 import ru.messenger.chaosmessenger.crypto.device.UserDeviceRepository;
 import ru.messenger.chaosmessenger.infra.security.JwtService;
+import ru.messenger.chaosmessenger.auth.service.RefreshTokenService;
 import ru.messenger.chaosmessenger.user.domain.User;
 import ru.messenger.chaosmessenger.realtime.WebSocketSessionRegistry;
 import ru.messenger.chaosmessenger.user.repository.UserRepository;
@@ -27,6 +28,7 @@ import java.util.List;
 public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
 
     private final JwtService jwtService;
+    private final RefreshTokenService refreshTokenService;
     private final UserDeviceRepository userDeviceRepository;
     private final UserRepository userRepository;
     private final ChatParticipantRepository participantRepository;
@@ -79,6 +81,11 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
             String username = jwtService.extractUsername(token);
             if (!jwtService.isTokenValid(token, username)) {
                 log.warn("WebSocket CONNECT denied: invalid token for user={}", username);
+                return null;
+            }
+            String sessionIdClaim = jwtService.extractSessionId(token);
+            if (sessionIdClaim != null && refreshTokenService.isFamilyRevoked(sessionIdClaim)) {
+                log.warn("WebSocket CONNECT denied: revoked session user={}", username);
                 return null;
             }
 

@@ -37,6 +37,49 @@ class ArchitectureTest {
     }
 
     @Test
+    void domainServicesMustNotPublishStompDirectly() {
+        ArchRule rule = ArchRuleDefinition.noClasses()
+                .that().resideInAnyPackage(
+                        "ru.messenger.chaosmessenger.chat.service..",
+                        "ru.messenger.chaosmessenger.chat.access..",
+                        "ru.messenger.chaosmessenger.message.service..",
+                        "ru.messenger.chaosmessenger.user.service.."
+                )
+                .should().dependOnClassesThat()
+                .haveSimpleName("StompEventPublisher");
+
+        rule.check(new ClassFileImporter()
+                .importPackages("ru.messenger.chaosmessenger"));
+    }
+
+    @Test
+    void domainServicesMustNotDependOnKafkaTemplate() {
+        ArchRule rule = ArchRuleDefinition.noClasses()
+                .that().resideInAnyPackage(
+                        "ru.messenger.chaosmessenger.chat.service..",
+                        "ru.messenger.chaosmessenger.chat.access..",
+                        "ru.messenger.chaosmessenger.message.service..",
+                        "ru.messenger.chaosmessenger.user.service.."
+                )
+                .should().dependOnClassesThat()
+                .haveSimpleName("KafkaTemplate");
+
+        rule.check(new ClassFileImporter()
+                .importPackages("ru.messenger.chaosmessenger"));
+    }
+
+    @Test
+    void outboxPublisherMustNotCallDomainEventProcessorDirectly() {
+        ArchRule rule = ArchRuleDefinition.noClasses()
+                .that().haveSimpleName("OutboxPublisher")
+                .should().dependOnClassesThat()
+                .haveSimpleName("DomainEventProcessor");
+
+        rule.check(new ClassFileImporter()
+                .importPackages("ru.messenger.chaosmessenger"));
+    }
+
+    @Test
     void restControllersShouldHaveRequestMapping() {
         ArchRule rule = ArchRuleDefinition.classes()
                 .that().areAnnotatedWith(RestController.class)
