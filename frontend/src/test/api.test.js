@@ -15,6 +15,9 @@ function failJson(status, statusText, body) {
     status,
     statusText,
     json: () => Promise.resolve(body),
+    clone: () => ({
+      json: () => Promise.resolve(body),
+    }),
   });
 }
 
@@ -149,5 +152,39 @@ describe("api", () => {
 
     expect(response.available).toBe(true);
     expect(fetch.mock.calls[0][0]).toContain("/auth/username-available?username=alice");
+  });
+
+  it("does not rotate the refresh cookie when 401 means the device is missing", async () => {
+    const { call, setToken } = await import("../api");
+    setToken("jwt-token");
+
+    fetch.mockResolvedValueOnce(await failJson(401, "Unauthorized", {
+      message: "Current device is not registered or inactive",
+    }));
+
+    await expect(call("/messages/chat/1/timeline")).rejects.toMatchObject({
+      message: "Current device is not registered or inactive",
+      status: 401,
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(String(fetch.mock.calls[0][0])).not.toContain("/auth/refresh");
+  });
+
+  it("auto-refreshes a generic 401 and retries the original request", async () => {
+    const { call, getToken, setToken } = await import("../api");
+    setToken("jwt-expired");
+
+    fetch
+      .mockResolvedValueOnce(await failJson(401, "Unauthorized", { message: "Unauthorized" }))
+      .mockResolvedValueOnce(await okJson({ token: "jwt-fresh" }))
+      .mockResolvedValueOnce(await okJson({ chats: [] }));
+
+    await expect(call("/chats/my")).resolves.toEqual({ chats: [] });
+    expect(getToken()).toBe("jwt-fresh");
+    expect(fetch.mock.calls.map(([url]) => String(url))).toEqual([
+      expect.stringContaining("/chats/my"),
+      expect.stringContaining("/auth/refresh"),
+      expect.stringContaining("/chats/my"),
+    ]);
   });
 });

@@ -177,7 +177,7 @@ class AuthPhoneControllerTest {
     void refreshDelegatesToAuthService() {
         RefreshRequest request = new RefreshRequest("old-refresh");
 
-        when(refreshCookieService.resolve("old-refresh", null)).thenReturn("old-refresh");
+        when(refreshCookieService.resolve("old-refresh", null, null)).thenReturn("old-refresh");
         when(authService.refresh("old-refresh"))
                 .thenReturn(new TokenRefreshResponse("new-jwt", "new-refresh", "new-device-token"));
 
@@ -193,7 +193,7 @@ class AuthPhoneControllerTest {
     void logoutDelegatesToAuthService() {
         RefreshRequest request = new RefreshRequest("refresh-token");
 
-        when(refreshCookieService.resolve("refresh-token", null)).thenReturn("refresh-token");
+        when(refreshCookieService.resolve("refresh-token", null, null)).thenReturn("refresh-token");
         when(authService.logout("refresh-token")).thenReturn(new LogoutResponse(true));
 
         var response = controller.logout(request);

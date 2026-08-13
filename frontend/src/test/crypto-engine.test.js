@@ -263,6 +263,54 @@ describe("Double Ratchet full protocol cycle", () => {
       .resolves.toBe("hello from bob");
   }, 30000);
 
+  it("decrypts after the server strips client-only _chatId when the caller rebinds chat context", async () => {
+    await loadCryptoEngine();
+    await activateDevice(Alice);
+    const fanout = await window.e2ee.buildFanoutRequest(makeApi(Bob), 100, "hello from alice");
+    const { _chatId, ...wireEnvelope } = fanout.envelopes[0];
+    expect(_chatId).toBe(100);
+
+    await activateDevice(Bob);
+    await expect(window.e2ee.decryptEnvelope({
+      ...wireEnvelope,
+      senderDeviceId: Alice.deviceId,
+    })).rejects.toThrow();
+
+    await expect(window.e2ee.decryptEnvelope({
+      ...wireEnvelope,
+      senderDeviceId: Alice.deviceId,
+      _chatId: 100,
+    })).resolves.toBe("hello from alice");
+  }, 30000);
+
+  it("does not DH-ratchet when the ratchet public key is the same bytes with another encoding", async () => {
+    await loadCryptoEngine();
+    await activateDevice(Alice);
+    const first = await window.e2ee.buildFanoutRequest(makeApi(Bob), 100, "one");
+    const env1 = first.envelopes[0];
+    const aliceSessions = getSessions();
+
+    await activateDevice(Bob);
+    await expect(window.e2ee.decryptEnvelope({ ...env1, senderDeviceId: Alice.deviceId }))
+      .resolves.toBe("one");
+
+    const bobSessions = getSessions();
+    const sessionKey = Object.keys(bobSessions)[0];
+    const dhr = bobSessions[sessionKey].DHr;
+    bobSessions[sessionKey].DHr = dhr.replace(/=+$/g, "");
+    expect(bobSessions[sessionKey].DHr).not.toBe(dhr);
+
+    await activateDevice(Alice, aliceSessions);
+    const second = await window.e2ee.buildFanoutRequest(makeApi(Bob), 100, "two");
+    const env2 = second.envelopes[0];
+
+    await activateDevice(Bob, bobSessions);
+    await expect(window.e2ee.decryptEnvelope({
+      ...env2,
+      senderDeviceId: Alice.deviceId,
+    })).resolves.toBe("two");
+  }, 30000);
+
   it("serializes concurrent sends and never reuses a message index", async () => {
     await loadCryptoEngine();
     await activateDevice(Alice);
@@ -342,6 +390,120 @@ describe("Double Ratchet full protocol cycle", () => {
 
     await expect(window.e2ee.decryptEnvelope({ ...envelope, senderDeviceId: Alice.deviceId }))
       .rejects.toThrow(`PREKEY_REPLAY:${Alice.deviceId}`);
+  }, 30000);
+
+  it("does not re-register an existing local device just because login can register", async () => {
+    await loadCryptoEngine();
+    await activateDevice(Alice);
+    const api = vi.fn(async (path) => {
+      if (String(path).includes("/crypto/devices/register")) {
+        throw new Error("should not re-register existing device");
+      }
+      if (String(path).includes("prekeys")) return { available: 50 };
+      return {};
+    });
+    api.__canRegisterDevice = true;
+    await expect(window.e2ee.ensureDeviceRegistered(api)).resolves.toMatchObject({
+      deviceId: Alice.deviceId,
+    });
+  }, 30000);
+
+  it("registers an existing local device when the server does not know it", async () => {
+    await loadCryptoEngine();
+    await activateDevice(Alice);
+    const api = vi.fn(async (path) => {
+      if (String(path).includes("/crypto/devices/register")) {
+        return { deviceId: Alice.deviceId };
+      }
+      if (String(path).includes("prekeys")) {
+        const error = new Error("Current device is not registered or inactive");
+        error.status = 401;
+        throw error;
+      }
+      return {};
+    });
+    await expect(window.e2ee.ensureDeviceRegistered(api)).resolves.toMatchObject({
+      deviceId: Alice.deviceId,
+    });
+    expect(api).toHaveBeenCalledWith(
+      expect.stringContaining("/crypto/devices/register"),
+      expect.anything()
+    );
+  }, 30000);
+
+  it("re-establishes the session when the peer returns with PREKEY after local ratchet loss", async () => {
+    await loadCryptoEngine();
+
+    await activateDevice(Alice);
+    const first = await window.e2ee.buildFanoutRequest(makeApi(Bob), 100, "hello from alice");
+    const aliceSessions = getSessions();
+
+    await activateDevice(Bob);
+    await expect(window.e2ee.decryptEnvelope({
+      ...first.envelopes[0],
+      senderDeviceId: Alice.deviceId,
+    })).resolves.toBe("hello from alice");
+
+    await window.e2ee.__importSessionStateForTests({});
+
+    await activateDevice(Alice, aliceSessions);
+    const stale = await window.e2ee.buildFanoutRequest(makeApi(Bob), 100, "stale whisper");
+    expect(stale.envelopes[0].messageType).toBe("WHISPER");
+
+    await activateDevice(Bob);
+    await window.e2ee.__importSessionStateForTests({});
+    await expect(window.e2ee.decryptEnvelope({
+      ...stale.envelopes[0],
+      senderDeviceId: Alice.deviceId,
+    })).rejects.toThrow(/SESSION_STALE/);
+
+    const reinit = await window.e2ee.buildFanoutRequest(makeApi(Alice), 100, "hello from bob");
+    expect(reinit.envelopes[0].messageType).toBe("PREKEY_WHISPER");
+    const bobSessions = getSessions();
+
+    await activateDevice(Alice, aliceSessions);
+    await expect(window.e2ee.decryptEnvelope({
+      ...reinit.envelopes[0],
+      senderDeviceId: Bob.deviceId,
+    })).resolves.toBe("hello from bob");
+
+    const aliceReply = await window.e2ee.buildFanoutRequest(makeApi(Bob), 100, "alice after heal");
+    expect(aliceReply.envelopes[0].messageType).toBe("WHISPER");
+
+    await activateDevice(Bob, bobSessions);
+    await expect(window.e2ee.decryptEnvelope({
+      ...aliceReply.envelopes[0],
+      senderDeviceId: Alice.deviceId,
+    })).resolves.toBe("alice after heal");
+  }, 30000);
+
+  it("decrypts after a reload that only restores persisted ratchet state", async () => {
+    await loadCryptoEngine();
+
+    await activateDevice(Alice);
+    const first = await window.e2ee.buildFanoutRequest(makeApi(Bob), 100, "before reload");
+    const aliceSessions = getSessions();
+
+    await activateDevice(Bob);
+    await expect(window.e2ee.decryptEnvelope({
+      ...first.envelopes[0],
+      senderDeviceId: Alice.deviceId,
+    })).resolves.toBe("before reload");
+    const bobSessions = getSessions();
+    const bobBundle = window.e2ee.getLocalDeviceBundle();
+
+    clearCryptoTestState();
+    await loadCryptoEngine();
+    await activateDevice(bobBundle, bobSessions);
+
+    await activateDevice(Alice, aliceSessions);
+    const second = await window.e2ee.buildFanoutRequest(makeApi(Bob), 100, "after reload");
+
+    await activateDevice(bobBundle, bobSessions);
+    await expect(window.e2ee.decryptEnvelope({
+      ...second.envelopes[0],
+      senderDeviceId: Alice.deviceId,
+    })).resolves.toBe("after reload");
   }, 30000);
 
   it("keeps a one-time pre-key when bootstrap ciphertext authentication fails", async () => {

@@ -87,34 +87,40 @@ public class AuthPhoneController {
     @PostMapping("/refresh")
     public TokenRefreshResponse refresh(
             @RequestBody(required = false) RefreshRequest request,
-            @CookieValue(name = RefreshCookieService.COOKIE_NAME, required = false) String cookieToken,
+            @CookieValue(name = RefreshCookieService.COOKIE_NAME, required = false) String hostCookie,
+            @CookieValue(name = RefreshCookieService.LOCAL_COOKIE_NAME, required = false) String localCookie,
             HttpServletResponse response
     ) {
         String bodyToken = request == null ? null : request.refreshToken();
-        TokenRefreshResponse refreshed = authService.refresh(refreshCookieService.resolve(bodyToken, cookieToken));
+        TokenRefreshResponse refreshed = authService.refresh(
+                refreshCookieService.resolve(bodyToken, hostCookie, localCookie)
+        );
         refreshCookieService.write(response, refreshed.refreshToken());
         return new TokenRefreshResponse(refreshed.token(), null, refreshed.deviceRegistrationToken());
     }
 
     public TokenRefreshResponse refresh(RefreshRequest request) {
-        return refresh(request, null, null);
+        return refresh(request, null, null, null);
     }
 
     @Operation(summary = "Logout and revoke the refresh token")
     @PostMapping("/logout")
     public LogoutResponse logout(
             @RequestBody(required = false) RefreshRequest request,
-            @CookieValue(name = RefreshCookieService.COOKIE_NAME, required = false) String cookieToken,
+            @CookieValue(name = RefreshCookieService.COOKIE_NAME, required = false) String hostCookie,
+            @CookieValue(name = RefreshCookieService.LOCAL_COOKIE_NAME, required = false) String localCookie,
             HttpServletResponse response
     ) {
         String bodyToken = request == null ? null : request.refreshToken();
-        LogoutResponse result = authService.logout(refreshCookieService.resolve(bodyToken, cookieToken));
+        LogoutResponse result = authService.logout(
+                refreshCookieService.resolve(bodyToken, hostCookie, localCookie)
+        );
         refreshCookieService.clear(response);
         return result;
     }
 
     public LogoutResponse logout(RefreshRequest request) {
-        return logout(request, null, null);
+        return logout(request, null, null, null);
     }
 
     private VerifyCodeResponse withoutRefreshToken(VerifyCodeResponse auth) {
