@@ -7,7 +7,28 @@ import { findWordStartMatches } from "../helpers";
 /**
  * Single message bubble — text, images, voice, files, reactions, expiry countdown.
  */
-export function MsgRow({ msg, isOut, isGroupEnd, text, time, reactions, myReactions, shouldHighlightMessage, searchQuery, activeChat, onContextMenu, onReact, isFileAttachment, attachment }) {
+export function MsgRow({
+  msg,
+  isOut,
+  isGroupEnd,
+  cluster = "standalone",
+  isEnter = false,
+  text,
+  time,
+  reactions,
+  myReactions,
+  shouldHighlightMessage,
+  searchQuery,
+  activeChat,
+  senderName,
+  senderAvatarUrl,
+  senderColorIdx,
+  showSenderName = false,
+  onContextMenu,
+  onReact,
+  isFileAttachment,
+  attachment,
+}) {
   const [expiring, setExpiring] = useState(false);
   const [hidden, setHidden] = useState(false);
   const [countdown, setCountdown] = useState("");
@@ -40,9 +61,16 @@ export function MsgRow({ msg, isOut, isGroupEnd, text, time, reactions, myReacti
     a.click();
   };
 
+  const avaName = senderName || activeChat?.name;
+  const avaColor = senderColorIdx ?? activeChat?.colorIdx;
+  const avaUrl = senderAvatarUrl || activeChat?.avatarUrl;
+  const senderTone = Number.isFinite(Number(avaColor)) ? Number(avaColor) % 7 : 0;
+
   return (
-    <div data-mid={String(msg.id ?? msg.messageId ?? "")} className={`msg-wrap${isOut ? " out" : ""}${shouldHighlightMessage ? " search-hit-active" : ""}${expiring ? " msg-expiring" : ""}`} onContextMenu={e => onContextMenu(e, { ...msg, _text: text, _out: isOut })}>
-      {!isOut && (isGroupEnd ? <Ava name={activeChat?.name} colorIdx={activeChat?.colorIdx} size="sm" avatarUrl={activeChat?.avatarUrl} /> : <div className="msg-ava-spacer" />)}
+    <div data-mid={String(msg.id ?? msg.messageId ?? "")} className={`msg-wrap${isOut ? " out" : ""}${shouldHighlightMessage ? " search-hit-active" : ""}${expiring ? " msg-expiring" : ""}${cluster ? ` cluster-${cluster}` : ""}${isEnter ? " msg-wrap--enter" : ""}`} onContextMenu={e => onContextMenu(e, { ...msg, _text: text, _out: isOut })}>
+      {!isOut && (isGroupEnd ? <Ava name={avaName} colorIdx={avaColor} size="sm" avatarUrl={avaUrl} /> : <div className="msg-ava-spacer" />)}
+      <div className="msg-col">
+        {showSenderName && avaName ? <span className={`msg-sender c${senderTone}`}>{avaName}</span> : null}
       <div className={`bubble ${isOut ? "out" : "in"}${isGroupEnd ? (isOut ? " tl-out" : " tl-in") : ""}`} onClick={e => e.stopPropagation()}>
         {msg._replyTo && <div className="reply-quote"><div className="reply-q-name">Ответить</div><div className="reply-q-text">{msg._replyTo._text}</div></div>}
         {msg._img && <img className="msg-img" src={msg._img} alt="" />}
@@ -52,6 +80,7 @@ export function MsgRow({ msg, isOut, isGroupEnd, text, time, reactions, myReacti
         {msg.expiresAt && countdown && <div className="msg-ttl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="13" r="8" /><path d="M12 9v4l2 2" /><path d="M10 2h4" /></svg><span>{countdown}</span></div>}
         <div className="msg-meta">{!!msg.editedAt && <span className="edited-mark">edited</span>}<span>{time}</span>{isOut && <span className={`check${msg.status === "READ" ? " read" : ""}`}>{msg.status === "READ" ? <DoubleCheckIcon /> : <CheckIcon />}</span>}</div>
         {Object.keys(reactions).length > 0 && <div className="message-reactions">{Object.entries(reactions).map(([emoji, count]) => <button key={emoji} type="button" className={`reaction-chip${myReactions.includes(emoji) ? " mine" : ""}`} onClick={e => { e.stopPropagation(); onReact?.({ ...msg, _text: text, _out: isOut }, emoji); }}><span>{emoji}</span><span>{count}</span></button>)}</div>}
+      </div>
       </div>
     </div>
   );

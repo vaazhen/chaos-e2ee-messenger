@@ -1,4 +1,14 @@
 import "@testing-library/jest-dom";
+import "../styles/tokens.css";
+import "../styles/reset.css";
+import "../styles/motion.css";
+import "../styles/primitives.css";
+import "../styles/screens/auth.css";
+import "../styles/screens/shell.css";
+import "../styles/screens/chat.css";
+import "../styles/screens/profile.css";
+import "../styles/screens/settings.css";
+import "../styles/responsive.css";
 import { webcrypto } from "node:crypto";
 import { TextEncoder, TextDecoder } from "node:util";
 import { vi } from "vitest";

@@ -80,7 +80,7 @@ describe("critical UI components", () => {
       <ChatList
         me={{ id: 1, username: "alice", firstName: "Alice" }}
         chats={chats}
-        activeId={100}
+        activeId={200}
         search=""
         filter="all"
         onSelectChat={onSelectChat}
@@ -471,7 +471,7 @@ describe("critical UI components", () => {
     const { rerender } = render(<App />);
 
     await user.click(screen.getByTitle("Profile"));
-    await user.click(screen.getByText("Search messages"));
+    await user.click(screen.getByRole("button", { name: "Search messages" }));
     const searchInput = screen.getByPlaceholderText("Search messages");
     await user.type(searchInput, "hello");
     expect(searchInput).toHaveValue("hello");
@@ -483,7 +483,7 @@ describe("critical UI components", () => {
     expect(screen.queryByPlaceholderText("Search messages")).toBeNull();
 
     await user.click(screen.getByTitle("Profile"));
-    await user.click(screen.getByText("Search messages"));
+    await user.click(screen.getByRole("button", { name: "Search messages" }));
     expect(screen.getByPlaceholderText("Search messages")).toHaveValue("");
   });
 
@@ -577,31 +577,32 @@ describe("critical UI components", () => {
     await mockAndRender("MEMBER");
     expect(screen.queryByTitle("Администрирование группы")).toBeNull();
     fireEvent.click(screen.getByTitle("Профиль"));
-    expect(screen.queryByRole("dialog", { name: "Управление группой" })).toBeNull();
-    expect(screen.queryByText("Политики группы (только владелец)")).toBeNull();
+    expect(screen.getByRole("dialog", { name: "Управление группой" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Политики" })).toBeNull();
     expect(screen.queryByText("Удалить группу")).toBeNull();
     cleanup();
 
     await mockAndRender("MODERATOR");
-    fireEvent.click(screen.getByTitle("Администрирование группы"));
+    fireEvent.click(screen.getByTitle("Профиль"));
     expect(screen.getByRole("dialog", { name: "Управление группой" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Участники" }));
     expect(
       screen.getByText(/ПКМ или кнопка «⋯»|действия только для участников с ролью MEMBER/i)
     ).toBeInTheDocument();
-    expect(screen.queryByText("Политики группы (только владелец)")).toBeNull();
-    expect(screen.queryByText("Профиль группы")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Политики" })).toBeNull();
+    expect(screen.queryByText("Удалить группу")).toBeNull();
     cleanup();
 
     await mockAndRender("ADMIN");
-    fireEvent.click(screen.getByTitle("Администрирование группы"));
-    expect(screen.getByText("Профиль группы")).toBeInTheDocument();
-    expect(screen.queryByText("Политики группы (только владелец)")).toBeNull();
+    fireEvent.click(screen.getByTitle("Профиль"));
+    expect(screen.getByRole("button", { name: "Профиль группы" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Политики" })).toBeNull();
     expect(screen.queryByText("Удалить группу")).toBeNull();
     cleanup();
 
     await mockAndRender("OWNER");
-    fireEvent.click(screen.getByTitle("Администрирование группы"));
-    expect(screen.getByText("Политики группы (только владелец)")).toBeInTheDocument();
+    fireEvent.click(screen.getByTitle("Профиль"));
+    expect(screen.getByRole("button", { name: "Политики" })).toBeInTheDocument();
     expect(screen.getByText("Удалить группу")).toBeInTheDocument();
   });
 
@@ -678,7 +679,8 @@ describe("critical UI components", () => {
     const { default: App } = await import("../App");
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getAllByTitle("Администрирование группы")[0]);
+    await user.click(screen.getByTitle("Профиль"));
+    await user.click(screen.getByRole("button", { name: "Участники" }));
 
     const bobRow = screen.getByText("Bob").closest(".group-participant-row");
     expect(bobRow).toBeTruthy();

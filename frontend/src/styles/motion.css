@@ -1,0 +1,179 @@
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes pop {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes bounce {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-4px); }
+}
+
+@keyframes msgFadeOut {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(6px); }
+}
+
+@keyframes sheetUp {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes overlayIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes overlayOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes menuFromOrigin {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes bubbleEnter {
+  from { opacity: 0; transform: translateY(10px) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes reactionPop {
+  0% { transform: scale(0.7); opacity: 0; }
+  70% { transform: scale(1.08); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes typingDot {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-3px); opacity: 1; }
+}
+
+@keyframes pulseVoice {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+
+@keyframes mutePop {
+  0% { transform: scale(0.9); }
+  60% { transform: scale(1.06); }
+  100% { transform: scale(1); }
+}
+
+@keyframes psSlideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes emojiPickerOut {
+  to { opacity: 0; transform: translateY(8px); }
+}
+
+@keyframes ctxMenuOut {
+  to { opacity: 0; transform: scale(0.96); }
+}
+
+.modal-bg,
+.safety-modal-overlay,
+.ps-submodal-bg,
+.sheet-bg {
+  animation: overlayIn var(--normal) var(--ease-out);
+}
+
+.modal-bg.closing,
+.ps-submodal-bg.closing {
+  animation: overlayOut var(--fast) var(--ease-out) forwards;
+}
+
+.modal,
+.safety-modal,
+.ps-submodal,
+.user-profile-screen {
+  animation: sheetUp var(--normal) var(--ease-spring);
+}
+
+.ctx-menu {
+  transform-origin: var(--menu-origin, top left);
+  animation: menuFromOrigin var(--fast) var(--ease-out);
+}
+
+.msg-wrap--enter .bubble {
+  animation: bubbleEnter 450ms var(--ease-spring);
+}
+
+.reaction-chip {
+  animation: reactionPop 220ms var(--ease-spring);
+}
+
+.typing .td {
+  animation: typingDot 900ms ease-in-out infinite;
+}
+
+.typing .td:nth-child(2) { animation-delay: 120ms; }
+.typing .td:nth-child(3) { animation-delay: 240ms; }
+
+.send-btn {
+  transition: background var(--fast) var(--ease-out), color var(--fast) var(--ease-out), transform 100ms var(--ease-out), width var(--normal) var(--ease-spring);
+}
+
+.send-btn:active {
+  transform: scale(0.98);
+}
+
+.icon-btn,
+.inp-icon-btn,
+.btn-pri,
+.btn-sec,
+.btn-primary,
+.primary-action,
+.secondary-action {
+  transition: background var(--fast) var(--ease-out), color var(--fast) var(--ease-out), opacity var(--fast) var(--ease-out), transform 100ms var(--ease-out);
+}
+
+.icon-btn:active,
+.inp-icon-btn:active,
+.btn-pri:active,
+.btn-sec:active,
+.btn-primary:active,
+.primary-action:active,
+.secondary-action:active {
+  transform: scale(0.98);
+}
+
+.conversation-item {
+  transition: background var(--fast) var(--ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .spinner {
+    animation: spin 0.7s linear infinite !important;
+  }
+}

@@ -397,6 +397,42 @@ describe("MessageList — extended scenarios", () => {
     expect(readCheck.querySelectorAll("path").length).toBe(2);
   });
 
+  it("shows sender name and avatar for group members, clustered by person", async () => {
+    const ML = (await import("../components/MessageList")).default;
+    const chat = {
+      type: "group",
+      name: "Team",
+      colorIdx: 1,
+      groupParticipants: [
+        { userId: 2, firstName: "Bob", username: "bob", avatarUrl: "" },
+        { userId: 3, firstName: "Carol", username: "carol", avatarUrl: "" },
+      ],
+    };
+    render(
+      <ML
+        msgs={[
+          { id: 1, senderId: 2, _out: false, _text: "from bob 1", createdAt: "2026-01-01T00:00:00Z", reactions: {}, myReactions: [] },
+          { id: 2, senderId: 2, _out: false, _text: "from bob 2", createdAt: "2026-01-01T00:00:01Z", reactions: {}, myReactions: [] },
+          { id: 3, senderId: 3, _out: false, _text: "from carol", createdAt: "2026-01-01T00:00:02Z", reactions: {}, myReactions: [] },
+        ]}
+        me={{ id: 1, username: "alice" }}
+        activeChat={chat}
+        loadingMsgs={false}
+        onContextMenu={vi.fn()}
+        onReact={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("Bob")).toBeInTheDocument();
+    expect(screen.getByText("Carol")).toBeInTheDocument();
+    expect(screen.queryByText("Team")).toBeNull();
+    expect(document.querySelectorAll(".msg-sender").length).toBe(2);
+    const wraps = document.querySelectorAll(".msg-wrap:not(.out)");
+    expect(wraps[0].querySelector(".av-wrap")).toBeNull();
+    expect(wraps[1].querySelector(".av-wrap")).toBeTruthy();
+    expect(wraps[2].querySelector(".av-wrap")).toBeTruthy();
+  });
+
   it("renders reactions on message bubbles", async () => {
     const ML = (await import("../components/MessageList")).default;
     const onReact = vi.fn();
@@ -472,5 +508,80 @@ describe("MessageList — extended scenarios", () => {
     const mark = document.querySelector(".edited-mark");
     expect(mark).toBeInTheDocument();
     expect(mark.textContent).toBe("edited");
+  });
+
+  it("opens a chat at the latest messages and restores a mid-thread position after leaving", async () => {
+    const ML = (await import("../components/MessageList")).default;
+    const me = { id: 1, username: "alice" };
+    const makeMsgs = (prefix) => Array.from({ length: 8 }, (_, i) => ({
+      id: `${prefix}-${i + 1}`,
+      senderId: 1,
+      _out: true,
+      _text: `${prefix} ${i + 1}`,
+      createdAt: `2026-01-01T00:00:0${i}Z`,
+      reactions: {},
+      myReactions: [],
+    }));
+
+    const scrollHeight = 4000;
+    const clientHeight = 500;
+    const proto = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight");
+    const protoClient = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+      configurable: true,
+      get() { return this.classList?.contains("msgs") ? scrollHeight : 0; },
+    });
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+      configurable: true,
+      get() { return this.classList?.contains("msgs") ? clientHeight : 0; },
+    });
+
+    try {
+      const { rerender } = render(
+        <ML
+          msgs={makeMsgs("a")}
+          me={me}
+          activeChat={{ id: "chat-a", name: "A" }}
+          loadingMsgs={false}
+          onContextMenu={vi.fn()}
+          onReact={vi.fn()}
+        />
+      );
+
+      const list = document.querySelector(".msgs");
+      expect(list.scrollTop).toBe(scrollHeight);
+
+      list.scrollTop = 240;
+      fireEvent.scroll(list);
+
+      rerender(
+        <ML
+          msgs={makeMsgs("b")}
+          me={me}
+          activeChat={{ id: "chat-b", name: "B" }}
+          loadingMsgs={false}
+          onContextMenu={vi.fn()}
+          onReact={vi.fn()}
+        />
+      );
+      expect(document.querySelector(".msgs").scrollTop).toBe(scrollHeight);
+
+      rerender(
+        <ML
+          msgs={makeMsgs("a")}
+          me={me}
+          activeChat={{ id: "chat-a", name: "A" }}
+          loadingMsgs={false}
+          onContextMenu={vi.fn()}
+          onReact={vi.fn()}
+        />
+      );
+      expect(document.querySelector(".msgs").scrollTop).toBe(240);
+    } finally {
+      if (proto) Object.defineProperty(HTMLElement.prototype, "scrollHeight", proto);
+      else delete HTMLElement.prototype.scrollHeight;
+      if (protoClient) Object.defineProperty(HTMLElement.prototype, "clientHeight", protoClient);
+      else delete HTMLElement.prototype.clientHeight;
+    }
   });
 });

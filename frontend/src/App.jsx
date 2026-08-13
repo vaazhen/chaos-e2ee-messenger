@@ -1,5 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useState, useRef, useCallback } from "react";
-import { CSS } from "./styles";
+import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 
 import { useAuth }     from "./hooks/useAuth";
 import { useChats }    from "./hooks/useChats";
@@ -7,43 +6,29 @@ import { useMessages } from "./hooks/useMessages";
 import { useI18n }     from "./hooks/useI18n";
 import useWebSocket    from "./hooks/useWebSocket";
 import useNowTicker    from "./hooks/useNowTicker";
+import useTheme from "./hooks/useTheme";
+import useSidebarResize from "./hooks/useSidebarResize";
 import { getActiveGroupMuteUntilMs, formatMuteCountdown } from "./groupMute";
 
 import AuthScreen   from "./components/AuthScreen";
 import SetupProfile from "./components/SetupProfile";
 import ChatList     from "./components/ChatList";
-import MessageList  from "./components/MessageList";
-import MessageInput from "./components/MessageInput";
 import ProfileModal from "./components/ProfileModal";
 import NewChatModal from "./components/NewChatModal";
-import Ava          from "./components/Ava";
-import UserProfileModal from "./components/UserProfileModal";
-import GroupAdminModal from "./components/GroupAdminModal";
 import SafetyNumberModal from "./components/SafetyNumberModal";
 import EditMessageModal from "./components/EditMessageModal";
 import DeleteMessageModal from "./components/DeleteMessageModal";
 import ContextMenu from "./components/ContextMenu";
-import ChatInfoPanel from "./components/ChatInfoPanel";
-import ChatSearchBar from "./components/ChatSearchBar";
 import SettingsPage from "./components/SettingsPage";
-import BottomNav from "./components/BottomNav";
+import ChatView from "./components/ChatView";
 import { api } from "./api";
 import { computeSafetyNumber, formatSafetyNumber } from "./safety-number";
-import { ShieldIcon, BackIcon } from "./components/Icons";
 
 import { getTime, messageMatchesQuery } from "./helpers";
 import { clearPreviewCacheForUser } from "./previewCache";
 import { useUiTranslator } from "./i18n/useUiTranslator";
 import { displayNameForChat } from "./contactAliases";
 import { getChatUiPrefs, toggleArchived, toggleMuted } from "./chatUiPrefs";
-import { canOpenGroupAdmin } from "./utils/groupRbac";
-
-const THEME_STORAGE_KEY = "cm_theme";
-const SIDEBAR_WIDTH_KEY = "cm_sidebar_width";
-const SIDEBAR_LEGACY_COLLAPSED_KEY = "cm_sidebar_collapsed";
-const SIDEBAR_MIN = 68;
-const SIDEBAR_MAX = 520;
-const SIDEBAR_DEFAULT = 400;
 
 /** Backend publishes these on `/topic/users/.../chats` when group metadata or participants change. */
 const GROUP_CHAT_LIST_WS_REASONS = new Set([
@@ -58,10 +43,6 @@ const GROUP_CHAT_LIST_WS_REASONS = new Set([
   "group_participant_unbanned",
   "group_archived",
 ]);
-
-/** Гистерезис: меньше дёрганья у границы «широкий / только аватарки». */
-const SIDEBAR_COMPACT_ENTER = 112;
-const SIDEBAR_COMPACT_EXIT = 128;
 
 async function registerPushSubscription() {
   try {
@@ -89,34 +70,7 @@ function urlBase64ToUint8Array(base64String) {
   return arr;
 }
 
-function clampSidebarWidth(n) {
-  return Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, Math.round(Number(n))));
-}
-
-function readInitialSidebarWidth() {
-  try {
-    const raw = localStorage.getItem(SIDEBAR_WIDTH_KEY);
-    if (raw != null) {
-      const n = Number(raw);
-      if (Number.isFinite(n)) return clampSidebarWidth(n);
-    }
-    if (localStorage.getItem(SIDEBAR_LEGACY_COLLAPSED_KEY) === "1") {
-      return 76;
-    }
-  } catch {
-    /* ignore */
-  }
-  return SIDEBAR_DEFAULT;
-}
-
 export default function ChaosMessenger() {
-  useEffect(() => {
-    const s = document.createElement("style");
-    s.textContent = CSS;
-    document.head.appendChild(s);
-    return () => s.remove();
-  }, []);
-
   const auth      = useAuth();
   const { lang, t, loadTranslations, switchLang } = useI18n();
   useUiTranslator(lang);
@@ -154,7 +108,6 @@ export default function ChaosMessenger() {
   const [matchIndex, setMatchIndex] = useState(0);
   const [scrollToMessageId, setScrollToMessageId] = useState(null);
   const [groupAdminOpen, setGroupAdminOpen] = useState(false);
-  const [chatInfoOpen,   setChatInfoOpen]   = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [aliasTick, setAliasTick] = useState(0);
   const [chatPrefsTick, setChatPrefsTick] = useState(0);
@@ -168,9 +121,7 @@ export default function ChaosMessenger() {
   const ctxMenuRef = useRef(null);
   const chatSearchRef = useRef(null);
   const chatSearchBtnRef = useRef(null);
-  const chatInfoRef = useRef(null);
-  const chatInfoBtnRef = useRef(null);
-  const groupAdminBtnRef = useRef(null);
+  const atBottomRef = useRef(true);
 const [deleteTarget, setDeleteTarget] = useState(null);
 const [editTarget, setEditTarget] = useState(null);
 const [editText, setEditText] = useState("");
@@ -183,147 +134,17 @@ const [safetyModal, setSafetyModal] = useState({ open: false, devices: [], selec
     setChatSearchOpen(false);
   }, []);
 
-  const [theme, setTheme] = useState(() => {
-    if (typeof window === "undefined") return "dark";
-    return localStorage.getItem(THEME_STORAGE_KEY) || "dark";
-  });
-
-  const [sidebarWidth, setSidebarWidth] = useState(() =>
-    typeof window !== "undefined" ? readInitialSidebarWidth() : SIDEBAR_DEFAULT
-  );
-  const [sidebarCompact, setSidebarCompact] = useState(() => {
-    if (typeof window === "undefined") return false;
-    const desktop = window.matchMedia("(min-width: 861px)").matches;
-    return desktop && readInitialSidebarWidth() <= SIDEBAR_COMPACT_ENTER;
-  });
-  const [sidebarDragging, setSidebarDragging] = useState(false);
-  const sidebarWidthRef = useRef(sidebarWidth);
-  const sidebarDesktopRef = useRef(true);
-  const dragSidebarRef = useRef({
-    active: false,
-    startX: 0,
-    startW: SIDEBAR_DEFAULT,
-    pointerId: null,
-  });
-  const pendingSidebarWidthRef = useRef(null);
-  const rafSidebarRef = useRef(null);
-
-  const [sidebarDesktop, setSidebarDesktop] = useState(() =>
-    typeof window !== "undefined" ? window.matchMedia("(min-width: 861px)").matches : true
-  );
-
-  useEffect(() => {
-    sidebarWidthRef.current = sidebarWidth;
-  }, [sidebarWidth]);
-
-  useEffect(() => {
-    sidebarDesktopRef.current = sidebarDesktop;
-  }, [sidebarDesktop]);
-
-  useEffect(() => {
-    const mq = window.matchMedia("(min-width: 861px)");
-    const onMq = () => setSidebarDesktop(mq.matches);
-    mq.addEventListener("change", onMq);
-    onMq();
-    return () => mq.removeEventListener("change", onMq);
-  }, []);
-
-  useLayoutEffect(() => {
-    if (!sidebarDesktop) {
-      setSidebarCompact(prev => (prev ? false : prev));
-      return;
-    }
-    setSidebarCompact(prev => {
-      if (prev) {
-        return sidebarWidth > SIDEBAR_COMPACT_EXIT ? false : true;
-      }
-      return sidebarWidth <= SIDEBAR_COMPACT_ENTER ? true : false;
-    });
-  }, [sidebarWidth, sidebarDesktop]);
-
-  const applyPendingSidebarWidth = useCallback(() => {
-    const v = pendingSidebarWidthRef.current;
-    if (v == null) return;
-    pendingSidebarWidthRef.current = null;
-    setSidebarWidth(v);
-    sidebarWidthRef.current = v;
-  }, []);
-
-  const onSidebarResizePointerDown = useCallback((e) => {
-    if (!sidebarDesktopRef.current) return;
-    if (e.pointerType === "mouse" && e.button !== 0) return;
-    e.preventDefault();
-    dragSidebarRef.current = {
-      active: true,
-      startX: e.clientX,
-      startW: sidebarWidthRef.current,
-      pointerId: e.pointerId,
-    };
-    setSidebarDragging(true);
-    try {
-      e.currentTarget.setPointerCapture(e.pointerId);
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
-  const onSidebarResizePointerMove = useCallback((e) => {
-    if (!dragSidebarRef.current.active) return;
-    e.preventDefault();
-    const { startX, startW } = dragSidebarRef.current;
-    const next = clampSidebarWidth(startW + (e.clientX - startX));
-    pendingSidebarWidthRef.current = next;
-    if (rafSidebarRef.current != null) return;
-    rafSidebarRef.current = requestAnimationFrame(() => {
-      rafSidebarRef.current = null;
-      applyPendingSidebarWidth();
-    });
-  }, [applyPendingSidebarWidth]);
-
-  const flushSidebarResizePending = useCallback(() => {
-    if (rafSidebarRef.current != null) {
-      cancelAnimationFrame(rafSidebarRef.current);
-      rafSidebarRef.current = null;
-    }
-    if (pendingSidebarWidthRef.current != null) {
-      const v = pendingSidebarWidthRef.current;
-      pendingSidebarWidthRef.current = null;
-      setSidebarWidth(v);
-      sidebarWidthRef.current = v;
-    }
-  }, []);
-
-  const endSidebarResizeDrag = useCallback((releaseTarget, pointerId) => {
-    if (!dragSidebarRef.current.active) return;
-    dragSidebarRef.current.active = false;
-    dragSidebarRef.current.pointerId = null;
-    setSidebarDragging(false);
-    flushSidebarResizePending();
-    try {
-      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidthRef.current));
-      localStorage.removeItem(SIDEBAR_LEGACY_COLLAPSED_KEY);
-    } catch {
-      /* ignore */
-    }
-    if (releaseTarget?.releasePointerCapture && pointerId != null) {
-      try {
-        releaseTarget.releasePointerCapture(pointerId);
-      } catch {
-        /* ignore */
-      }
-    }
-  }, [flushSidebarResizePending]);
-
-  const onSidebarResizePointerUp = useCallback((e) => {
-    const pid = dragSidebarRef.current.pointerId;
-    endSidebarResizeDrag(e.currentTarget, pid);
-  }, [endSidebarResizeDrag]);
-
-  const onSidebarResizeLostCapture = useCallback((e) => {
-    if (!dragSidebarRef.current.active) return;
-    if (e.pointerId !== dragSidebarRef.current.pointerId) return;
-    endSidebarResizeDrag(null, null);
-  }, [endSidebarResizeDrag]);
+  const { theme, toggleTheme } = useTheme();
+  const {
+    sidebarWidth,
+    sidebarCompact,
+    sidebarDragging,
+    sidebarDesktop,
+    onSidebarResizePointerDown,
+    onSidebarResizePointerMove,
+    onSidebarResizePointerUp,
+    onSidebarResizeLostCapture,
+  } = useSidebarResize();
 
   const activeChat = chatStore.chats.find(c => c.id === chatStore.activeId);
   const activeMsgs = msgStore.msgs[chatStore.activeId] || [];
@@ -442,11 +263,6 @@ const [safetyModal, setSafetyModal] = useState({ open: false, devices: [], selec
     loadChats(uid);
   }, [myMutedUntilIso, myGroupMuteUntilMs, auth.me?.id, loadChats]);
 
-  const showGroupAdminBtn = useMemo(() => {
-    if (!activeChat || activeChat.type !== "group") return false;
-    return canOpenGroupAdmin(activeChat.myRole);
-  }, [activeChat]);
-
   const isPendingRequestChat = useMemo(() => {
     if (!activeChat || activeChat.type !== "direct") return false;
     return String(activeChat.directStatus || "").toUpperCase() === "PENDING";
@@ -526,10 +342,6 @@ const [safetyModal, setSafetyModal] = useState({ open: false, devices: [], selec
   }, [chatStore.activeId]);
 
   useEffect(() => {
-    if (!showGroupAdminBtn && groupAdminOpen) setGroupAdminOpen(false);
-  }, [showGroupAdminBtn, groupAdminOpen]);
-
-  useEffect(() => {
     if (!groupAdminOpen) return;
     const onKey = (e) => {
       if (e.key === "Escape") setGroupAdminOpen(false);
@@ -564,14 +376,6 @@ const [safetyModal, setSafetyModal] = useState({ open: false, devices: [], selec
       if (chatSearchOpen && !insideSearch) {
         resetMessageSearch();
       }
-
-      const insideInfo =
-        isInside(groupAdminBtnRef, target);
-
-      if (chatInfoOpen && !insideInfo) {
-        if (target.closest(".modal-bg > .modal")) return;
-        setChatInfoOpen(false);
-      }
     };
 
     document.addEventListener("mousedown", closeExternalPopovers, true);
@@ -581,13 +385,7 @@ const [safetyModal, setSafetyModal] = useState({ open: false, devices: [], selec
       document.removeEventListener("mousedown", closeExternalPopovers, true);
       document.removeEventListener("touchstart", closeExternalPopovers, true);
     };
-  }, [ctx, chatSearchOpen, chatInfoOpen, resetMessageSearch]);
-
-  useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
-    document.body.setAttribute("data-theme", theme);
-    localStorage.setItem(THEME_STORAGE_KEY, theme);
-  }, [theme]);
+  }, [ctx, chatSearchOpen, resetMessageSearch]);
 
   useEffect(() => {
     localStorage.setItem("cm_chat_bgs", JSON.stringify(chatBgs));
@@ -604,10 +402,23 @@ const [safetyModal, setSafetyModal] = useState({ open: false, devices: [], selec
   }, []); // eslint-disable-line
 
   useEffect(() => {
+    atBottomRef.current = false;
+  }, [chatStore.activeId]);
+
+  useEffect(() => {
     if (chatStore.activeId) {
       msgStore.loadMessages(chatStore.activeId);
     }
   }, [chatStore.activeId]); // eslint-disable-line
+
+  const markActiveChatRead = useCallback((chatId) => {
+    const id = chatId ?? chatStore.activeId;
+    if (!id) return;
+    atBottomRef.current = true;
+    chatStore.resetUnread(id);
+    api.markRead(id).catch(() => {});
+    api.markDelivered(id).catch(() => {});
+  }, [chatStore]);
 
   const ws = useWebSocket({
     me:       auth.me,
@@ -620,12 +431,16 @@ const [safetyModal, setSafetyModal] = useState({ open: false, devices: [], selec
       if (result) {
         chatStore.revealChat(chatId);
         const isActive = Number(chatId) === Number(chatStore.activeId);
+        const atBottom = isActive && atBottomRef.current;
         if (result.type !== "MESSAGE_EDITED" && result.type !== "MESSAGE_REACTION") {
-          chatStore.updateChatPreview(chatId, result.text, result.isOut, event.createdAt, !result.isOut && !isActive);
+          chatStore.updateChatPreview(chatId, result.text, result.isOut, event.createdAt, !result.isOut && !atBottom);
         }
         if (!result.isOut && isActive) {
-          api.markRead(chatId).catch(() => {});
           api.markDelivered(chatId).catch(() => {});
+          if (atBottom) {
+            api.markRead(chatId).catch(() => {});
+            chatStore.resetUnread(chatId);
+          }
         }
       }
       if (requestChatIds.has(String(chatId))) {
@@ -860,7 +675,6 @@ const [safetyModal, setSafetyModal] = useState({ open: false, devices: [], selec
     setCtx(null);
     resetMessageSearch();
     setChatSearchOpen(false);
-    setChatInfoOpen(false);
     setGroupAdminOpen(false);
   };
 
@@ -912,10 +726,15 @@ const [safetyModal, setSafetyModal] = useState({ open: false, devices: [], selec
         <SettingsPage
           me={auth.me}
           theme={theme}
+          lang={lang}
           l={l}
-          onToggleTheme={() => setTheme(prev => prev === "dark" ? "light" : "dark")}
+          onToggleTheme={toggleTheme}
+          onSwitchLang={() => switchLang(lang === "ru" ? "en" : "ru")}
           onLogout={logout}
           onEditProfile={() => setShowSettings(true)}
+          onOpenChat={onChatCreated}
+          onNavChange={setActiveTab}
+          unreadTotal={aliasedChats.filter(c => c.unread > 0).length}
         />
       ) : (
       <div
@@ -997,199 +816,58 @@ const [safetyModal, setSafetyModal] = useState({ open: false, devices: [], selec
           l={l}
         />
 
-        <section className={`chat-view chat-bg-${chatBg}`}>
-          {!activeChat ? (
-            <div className="product-empty">
-              <div className="product-empty-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                </svg>
-              </div>
-              <div className="product-empty-title">{l("Нет сообщений", "No messages")}</div>
-              <div className="product-empty-sub">
-                {l("Создайте новую переписку.", "Start a new conversation.")}
-              </div>
-            </div>
-          ) : (
-            <>
-              <div className="product-chat-head">
-                <button className="round-action desktop-hidden" onClick={goBackToList} title={l("Назад", "Back")}><BackIcon /></button>
-
-                <button
-                  type="button"
-                  className="chat-head-name-pill"
-                  onClick={() => {
-                    if (activeChat.type === "direct") setProfileOpen(true);
-                    else setChatInfoOpen(true);
-                    setChatSearchOpen(false);
-                  }}
-                  title={l("Профиль", "Profile")}
-                >
-                  <b>{activeChatName || activeChat.name}</b>
-                  <small className={`${activeChat.online ? "" : "off"}`}>
-                    {activeChat.type === "group"
-                      ? `${activeChat.members} ${t.participants || "members"}`
-                      : activeChat.online ? (t.online || "online") : (t.offline || "last seen recently")}
-                  </small>
-                </button>
-
-                <div className="chat-head-right">
-                  {showGroupAdminBtn && (
-                    <button
-                      ref={groupAdminBtnRef}
-                      type="button"
-                      className={`chat-head-mini-btn${groupAdminOpen ? " active" : ""}`}
-                      title={l("Администрирование группы", "Group administration")}
-                      aria-label={l("Администрирование группы", "Group administration")}
-                      onClick={() => {
-                        setGroupAdminOpen(true);
-                        setChatInfoOpen(false);
-                        setChatSearchOpen(false);
-                      }}
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 3 19 6v6c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3z" />
-                      </svg>
-                    </button>
-                  )}
-                  {activeChat.type === "direct" && (
-                    <button
-                      type="button"
-                      className="chat-head-mini-btn"
-                      title={l("Проверить шифрование", "Verify encryption")}
-                      aria-label={l("Проверить шифрование", "Verify encryption")}
-                      onClick={() => {
-                        void openSafetyNumber();
-                        setProfileOpen(false);
-                        setChatSearchOpen(false);
-                      }}
-                    >
-                      <ShieldIcon />
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className="chat-head-avatar"
-                    onClick={() => {
-                      if (activeChat.type === "direct") setProfileOpen(true);
-                      else setChatInfoOpen(true);
-                      setChatSearchOpen(false);
-                    }}
-                    title={l("Фото профиля", "Profile photo")}
-                    aria-label={l("Фото профиля", "Profile photo")}
-                  >
-                    <Ava name={activeChatName || activeChat.name} colorIdx={activeChat.colorIdx} size="md" avatarUrl={activeChat.avatarUrl} />
-                  </button>
-                </div>
-              </div>
-
-              {chatSearchOpen && (
-                <ChatSearchBar
-                  chatSearchRef={chatSearchRef}
-                  messageSearch={messageSearch}
-                  setMessageSearch={setMessageSearch}
-                  matchIds={matchIds}
-                  matchIndex={matchIndex}
-                  goToMatch={goToMatch}
-                  resetMessageSearch={resetMessageSearch}
-                  l={l}
-                />
-              )}
-
-              {chatInfoOpen && activeChat?.type === "group" && (
-                <ChatInfoPanel
-                  chat={activeChat}
-                  chatBg={chatBg}
-                  onChangeBg={(val) => setChatBgs(prev => ({...prev, [String(activeChat.id)]: val}))}
-                  onClose={() => setChatInfoOpen(false)}
-                />
-              )}
-
-              {groupAdminOpen && showGroupAdminBtn && activeChat?.type === "group" && (
-                <GroupAdminModal
-                  me={auth.me}
-                  chat={activeChat}
-                  l={l}
-                  onRefreshGroup={async (chatId) => {
-                    await chatStore.loadChats(auth.me?.id);
-                    chatStore.setActiveId(chatId);
-                  }}
-                  onClose={() => setGroupAdminOpen(false)}
-                />
-              )}
-
-              {profileOpen && activeChat?.type === "direct" && (
-                <UserProfileModal
-                  me={auth.me}
-                  l={l}
-                  chat={{ ...activeChat, name: activeChatName || activeChat.name }}
-                  onClose={() => setProfileOpen(false)}
-                  onOpenSearch={() => { setProfileOpen(false); setChatSearchOpen(true); }}
-                  chatBg={chatBg}
-                  onChangeBg={(val) => setChatBgs(prev => ({...prev, [String(chatStore.activeId)]: val}))}
-                  muted={chatMuted}
-                  onToggleMute={() => toggleMuted(auth.me?.id, chatStore.activeId)}
-                />
-              )}
-
-              <MessageList
-                msgs={activeMsgs}
-                me={auth.me}
-                activeChat={activeChat}
-                loadingMsgs={msgStore.loadingMsgs}
-                onContextMenu={openCtx}
-                onReact={reactToMsg}
-                searchQuery={messageSearch}
-                typingUsername={typingUsers[chatStore.activeId] || null}
-                activeMatchId={activeMatchId}
-                scrollToMessageId={scrollToMessageId}
-              />
-
-              {isRequesterInPendingChat && requesterFirstMsgSent && (
-                <div className="request-wait-banner">
-                  {l(
-                    "Подождите, пока пользователь примет ваш запрос.",
-                    "Please wait until the user accepts your request."
-                  )}
-                </div>
-              )}
-
-              <MessageInput
-                onSend={sendMsg}
-                replyTo={replyTo}
-                onОтменаОтветить={() => setReplyTo(null)}
-                onTyping={() => ws.sendTyping(chatStore.activeId)}
-                disabled={
-                  (isPendingRequestChat && !isRequesterInPendingChat) ||
-                  (isRequesterInPendingChat && requesterFirstMsgSent) ||
-                  Boolean(myGroupMuteUntilMs)
-                }
-                pendingFirstMessageOnly={isRequesterInPendingChat && !requesterFirstMsgSent}
-                muteInlineNotice={
-                  myGroupMuteUntilMs
-                    ? l(
-                        `Вы в муте в этой группе. Осталось: ${myGroupMuteCountdown || "…"}`,
-                        `You are muted in this group. Time left: ${myGroupMuteCountdown || "…"}`
-                      )
-                    : null
-                }
-                messagePlaceholder={t.message_placeholder}
-                replyPreviewTitle={l("Ответить", "Reply")}
-              />
-            </>
-          )}
-        </section>
+        <ChatView
+          chatBg={chatBg}
+          activeChat={activeChat}
+          activeChatName={activeChatName}
+          l={l}
+          t={t}
+          goBackToList={goBackToList}
+          setProfileOpen={setProfileOpen}
+          setChatSearchOpen={setChatSearchOpen}
+          groupAdminOpen={groupAdminOpen}
+          setGroupAdminOpen={setGroupAdminOpen}
+          openSafetyNumber={openSafetyNumber}
+          chatSearchOpen={chatSearchOpen}
+          chatSearchRef={chatSearchRef}
+          messageSearch={messageSearch}
+          setMessageSearch={setMessageSearch}
+          matchIds={matchIds}
+          matchIndex={matchIndex}
+          goToMatch={goToMatch}
+          resetMessageSearch={resetMessageSearch}
+          setChatBgs={setChatBgs}
+          me={auth.me}
+          chatStore={chatStore}
+          profileOpen={profileOpen}
+          chatMuted={chatMuted}
+          toggleMuted={(userId, chatId) => {
+            toggleMuted(userId, chatId);
+            setChatPrefsTick(v => v + 1);
+          }}
+          onAliasChange={() => setAliasTick(v => v + 1)}
+          activeMsgs={activeMsgs}
+          loadingMsgs={msgStore.loadingMsgs}
+          openCtx={openCtx}
+          reactToMsg={reactToMsg}
+          typingUsername={typingUsers[chatStore.activeId] || null}
+          activeMatchId={activeMatchId}
+          scrollToMessageId={scrollToMessageId}
+          unreadCount={Number(activeChat?.unread || 0)}
+          onPinChange={(pinned) => { atBottomRef.current = pinned; }}
+          onReachedBottom={() => markActiveChatRead(chatStore.activeId)}
+          isRequesterInPendingChat={isRequesterInPendingChat}
+          requesterFirstMsgSent={requesterFirstMsgSent}
+          sendMsg={sendMsg}
+          replyTo={replyTo}
+          setReplyTo={setReplyTo}
+          sendTyping={() => ws.sendTyping(chatStore.activeId)}
+          isPendingRequestChat={isPendingRequestChat}
+          myGroupMuteUntilMs={myGroupMuteUntilMs}
+          myGroupMuteCountdown={myGroupMuteCountdown}
+          messagePlaceholder={t.message_placeholder}
+        />
       </div>
-      )}
-      {!(activeTab === "chats" && activeChat) && (
-      <BottomNav
-        me={auth.me}
-        myName={[auth.me?.firstName, auth.me?.lastName].filter(Boolean).join(" ") || auth.me?.username || l("Я", "Me")}
-        activeTab={activeTab}
-        onNavChange={setActiveTab}
-        unreadTotal={aliasedChats.filter(c => c.unread > 0).length}
-        l={l}
-      />
       )}
 
       <ContextMenu
@@ -1225,13 +903,8 @@ const [safetyModal, setSafetyModal] = useState({ open: false, devices: [], selec
         <ProfileModal
           me={auth.me}
           lang={lang}
-          theme={theme}
           onClose={() => setShowSettings(false)}
           onSaved={(u) => { auth.setMe(u); setShowSettings(false); chatStore.loadChats(u?.id || auth.me?.id); }}
-          onToggleTheme={() => setTheme(prev => prev === "dark" ? "light" : "dark")}
-          onSwitchLang={() => switchLang(lang === "ru" ? "en" : "ru")}
-          onLogout={logout}
-          onOpenChat={onChatCreated}
         />
       )}
 

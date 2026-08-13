@@ -1,30 +1,29 @@
+import Modal from "./ui/Modal";
+import Button from "./ui/Button";
+
 export default function DeleteMessageModal({ deleteTarget, setDeleteTarget, confirmDelete, l }) {
   if (!deleteTarget) return null;
 
   return (
-    <div className="modal-bg" onClick={() => setDeleteTarget(null)}>
-      <div className="modal small-modal glass-card" onClick={e => e.stopPropagation()}>
-        <div className="modal-title">
-          {l("Удалить сообщение", "Delete message")}
-          <button className="modal-close" onClick={() => setDeleteTarget(null)}>×</button>
-        </div>
-        <div className="confirm-text">
+    <Modal open onClose={() => setDeleteTarget(null)} title={l("Удалить сообщение", "Delete message")} size="sm">
+      <div className="modal-body">
+        <p className="modal-copy">
           {l("Выберите способ удаления.", "Choose how to delete this message.")}
-        </div>
-        <div className="delete-actions">
-          <button className="btn-sec" onClick={() => confirmDelete("me")}>
-            {l("Удалить у меня", "Delete for me")}
-          </button>
-          {deleteTarget._out && !deleteTarget._temp && (
-            <button className="btn-pri danger-pri" onClick={() => confirmDelete("everyone")}>
-              {l("Удалить у всех", "Delete for everyone")}
-            </button>
-          )}
-          <button className="btn-sec" onClick={() => setDeleteTarget(null)}>
-            {l("Отмена", "Cancel")}
-          </button>
-        </div>
+        </p>
       </div>
-    </div>
+      <div className="modal-actions modal-actions--stack">
+        <Button variant="secondary" onClick={() => confirmDelete("me")}>
+          {l("Удалить у меня", "Delete for me")}
+        </Button>
+        {deleteTarget._out && !deleteTarget._temp && (
+          <Button danger onClick={() => confirmDelete("everyone")}>
+            {l("Удалить у всех", "Delete for everyone")}
+          </Button>
+        )}
+        <Button variant="secondary" onClick={() => setDeleteTarget(null)}>
+          {l("Отмена", "Cancel")}
+        </Button>
+      </div>
+    </Modal>
   );
 }

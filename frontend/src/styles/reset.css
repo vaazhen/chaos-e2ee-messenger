@@ -1,0 +1,96 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--bg0);
+  font-family: var(--font);
+  color: var(--text);
+  font-weight: 400;
+  letter-spacing: -0.011em;
+  transition: background var(--normal) var(--ease-out), color var(--normal) var(--ease-out);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, .sidebar-title, .settings-title, .auth-title, .modal-title {
+  letter-spacing: var(--title-tracking);
+  font-weight: 600;
+}
+
+.brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--ink);
+  color: var(--ink-fg);
+  font-family: var(--font);
+  font-weight: 600;
+  letter-spacing: -0.08em;
+  border-radius: 22%;
+  line-height: 1;
+}
+
+.brand-kicker {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: var(--kicker-tracking);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.scroll {
+  overflow-y: auto;
+}
+
+.scroll::-webkit-scrollbar {
+  width: 4px;
+}
+
+.scroll::-webkit-scrollbar-thumb {
+  background: var(--bg4);
+  border-radius: 999px;
+}
+
+.trim {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--bdr);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-soft);
+}

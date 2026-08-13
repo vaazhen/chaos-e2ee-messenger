@@ -39,7 +39,6 @@
     "sockjs-client": "^1.6.1"
   },
   "devDependencies": {
-    "@fontsource/sora": "^5.0.8",
     "@playwright/test": "^1.59.1",
     "@testing-library/jest-dom": "^6.4.0",
     "@testing-library/react": "^15.0.0",
