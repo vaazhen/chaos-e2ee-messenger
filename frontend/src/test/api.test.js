@@ -150,4 +150,26 @@ describe("api", () => {
     expect(response.available).toBe(true);
     expect(fetch.mock.calls[0][0]).toContain("/auth/username-available?username=alice");
   });
+
+  it("coalesces concurrent refreshToken calls into one request", async () => {
+    const { api, setToken } = await import("../api");
+    let resolveRefresh;
+    fetch.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveRefresh = () => resolve({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        json: () => Promise.resolve({ token: "jwt-from-refresh" }),
+      });
+    }));
+
+    const first = api.refreshToken();
+    const second = api.refreshToken();
+    resolveRefresh();
+
+    await expect(first).resolves.toEqual({ token: "jwt-from-refresh" });
+    await expect(second).resolves.toEqual({ token: "jwt-from-refresh" });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    setToken("");
+  });
 });
