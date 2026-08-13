@@ -1,9 +1,9 @@
 import { ChevronRightIcon } from "../Icons";
 
-function RowContent({ icon, title, subtitle, disabled, children }) {
+function RowContent({ icon, title, subtitle, disabled, children, danger }) {
   return (
     <>
-      {icon && <span className="settings-row-icon">{icon}</span>}
+      {icon && <span className={`settings-row-icon${danger ? " is-danger" : ""}`}>{icon}</span>}
       <span className="settings-row-main">
         <span className="settings-row-title">{title}</span>
         {subtitle && <span className="settings-row-subtitle">{subtitle}</span>}
@@ -34,7 +34,7 @@ export function SettingsRow({ icon, title, subtitle, danger, disabled, onClick, 
           }
         } : undefined}
       >
-        <RowContent icon={icon} title={title} subtitle={subtitle} disabled={disabled}>
+        <RowContent icon={icon} title={title} subtitle={subtitle} disabled={disabled} danger={danger}>
           {children}
         </RowContent>
       </div>
@@ -48,7 +48,7 @@ export function SettingsRow({ icon, title, subtitle, danger, disabled, onClick, 
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
     >
-      <RowContent icon={icon} title={title} subtitle={subtitle} disabled={disabled} />
+      <RowContent icon={icon} title={title} subtitle={subtitle} disabled={disabled} danger={danger} />
     </button>
   );
 }

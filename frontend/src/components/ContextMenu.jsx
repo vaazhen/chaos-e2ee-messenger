@@ -8,7 +8,7 @@ export default function ContextMenu({ ctx, ctxClosing: _ctxClosing, ctxMenuRef, 
   };
 
   return (
-    <div ref={ctxMenuRef} className="ctx-menu product-menu" style={{ left: ctx.x, top: ctx.y }} onClick={e => e.stopPropagation()}>
+    <div ref={ctxMenuRef} className="ctx-menu product-menu" style={{ left: ctx.x, top: ctx.y, ["--menu-origin"]: "top left" }} onClick={e => e.stopPropagation()}>
       <div className="ctx-reactions">
         {["👍","❤️","😂","😮","😢","🔥"].map(em => (
           <button key={em} className="ctx-react" type="button" onClick={() => handleReact(em)}>{em}</button>

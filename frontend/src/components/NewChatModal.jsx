@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import DirectTab from "./DirectTab";
 import GroupTab, { UserSearchResults } from "./GroupTab";
 import RequestsTab from "./RequestsTab";
-import useSwipeDown from "../hooks/useSwipeDown";
+import Modal from "./ui/Modal";
+import Button from "./ui/Button";
+import { SearchIcon } from "./Icons";
 
 export default function NewChatModal({
   me,
@@ -27,8 +29,6 @@ export default function NewChatModal({
   const [hint, setHint] = useState("");
   const [selectReqMode, setSelectReqMode] = useState(false);
   const [selectedReqIds, setSelectedReqIds] = useState([]);
-  const modalRef = useRef(null);
-  useSwipeDown(modalRef, onClose);
 
   const requestItems = useMemo(() => {
     const q = String(query || "").trim().toLowerCase();
@@ -135,23 +135,7 @@ export default function NewChatModal({
   };
 
   return (
-    <div className="modal-bg new-chat-bg" onClick={onClose}>
-      <div ref={modalRef} className="modal new-chat-modal" onClick={e => e.stopPropagation()}>
-        <div className="modal-title">
-          <b>{l("Новый чат", "New chat")}</b>
-          <button className="modal-close" onClick={onClose}>×</button>
-        </div>
-
-        <div className="new-chat-search">
-          <span>⌕</span>
-          <input
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            placeholder={l("Поиск по username", "Search by username")}
-            autoFocus
-          />
-        </div>
-
+    <Modal open onClose={onClose} title={l("Новый чат", "New chat")} overlayClassName="new-chat-bg" className="new-chat-modal">
         <div className="new-chat-tabs">
           <button type="button" className={mode === "direct" ? "active" : ""} onClick={() => setMode("direct")}>
             {l("Личные", "Direct")}
@@ -162,6 +146,20 @@ export default function NewChatModal({
           <button type="button" className={mode === "requests" ? "active" : ""} onClick={() => setMode("requests")}>
             {l("Запросы", "Requests")}
           </button>
+        </div>
+
+        <div className="new-chat-search">
+          <span className="new-chat-search-icon"><SearchIcon /></span>
+          <input
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder={
+              mode === "requests"
+                ? l("Поиск запросов", "Search requests")
+                : l("Поиск по username", "Search by username")
+            }
+            autoFocus
+          />
         </div>
 
         {hint && <div className="err-bar new-chat-error">{hint}</div>}
@@ -195,15 +193,14 @@ export default function NewChatModal({
 
         {mode === "group" && (
           <div className="new-chat-bottom">
-            <button type="button" className="btn-sec" onClick={onClose}>
+            <Button variant="secondary" onClick={onClose}>
               {l("Отмена", "Cancel")}
-            </button>
-            <button type="button" className="btn-pri" onClick={createGroup} disabled={loading || !groupName.trim() || selected.length === 0}>
+            </Button>
+            <Button onClick={createGroup} disabled={loading || !groupName.trim() || selected.length === 0}>
               {loading ? l("Создаём...", "Creating...") : l(`Создать (${selected.length})`, `Create (${selected.length})`)}
-            </button>
+            </Button>
           </div>
         )}
-      </div>
-    </div>
+    </Modal>
   );
 }

@@ -43,6 +43,10 @@ function buildChat(overrides = {}) {
   };
 }
 
+function openMembers() {
+  fireEvent.click(screen.getByRole("button", { name: "Members" }));
+}
+
 describe("GroupAdminPanel", () => {
   beforeEach(() => {
     vi.useRealTimers();
@@ -54,10 +58,31 @@ describe("GroupAdminPanel", () => {
     vi.useRealTimers();
   });
 
+  it("keeps policies and profile off the first screen", async () => {
+    const { default: GroupAdminPanel } = await import("../components/GroupAdminPanel");
+    render(<GroupAdminPanel me={{ id: 99 }} chat={buildChat()} l={l} onRefreshGroup={vi.fn()} />);
+
+    expect(screen.getByRole("button", { name: "Members" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Permissions" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Chat background" })).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Who can send messages/i)).toBeNull();
+    expect(screen.queryByLabelText(/^Name$/i)).toBeNull();
+    expect(screen.queryByText("Waves")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Permissions" }));
+    expect(screen.getByLabelText(/Who can send messages/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.queryByLabelText(/Who can send messages/i)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Chat background" }));
+    expect(screen.getByText("Waves")).toBeInTheDocument();
+  });
+
   it("debounces participant search and filters the list", async () => {
     vi.useFakeTimers();
     const { default: GroupAdminPanel } = await import("../components/GroupAdminPanel");
     render(<GroupAdminPanel me={{ id: 99 }} chat={buildChat()} l={l} onRefreshGroup={vi.fn()} />);
+    openMembers();
 
     const input = screen.getByPlaceholderText(/Name, @username/i);
     fireEvent.change(input, { target: { value: "bob" } });
@@ -78,6 +103,7 @@ describe("GroupAdminPanel", () => {
     window.prompt = vi.fn(() => null);
 
     render(<GroupAdminPanel me={{ id: 99 }} chat={buildChat()} l={l} onRefreshGroup={vi.fn()} />);
+    openMembers();
 
     const menus = screen.getAllByRole("button", { name: /Participant actions/i });
     fireEvent.click(menus[0]);
@@ -100,6 +126,7 @@ describe("GroupAdminPanel", () => {
       role: "MEMBER",
     }));
     render(<GroupAdminPanel me={{ id: 99 }} chat={buildChat({ groupParticipants: many })} l={l} onRefreshGroup={vi.fn()} />);
+    openMembers();
 
     expect(screen.queryByRole("navigation", { name: /Participant list pages/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Next$/i })).not.toBeInTheDocument();
@@ -112,6 +139,7 @@ describe("GroupAdminPanel", () => {
   it("filters participants by role", async () => {
     const { default: GroupAdminPanel } = await import("../components/GroupAdminPanel");
     render(<GroupAdminPanel me={{ id: 99 }} chat={buildChat()} l={l} onRefreshGroup={vi.fn()} />);
+    openMembers();
 
     expect(screen.getByText("Alice")).toBeInTheDocument();
     const roleSelect = document.getElementById("ga-participant-role-filter");
@@ -128,6 +156,7 @@ describe("GroupAdminPanel", () => {
       { userId: 2, firstName: "Bob", username: "bob", role: "MEMBER", mutedUntil: "2099-01-01T00:00:00.000Z" },
     ];
     render(<GroupAdminPanel me={{ id: 99 }} chat={buildChat({ groupParticipants: participants })} l={l} onRefreshGroup={vi.fn()} />);
+    openMembers();
 
     fireEvent.click(screen.getByRole("checkbox", { name: /Muted only/i }));
 

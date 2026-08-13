@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import useSwipeDown from "../hooks/useSwipeDown";
+import Modal from "./ui/Modal";
 
 export default function BackupModal({ lang, theme, onClose, noWrapper }) {
   const modalRef = useRef(null);
@@ -15,10 +16,12 @@ export default function BackupModal({ lang, theme, onClose, noWrapper }) {
   const [info, setInfo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [tab, setTab] = useState("export");
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [passphrase, setPassphrase] = useState("");
-  const [showPassphraseInput, setShowPassphraseInput] = useState(false);
+  const [passphrase2, setPassphrase2] = useState("");
+  const [importPass, setImportPass] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -34,7 +37,7 @@ export default function BackupModal({ lang, theme, onClose, noWrapper }) {
   }, []);
 
   const handleExport = async () => {
-    if (!passphrase.trim()) return;
+    if (passphrase.trim().length < 8 || passphrase !== passphrase2) return;
     setExporting(true);
     setError("");
     try {
@@ -46,8 +49,8 @@ export default function BackupModal({ lang, theme, onClose, noWrapper }) {
       a.download = `chaos-backup-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
-      setShowPassphraseInput(false);
       setPassphrase("");
+      setPassphrase2("");
     } catch (e) {
       setError(e?.message || l("Ошибка экспорта", "Export failed"));
     } finally {
@@ -69,107 +72,120 @@ export default function BackupModal({ lang, theme, onClose, noWrapper }) {
       setError(e?.message || l("Ошибка импорта", "Import failed"));
     } finally {
       setImporting(false);
+      e.target.value = "";
     }
   };
 
   const content = loading ? (
-    <div className="backup-loading">{l("Загрузка...", "Loading...")}</div>
+    <div className="new-chat-loading"><div className="spinner" /></div>
   ) : (
     <>
-      <div className="backup-info-card">
-        <div className="backup-info-row">
-          <span className="backup-info-label">{l("Статус", "Status")}</span>
-          <span className="backup-info-value">
+      <div className="settings-sheet-list">
+        <div className="settings-sheet-row is-static">
+          <span className="settings-sheet-row-text">{l("Статус", "Status")}</span>
+          <small>
             {info?.hasBackup
-              ? l("Резервная копия есть", "Backup exists")
-              : l("Резервная копия отсутствует", "No backup")}
-          </span>
+              ? l("Копия есть", "Backup exists")
+              : l("Копии нет", "No backup")}
+          </small>
         </div>
         {info?.hasBackup && (
           <>
-            <div className="backup-info-row">
-              <span className="backup-info-label">{l("Версия", "Version")}</span>
-              <span className="backup-info-value">{info.version}</span>
+            <div className="settings-sheet-row is-static">
+              <span className="settings-sheet-row-text">{l("Версия", "Version")}</span>
+              <small>{info.version ?? info.latestVersion ?? "—"}</small>
             </div>
-            <div className="backup-info-row">
-              <span className="backup-info-label">{l("Создана", "Created")}</span>
-              <span className="backup-info-value">
-                {info.createdAt ? new Date(info.createdAt).toLocaleString() : "—"}
-              </span>
+            <div className="settings-sheet-row is-static">
+              <span className="settings-sheet-row-text">{l("Создана", "Created")}</span>
+              <small>{info.createdAt ? new Date(info.createdAt).toLocaleString() : "—"}</small>
             </div>
           </>
         )}
       </div>
 
-      {error && <div className="backup-error">{error}</div>}
+      <div className="new-chat-tabs backup-tabs">
+        <button type="button" className={tab === "export" ? "active" : ""} onClick={() => setTab("export")}>
+          {l("Экспорт", "Export")}
+        </button>
+        <button type="button" className={tab === "import" ? "active" : ""} onClick={() => setTab("import")}>
+          {l("Импорт", "Import")}
+        </button>
+      </div>
 
-      <div className="backup-actions">
-        {!showPassphraseInput ? (
-          <button
-            type="button"
-            className="backup-btn backup-btn--pri"
-            onClick={() => setShowPassphraseInput(true)}
-            disabled={exporting}
-          >
-            {l("Экспортировать", "Export backup")}
-          </button>
-        ) : (
-          <div className="backup-passphrase-box">
+      {error && <div className="settings-banner settings-banner--error">{error}</div>}
+
+      {tab === "export" && (
+        <div className="backup-pane">
+          <label className="settings-field">
+            <span>{l("Фраза-пароль", "Passphrase")}</span>
             <input
               type="password"
-              className="backup-input"
+              className="settings-sheet-input"
               value={passphrase}
-              onChange={e => setPassphrase(e.target.value)}
-              placeholder={l("Фраза-пароль", "Passphrase")}
-              autoFocus
-              onKeyDown={e => { if (e.key === "Enter") handleExport(); }}
+              onChange={(e) => setPassphrase(e.target.value)}
+              placeholder={l("Минимум 8 символов", "At least 8 characters")}
             />
-            <div className="backup-passphrase-actions">
-              <button
-                type="button"
-                className="backup-btn backup-btn--pri"
-                onClick={handleExport}
-                disabled={exporting || !passphrase.trim()}
-              >
-                {exporting ? l("Экспорт...", "Exporting...") : l("Подтвердить", "Confirm")}
-              </button>
-              <button
-                type="button"
-                className="backup-btn backup-btn--sec"
-                onClick={() => { setShowPassphraseInput(false); setPassphrase(""); }}
-              >
-                {l("Отмена", "Cancel")}
-              </button>
-            </div>
-          </div>
-        )}
+          </label>
+          <label className="settings-field">
+            <span>{l("Повторите фразу", "Confirm passphrase")}</span>
+            <input
+              type="password"
+              className="settings-sheet-input"
+              value={passphrase2}
+              onChange={(e) => setPassphrase2(e.target.value)}
+              placeholder={l("Ещё раз", "Repeat")}
+              onKeyDown={(e) => { if (e.key === "Enter") handleExport(); }}
+            />
+          </label>
+          <button
+            type="button"
+            className="settings-sheet-save"
+            onClick={handleExport}
+            disabled={exporting || passphrase.trim().length < 8 || passphrase !== passphrase2}
+          >
+            {exporting ? l("Экспорт...", "Exporting...") : l("Скачать копию", "Download backup")}
+          </button>
+          <p className="backup-note">
+            {l(
+              "Фраза не хранится на сервере. Потеряете её — копию не откроете.",
+              "The passphrase is not stored on the server. Lose it, and the backup cannot be opened."
+            )}
+          </p>
+        </div>
+      )}
 
-        <label className={`backup-btn backup-btn--sec${importing ? " disabled" : ""}`} style={{textAlign:"center",cursor:importing?"default":"pointer"}}>
-          {importing ? l("Импорт...", "Importing...") : l("Импортировать", "Import backup")}
-          <input type="file" accept=".json" onChange={handleImport} hidden disabled={importing} />
-        </label>
-
-        <p className="backup-note">
-          {l(
-            "Резервная копия содержит все ваши чаты и настройки. Храните файл в безопасном месте. Для восстановления используйте тот же файл.",
-            "The backup contains all your chats and settings. Store the file in a safe place. Use the same file to restore."
-          )}
-        </p>
-      </div>
+      {tab === "import" && (
+        <div className="backup-pane">
+          <label className="settings-field">
+            <span>{l("Фраза от копии", "Backup passphrase")}</span>
+            <input
+              type="password"
+              className="settings-sheet-input"
+              value={importPass}
+              onChange={(e) => setImportPass(e.target.value)}
+              placeholder={l("Если файл её требует", "If the file requires one")}
+            />
+          </label>
+          <label className={`settings-sheet-save backup-file-btn${importing ? " is-disabled" : ""}`}>
+            {importing ? l("Импорт...", "Importing...") : l("Выбрать JSON-файл", "Choose JSON file")}
+            <input type="file" accept=".json" onChange={handleImport} hidden disabled={importing} />
+          </label>
+          <p className="backup-note">
+            {l(
+              "Импорт восстановит ключи устройства. После этого лучше перезайти.",
+              "Import restores device keys. Re-login afterwards to finish recovery."
+            )}
+          </p>
+        </div>
+      )}
     </>
   );
 
   if (noWrapper) return content;
 
   return (
-    <div className={`modal-bg${closing ? " closing" : ""}`} onClick={handleClose} style={{zIndex:260}}>
-      <div ref={modalRef} className={`modal small-modal${closing ? " closing" : ""}`} onClick={e => e.stopPropagation()}>
-        <div className="modal-title">
-          <b>{l("Резервное копирование", "Backup")}</b>
-          <button type="button" className="modal-close" onClick={handleClose} title={l("Закрыть", "Close")}>×</button>
-        </div>
-        {content}
-      </div>
-    </div>
+    <Modal open={!closing} onClose={handleClose} title={l("Резервное копирование", "Backup")} className="settings-sheet-modal">
+      {content}
+    </Modal>
   );
 }

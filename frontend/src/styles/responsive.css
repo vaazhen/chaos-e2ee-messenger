@@ -1,0 +1,178 @@
+/* RESPONSIVE */
+@media (max-width: 860px){
+  .user-profile-modal-bg{
+    align-items:stretch;
+  }
+  .user-profile-screen{
+    width:min(100%,520px);
+    max-height:none;
+    height:100%;
+    border-radius:0;
+    box-shadow:none;
+  }
+  .app-frame{
+    display:block;
+  }
+  .home-screen,.chat-view{
+    position:absolute;
+    inset:0;
+    border-right:none;
+    transition:transform .22s ease,opacity .22s ease;
+  }
+  .chat-view{
+    transform:translateX(100%);
+    opacity:0;
+    pointer-events:none;
+  }
+  .has-active-chat .home-screen{
+    transform:translateX(-18%);
+    opacity:0;
+    pointer-events:none;
+  }
+  .has-active-chat .chat-view{
+    transform:translateX(0);
+    opacity:1;
+    pointer-events:auto;
+  }
+  .desktop-hidden{display:flex}
+  .bubble{max-width:78%}
+}
+@media (min-width: 861px){
+  .mobile-product-shell{
+    background:linear-gradient(180deg,#f7f7f6,var(--bg0));
+  }
+  .app-frame{
+    max-width:1280px;
+    margin:0 auto;
+  }
+}
+@media (max-width: 520px){
+  .home-topbar,.product-chat-head,.sheet-head{padding-left:20px;padding-right:20px}
+  .home-content{padding-left:14px;padding-right:14px}
+  .floating-searchbar{left:16px;right:16px;grid-template-columns:56px 1fr 56px}
+  .bottom-round{width:56px;height:56px}
+  .bubble{max-width:82%}
+  .field-grid{grid-template-columns:1fr}
+}
+
+/* prevent elastic scroll on mobile */
+html,body{
+  overflow:hidden;
+  height:100%;
+  width:100%;
+  position:fixed;
+}
+
+/* Mobile-first: modals stay centered cards, bottom sheets only for panels */
+@media (max-width: 860px){
+  .modal-bg{
+    align-items:center;
+    padding:20px;
+  }
+  .modal-bg>.modal,
+  .modal-bg>.small-modal{
+    width:min(100%,420px);
+    max-width:100%;
+    border-radius:var(--radius-lg);
+    max-height:90dvh;
+    margin:0;
+    align-self:center;
+    animation:fadeUp .22s ease;
+    padding:20px;
+    background:var(--bg1);
+    border:1px solid var(--bdr);
+    box-shadow:var(--shadow-panel);
+  }
+  [data-theme='dark'] .modal-bg>.modal,[data-theme='dark'] .modal-bg>.small-modal{
+    background:var(--bg1);
+    border:1px solid var(--bdr);
+    box-shadow:var(--shadow-panel);
+  }
+  .user-profile-modal-bg{
+    align-items:stretch;
+    padding:0;
+  }
+  .user-profile-screen{
+    width:100%;
+    max-height:none;
+    height:100dvh;
+    border-radius:0;
+    box-shadow:none;
+  }
+  .group-admin-modal-screen{
+    height:100dvh;
+  }
+  .safety-modal-overlay{
+    align-items:center;
+    padding:20px;
+  }
+  .safety-modal{
+    width:min(100%,420px);
+    max-width:100%;
+    border-radius:28px;
+    max-height:90dvh;
+    align-self:center;
+    animation:fadeUp .22s ease;
+    background:rgba(255,255,255,.88);
+    backdrop-filter:none;
+    border:1px solid rgba(255,255,255,.95);
+    box-shadow:
+      0 22px 70px rgba(0,0,0,.13),
+      0 0 0 0.5px rgba(0,0,0,.04);
+  }
+  [data-theme='dark'] .safety-modal{
+    background:rgba(30,36,50,.88);
+    border:1px solid rgba(255,255,255,.06);
+    box-shadow:
+      0 22px 70px rgba(0,0,0,.35),
+      0 0 0 0.5px rgba(0,0,0,.12);
+  }
+  .chat-tools-panel{
+    position:fixed;
+    bottom:0;left:0;right:0;
+    top:auto;
+    width:100%;
+    border-radius:28px 28px 0 0;
+    max-height:88dvh;
+    background:rgba(255,255,255,.88);
+    border:1px solid rgba(255,255,255,.95);
+    backdrop-filter:none;
+    -webkit-backdrop-filter:none;
+    animation:sheetUp .28s cubic-bezier(.22,.68,0,1);
+    box-shadow:0 -12px 60px rgba(0,0,0,.13), 0 0 0 0.5px rgba(0,0,0,.04);
+    overflow-y:auto;
+    z-index:260;
+  }
+  [data-theme='dark'] .chat-tools-panel{
+    background:rgba(30,36,50,.88);
+    border:1px solid rgba(255,255,255,.06);
+    box-shadow:0 -12px 60px rgba(0,0,0,.35), 0 0 0 0.5px rgba(0,0,0,.12);
+  }
+  .product-chat-head .chat-tools-panel{
+    top:auto;
+  }
+  .chat-tools-panel::before{
+    content:'';
+    display:block;
+    width:36px;
+    height:4px;
+    border-radius:999px;
+    background:var(--bg3);
+    margin:-4px auto 12px;
+    flex-shrink:0;
+  }
+}
+
+/* Desktop modals: centered cards */
+@media (min-width: 861px){
+  .modal-bg>.modal{
+    animation:fadeUp .18s ease;
+  }
+}
+
+/* bottom sheet animation */
+@keyframes sheetUp{
+  from{transform:translateY(100%);opacity:0}
+  to{transform:translateY(0);opacity:1}
+}
+

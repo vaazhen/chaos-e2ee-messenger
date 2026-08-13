@@ -1,5 +1,6 @@
-import { useRef, useState } from "react";
-import useSwipeDown from "../hooks/useSwipeDown";
+import { useState } from "react";
+import Modal from "./ui/Modal";
+import Button from "./ui/Button";
 
 const TRUST_COPY = {
   VERIFIED: {
@@ -20,10 +21,8 @@ const TRUST_COPY = {
 };
 
 export default function SafetyNumberModal({ safetyModal, onClose, onSelectDevice, onVerify, l }) {
-  const modalRef = useRef(null);
   const [verifying, setVerifying] = useState(false);
   const [verifyError, setVerifyError] = useState("");
-  useSwipeDown(modalRef, onClose);
 
   if (!safetyModal.open) return null;
 
@@ -51,14 +50,7 @@ export default function SafetyNumberModal({ safetyModal, onClose, onSelectDevice
   };
 
   return (
-    <div className="safety-modal-overlay" onClick={onClose}>
-      <div ref={modalRef} className="safety-modal" onClick={e => e.stopPropagation()}>
-        <div className="safety-modal-head">
-          <button className="drawer-back" onClick={onClose} aria-label={l("Назад", "Back")}>‹</button>
-          <b>{l("Проверка шифрования", "Verify encryption")}</b>
-          <div style={{ width: 36 }} />
-        </div>
-
+    <Modal open onClose={onClose} title={l("Проверка шифрования", "Verify encryption")} className="safety-modal">
         {safetyModal.error && !selected ? (
           <div className="safety-modal-body">
             <div className="safety-error-state">
@@ -114,21 +106,20 @@ export default function SafetyNumberModal({ safetyModal, onClose, onSelectDevice
           </div>
         ) : null}
 
-        <div className="safety-modal-actions">
-          <button type="button" className="btn-sec" onClick={handleCopy} disabled={!selected}>
+        <div className="modal-actions">
+          <Button variant="secondary" onClick={handleCopy} disabled={!selected}>
             {l("Копировать", "Copy")}
-          </button>
+          </Button>
           {selected?.trustState !== "VERIFIED" ? (
-            <button type="button" className="btn-pri" onClick={handleVerify} disabled={verifying || !selected}>
+            <Button onClick={handleVerify} disabled={verifying || !selected}>
               {verifying ? l("Сохранение…", "Saving…") : l("Подтвердить", "Verify")}
-            </button>
+            </Button>
           ) : (
-            <button type="button" className="btn-pri" onClick={onClose}>
+            <Button onClick={onClose}>
               {l("Готово", "Done")}
-            </button>
+            </Button>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

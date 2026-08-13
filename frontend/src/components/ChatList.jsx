@@ -94,9 +94,11 @@ export default function ChatList({
           const prefix = chat.lastOut && chat.preview ? l("Вы: ", "You: ") : "";
           const fullPreview = truncateChatPreview(prefix + basePreview);
           const hasUnread = chat.unread > 0;
+          const isActiveChat = Number(activeId) === Number(chat.id) && !selectMode;
+          const showUnread = hasUnread && !selectMode && !isActiveChat;
           return (
             <button key={chat.id} type="button"
-              className={`conversation-item${Number(activeId) === Number(chat.id) && !selectMode ? " active" : ""}${hasUnread ? " unread" : ""}`}
+              className={`conversation-item${isActiveChat ? " active" : ""}${hasUnread ? " unread" : ""}`}
               title={sidebarCompact ? chatDisplayName(chat) : undefined}
               onClick={(e) => { e.stopPropagation(); if (selectMode) toggleSelect(chat.id); else selectChat(chat.id); }}
               onContextMenu={(e) => {
@@ -112,7 +114,7 @@ export default function ChatList({
               )}
               <span className="conversation-ava-wrap">
                 <Ava name={chatDisplayName(chat)} colorIdx={chat.colorIdx} size="md" online={selectMode ? false : chat.online} avatarUrl={chat.avatarUrl} />
-                {hasUnread && !selectMode && <span className="conversation-unread-floating">{chat.unread > 99 ? "99+" : chat.unread}</span>}
+                {showUnread && <span className="conversation-unread-floating">{chat.unread > 99 ? "99+" : chat.unread}</span>}
               </span>
               <div className="conversation-main">
                 <div className="conversation-line">
@@ -128,7 +130,7 @@ export default function ChatList({
               </div>
               <div className="conversation-meta">
                 <span className="conversation-time">{chat.time}</span>
-                {hasUnread && !selectMode && <span className="unread-badge">{chat.unread > 99 ? "99+" : chat.unread}</span>}
+                {showUnread && <span className="unread-badge">{chat.unread > 99 ? "99+" : chat.unread}</span>}
               </div>
             </button>
           );
@@ -153,7 +155,7 @@ export default function ChatList({
             </button>
             <h1 className="sidebar-title sidebar-title--center">{l("Чаты", "Chats")}</h1>
             <div className="sidebar-actions">
-              <button className="sidebar-action-btn" onClick={onNewChat} title={l("Новый чат", "New chat")}><PlusIcon /></button>
+              <button className="sidebar-action-btn sidebar-action-btn--compose" onClick={onNewChat} title={l("Новый чат", "New chat")}><PlusIcon /></button>
             </div>
           </header>
 
@@ -194,8 +196,8 @@ export default function ChatList({
 
       {sidebarCompact && (
         <footer className="floating-searchbar restored floating-searchbar--compact" onClick={e => e.stopPropagation()}>
-          <button className="bottom-round new-chat-action-btn" onClick={onNewChat} title={l("Новый чат", "New chat")}>
-            <span className="new-chat-plus-icon" aria-hidden="true" />
+          <button className="sidebar-action-btn sidebar-action-btn--compose new-chat-action-btn" onClick={onNewChat} title={l("Новый чат", "New chat")}>
+            <PlusIcon />
             {requestsCount > 0 && <span className="badge plus-req-badge">{requestsCount}</span>}
           </button>
         </footer>

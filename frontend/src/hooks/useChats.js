@@ -60,8 +60,12 @@ export function useChats(myId, lang) {
   const selectChat = useCallback((id) => {
     unhideChatId(myId, id);
     setActiveId(id);
-    setChats(prev => prev.map(c => c.id === id ? { ...c, unread: 0 } : c));
   }, [myId]);
+
+  const resetUnread = useCallback((chatId) => {
+    if (chatId == null) return;
+    setChats(prev => prev.map(c => String(c.id) === String(chatId) ? { ...c, unread: 0 } : c));
+  }, []);
 
   const updateChatPreview = useCallback((chatId, preview, isOut = false, createdAt = null, incrementUnread = false) => {
     const activityAt = normalizeChatActivityAt(createdAt);
@@ -119,6 +123,7 @@ export function useChats(myId, lang) {
     loadChats,
     loadRequests,
     selectChat,
+    resetUnread,
     updateChatPreview,
     markChatOnlineStatus,
     deleteChatForMe,

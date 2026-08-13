@@ -60,6 +60,7 @@ export default defineConfig(({ mode }) => ({
         "test-results/**",
         "src/main.jsx",
         "src/styles.js",
+        "src/styles/**",
         "src/types/**",
         "src/test/**",
       ],

@@ -53,9 +53,10 @@ export default function Ava(props) {
   const avatarUrl = pickAvatarUrl(props);
   const name = pickName(props);
 
+  const colorIdx = Number.isFinite(Number(props.colorIdx)) ? Number(props.colorIdx) % 7 : null;
   const className =
     props.className ||
-    `av${props.size ? ` ${props.size}` : ""}`;
+    `av${props.size ? ` ${props.size}` : ""}${colorIdx == null ? "" : ` c${colorIdx}`}`;
 
   if (isSavedPresetAvatar(avatarUrl)) {
     return (

@@ -2,21 +2,13 @@ import { useMemo, useRef, useState, useEffect } from "react";
 import VoiceMessage from "./VoiceMessage";
 import EmojiPicker, { EMOJI_CATEGORIES, loadRecentEmojis, saveRecentEmojis, MAX_RECENT_EMOJIS } from "./EmojiPicker";
 import AttachmentMenu from "./AttachmentMenu";
-import { MicIcon, SendIcon, PauseIcon, PlayIcon, EmojiIcon, AttachIcon, TimerIcon, CloseIcon, ReplyIcon, FileIcon } from "./Icons";
+import VoiceRecorder from "./VoiceRecorder";
+import TtlPicker from "./TtlPicker";
+import { MicIcon, SendIcon, EmojiIcon, AttachIcon, CloseIcon, ReplyIcon, FileIcon } from "./Icons";
 
 const MAX_VOICE_MS = 30_000;
 const MAX_VOICE_BYTES = 110 * 1024;
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
-
-const TTL_OPTIONS = [
-  { label: "Off", value: null },
-  { label: "5s", value: 5 },
-  { label: "30s", value: 30 },
-  { label: "1m", value: 60 },
-  { label: "5m", value: 300 },
-  { label: "1h", value: 3600 },
-  { label: "24h", value: 86400 },
-];
 
 export default function MessageInput({
   onSend,
@@ -628,26 +620,15 @@ return (
           onClick={recording ? e => e.stopPropagation() : focusInput}
         >
           {recording && (
-            <>
-              <button type="button" className="icon-btn recording-inline-cancel" onClick={cancelRecording}><CloseIcon /></button>
-              {recordingLocked ? (
-                <svg className="recording-lock-icon" viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                  <rect x="5" y="11" width="14" height="10" rx="2" />
-                  <path d="M8 11V7a4 4 0 0 1 8 0v4" fill="none" stroke="currentColor" strokeWidth="2" />
-                </svg>
-              ) : (
-                <div className="recording-pulse" />
-              )}
-              <span className="recording-time">{formatDuration(recordingMs)}</span>
-              <div className={`voice-live-wave${recordingPaused ? " paused" : ""}`}>
-                {voiceLevels.map((level, index) => (
-                  <i key={index} style={{ height: `${Math.max(5, Math.round(level * 28))}px` }} />
-                ))}
-              </div>
-              <button type="button" className="recording-pause" onClick={toggleRecordingPause} title={recordingPaused ? "Resume" : "Pause"}>
-                {recordingPaused ? <PlayIcon /> : <PauseIcon />}
-              </button>
-            </>
+            <VoiceRecorder
+              recording={recording}
+              recordingLocked={recordingLocked}
+              recordingPaused={recordingPaused}
+              recordingMs={recordingMs}
+              voiceLevels={voiceLevels}
+              onCancel={cancelRecording}
+              onTogglePause={toggleRecordingPause}
+            />
           )}
 
           {/* Attach button (inside input pill, left side) */}
@@ -700,29 +681,13 @@ return (
 
           {/* Timer button (inside input pill, right side) */}
           {!groupMuteLocksInput && !pendingFirstMessageOnly && !recording && (
-            <div className="inp-btn-wrap" ref={ttlRef}>
-              <button
-                type="button"
-                className={`inp-icon-btn${ttl ? " active" : ""}`}
-                onClick={(e) => { e.stopPropagation(); setShowTtl(v => !v); }}
-                title="Self-destruct timer"
-              >
-                <TimerIcon />
-              </button>
-              {showTtl && (
-                <div className="ttl-popup" onClick={e => e.stopPropagation()}>
-                  {TTL_OPTIONS.map(opt => (
-                    <div
-                      key={opt.label}
-                      className={`ttl-option${ttl === opt.value ? " selected" : ""}`}
-                      onClick={() => { setTtl(opt.value); setShowTtl(false); }}
-                    >
-                      {opt.label}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            <TtlPicker
+              ttl={ttl}
+              showTtl={showTtl}
+              ttlRef={ttlRef}
+              onToggle={() => setShowTtl(v => !v)}
+              onSelect={(value) => { setTtl(value); setShowTtl(false); }}
+            />
           )}
         </div>
 
@@ -749,13 +714,6 @@ return (
 function pickVoiceMimeType() {
   const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
   return candidates.find(type => MediaRecorder.isTypeSupported?.(type)) || "";
-}
-
-function formatDuration(ms) {
-  const total = Math.max(0, Math.round(Number(ms || 0) / 1000));
-  const minutes = Math.floor(total / 60);
-  const seconds = String(total % 60).padStart(2, "0");
-  return `${minutes}:${seconds}`;
 }
 
 function replyPreview(msg) {
