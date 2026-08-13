@@ -12,7 +12,7 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.data.domain.Pageable;
 import ru.messenger.chaosmessenger.TestFixtures;
-import ru.messenger.chaosmessenger.chat.access.ChatAccessService;
+import ru.messenger.chaosmessenger.chat.service.ChatOutboxService;
 import ru.messenger.chaosmessenger.chat.domain.Message;
 import ru.messenger.chaosmessenger.chat.repository.ChatParticipantRepository;
 import ru.messenger.chaosmessenger.chat.repository.ChatRepository;
@@ -50,7 +50,6 @@ import ru.messenger.chaosmessenger.message.service.MessageService;
 import ru.messenger.chaosmessenger.message.service.MessageTimelineService;
 import ru.messenger.chaosmessenger.outbox.OutboxService;
 import ru.messenger.chaosmessenger.push.service.PushNotificationService;
-import ru.messenger.chaosmessenger.realtime.StompEventPublisher;
 import ru.messenger.chaosmessenger.user.domain.User;
 import ru.messenger.chaosmessenger.user.repository.UserRepository;
 import ru.messenger.chaosmessenger.user.service.UserIdentityService;
@@ -83,10 +82,9 @@ class MessageServiceAdvancedTest {
     @Mock UnreadService unreadService;
     @Mock OnlineService onlineService;
     @Mock PushNotificationService pushNotificationService;
-    @Mock StompEventPublisher stompEventPublisher;
     @Mock OutboxService outboxService;
     @Mock UserRepository userRepository;
-    @Mock ChatAccessService chatAccessService;
+    @Mock ChatOutboxService chatOutboxService;
 
     private MessageService messageService;
     private MessageFanoutService messageFanoutService;
@@ -115,8 +113,8 @@ class MessageServiceAdvancedTest {
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         messageFanoutService = new MessageFanoutService(
                 messageEventRepository, messageReactionRepository, participantRepository,
-                userDeviceRepository, stompEventPublisher, objectMapper, meterRegistry,
-                unreadService, onlineService, pushNotificationService, userIdentityService,
+                objectMapper, meterRegistry,
+                unreadService, onlineService, pushNotificationService,
                 userRepository
         );
         messageOutboxService = new MessageOutboxService(participantRepository, userDeviceRepository, outboxService);
@@ -128,7 +126,7 @@ class MessageServiceAdvancedTest {
         MessageSendService messageSendService = new MessageSendService(
                 messageRepository, messageEnvelopeRepository, chatRepository,
                 participantRepository, messageAccessService,
-                messageFanoutService, messageOutboxService, chatAccessService,
+                messageFanoutService, messageOutboxService, chatOutboxService,
                 messageEnvelopeService
         );
         MessageEditService messageEditService = new MessageEditService(
@@ -226,24 +224,36 @@ class MessageServiceAdvancedTest {
                     assertThat(env.getNonce()).isNotBlank();
                 });
 
-        verify(unreadService).increment(bob.getId(), 100L);
-        verify(unreadService, never()).increment(alice.getId(), 100L);
 
         assertThat(response.type()).isEqualTo("MESSAGE_CREATED");
         assertThat(response.messageId()).isEqualTo(500L);
         assertThat(response.envelope()).isNotNull();
         assertThat(response.envelope().targetDeviceId()).isEqualTo("alice-phone");
 
-        verify(stompEventPublisher).publishToDevice(
-                eq("alice-phone"),
-                eq("/chats/100"),
-                isA(DeviceMessageEventResponse.class)
+        ArgumentCaptor<Object> createdPayload = ArgumentCaptor.forClass(Object.class);
+        verify(outboxService).write(
+                eq("message"),
+                eq("100"),
+                eq("MESSAGE_CREATED"),
+                createdPayload.capture(),
+                isNull(),
+                eq("msg:500:MESSAGE_CREATED:1")
         );
-        verify(stompEventPublisher).publishToDevice(
-                eq("bob-phone"),
-                eq("/chats/100"),
-                isA(DeviceMessageEventResponse.class)
+        @SuppressWarnings("unchecked")
+        Map<String, Object> created = (Map<String, Object>) createdPayload.getValue();
+        assertThat(created.get("content")).isNull();
+        assertThat(created).containsKey("envelopes");
+        Map<String, Object> envelopes = (Map<String, Object>) created.get("envelopes");
+        assertThat(envelopes).containsKeys("alice-phone", "bob-phone");
+        verify(outboxService).write(
+                eq("chat"),
+                eq("100"),
+                eq("MESSAGE_CREATED"),
+                any(),
+                isNull(),
+                startsWith("chat:100:MESSAGE_CREATED:")
         );
+        verify(chatOutboxService, never()).requestUpdated(any(), any());
     }
 
     @Test
@@ -444,16 +454,6 @@ class MessageServiceAdvancedTest {
         assertThat(event.getEventType()).isEqualTo("EDIT");
         assertThat(event.getPayloadJson()).contains("\"version\":2");
 
-        verify(stompEventPublisher).publishToDevice(
-                eq("alice-phone"),
-                eq("/chats/100"),
-                isA(DeviceMessageEventResponse.class)
-        );
-        verify(stompEventPublisher).publishToDevice(
-                eq("bob-phone"),
-                eq("/chats/100"),
-                isA(DeviceMessageEventResponse.class)
-        );
     }
 
     @Test
@@ -501,16 +501,6 @@ class MessageServiceAdvancedTest {
         assertThat(eventCaptor.getValue().getEventType()).isEqualTo("DELETE");
         assertThat(eventCaptor.getValue().getPayloadJson()).isEqualTo("{}");
 
-        verify(stompEventPublisher).publishToDevice(
-                eq("alice-phone"),
-                eq("/chats/100"),
-                isA(DeviceMessageEventResponse.class)
-        );
-        verify(stompEventPublisher).publishToDevice(
-                eq("bob-phone"),
-                eq("/chats/100"),
-                isA(DeviceMessageEventResponse.class)
-        );
     }
 
     @Test
@@ -574,11 +564,6 @@ class MessageServiceAdvancedTest {
                 any(LocalDateTime.class)
         );
         verify(messageRepository).recalculateAggregateStatusesForChat(100L, bob.getId());
-        verify(stompEventPublisher).publishToDevice(
-                eq("alice-phone"),
-                eq("/status"),
-                isA(Object.class)
-        );
     }
 
     @Test
@@ -610,11 +595,6 @@ class MessageServiceAdvancedTest {
                 any(LocalDateTime.class)
         );
         verify(messageRepository).recalculateAggregateStatusesForChat(100L, bob.getId());
-        verify(stompEventPublisher).publishToDevice(
-                eq("alice-phone"),
-                eq("/status"),
-                isA(Object.class)
-        );
     }
 
     @Test
@@ -707,16 +687,6 @@ class MessageServiceAdvancedTest {
         assertThat(eventCaptor.getValue().getPayloadJson()).contains("\"emoji\":\"🔥\"");
         assertThat(eventCaptor.getValue().getPayloadJson()).contains("\"active\":false");
 
-        verify(stompEventPublisher).publishToDevice(
-                eq("alice-phone"),
-                eq("/chats/100"),
-                isA(ReactionEvent.class)
-        );
-        verify(stompEventPublisher).publishToDevice(
-                eq("bob-phone"),
-                eq("/chats/100"),
-                isA(ReactionEvent.class)
-        );
     }
 
     @Test

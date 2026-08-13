@@ -6,12 +6,14 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.AuthorityUtils;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import ru.messenger.chaosmessenger.auth.service.RefreshTokenService;
 
 import java.io.IOException;
 
@@ -21,6 +23,7 @@ import java.io.IOException;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
+    private final RefreshTokenService refreshTokenService;
 
     @Override
     protected void doFilterInternal(
@@ -30,9 +33,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     ) throws ServletException, IOException {
 
         String authHeader = request.getHeader("Authorization");
+        String deviceId = request.getHeader("X-Device-Id");
+        if (deviceId != null && !deviceId.isBlank()) {
+            MDC.put("deviceId", deviceId);
+        }
 
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            filterChain.doFilter(request, response);
+            try {
+                filterChain.doFilter(request, response);
+            } finally {
+                MDC.remove("deviceId");
+            }
             return;
         }
 
@@ -42,7 +53,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String username = jwtService.extractUsername(token);
             if (username != null
                     && SecurityContextHolder.getContext().getAuthentication() == null
-                    && jwtService.isTokenValid(token, username)) {
+                    && jwtService.isTokenValid(token, username)
+                    && !isSessionRevoked(token)) {
                 UsernamePasswordAuthenticationToken authenticationToken =
                         new UsernamePasswordAuthenticationToken(
                                 username,
@@ -55,11 +67,30 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 );
 
                 SecurityContextHolder.getContext().setAuthentication(authenticationToken);
+                MDC.put("userId", username);
             }
         } catch (Exception e) {
             log.warn("JWT authentication failed: {}", e.getMessage());
         }
 
-        filterChain.doFilter(request, response);
+        try {
+            filterChain.doFilter(request, response);
+        } finally {
+            MDC.remove("userId");
+            MDC.remove("deviceId");
+        }
+    }
+
+    private boolean isSessionRevoked(String token) {
+        String sessionId = jwtService.extractSessionId(token);
+        if (sessionId == null || sessionId.isBlank()) {
+            return false;
+        }
+        try {
+            return refreshTokenService.isFamilyRevoked(sessionId);
+        } catch (Exception e) {
+            log.warn("Refresh-family lookup failed; denying access token: {}", e.getMessage());
+            return true;
+        }
     }
 }

@@ -28,6 +28,7 @@ import java.util.Optional;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -37,6 +38,7 @@ import static org.mockito.Mockito.when;
 class WebSocketInfraTest {
 
     private JwtService jwtService;
+    private ru.messenger.chaosmessenger.auth.service.RefreshTokenService refreshTokenService;
     private UserDeviceRepository userDeviceRepository;
     private UserRepository userRepository;
     private ChatParticipantRepository participantRepository;
@@ -47,6 +49,7 @@ class WebSocketInfraTest {
     @BeforeEach
     void setUp() {
         jwtService = mock(JwtService.class);
+        refreshTokenService = mock(ru.messenger.chaosmessenger.auth.service.RefreshTokenService.class);
         userDeviceRepository = mock(UserDeviceRepository.class);
         userRepository = mock(UserRepository.class);
         participantRepository = mock(ChatParticipantRepository.class);
@@ -55,6 +58,7 @@ class WebSocketInfraTest {
 
         interceptor = new WebSocketAuthChannelInterceptor(
                 jwtService,
+                refreshTokenService,
                 userDeviceRepository,
                 userRepository,
                 participantRepository,
@@ -108,6 +112,32 @@ class WebSocketInfraTest {
         assertThat(device.getLastSeen()).isNotNull();
 
         verify(userDeviceRepository).save(device);
+    }
+
+    @Test
+    void connectRejectsRevokedRefreshFamily() {
+        Message<byte[]> message = connectMessage("s1", "dev-a");
+
+        when(jwtService.extractUsername("jwt-token")).thenReturn("alice");
+        when(jwtService.isTokenValid("jwt-token", "alice")).thenReturn(true);
+        when(jwtService.extractSessionId("jwt-token")).thenReturn("family-1");
+        when(refreshTokenService.isFamilyRevoked("family-1")).thenReturn(true);
+
+        assertThat(interceptor.preSend(message, channel)).isNull();
+        verify(userDeviceRepository, never()).save(any());
+    }
+
+    @Test
+    void connectRejectsWhenRefreshFamilyLookupFails() {
+        Message<byte[]> message = connectMessage("s1", "dev-a");
+
+        when(jwtService.extractUsername("jwt-token")).thenReturn("alice");
+        when(jwtService.isTokenValid("jwt-token", "alice")).thenReturn(true);
+        when(jwtService.extractSessionId("jwt-token")).thenReturn("family-1");
+        when(refreshTokenService.isFamilyRevoked("family-1")).thenThrow(new RuntimeException("redis down"));
+
+        assertThat(interceptor.preSend(message, channel)).isNull();
+        verify(userDeviceRepository, never()).save(any());
     }
 
     @Test

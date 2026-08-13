@@ -28,32 +28,39 @@ public class RealtimeEventStore {
     @Value("${chaos.realtime.retention:PT168H}")
     private Duration retention;
 
+    public record AppendResult(ObjectNode payload, boolean inserted) {
+    }
+
     @Transactional
-    public ObjectNode append(String deviceId, String eventId, String destination, ObjectNode payload) {
+    public AppendResult append(String deviceId, String eventId, String destination, ObjectNode payload) {
         if (deviceId == null || deviceId.isBlank() || eventId == null || eventId.isBlank()) {
-            return payload;
+            return new AppendResult(payload, false);
         }
         String json = writeJson(payload);
-        Long sequence = jdbcTemplate.queryForObject("""
+        return jdbcTemplate.queryForObject("""
                 WITH inserted AS (
                     INSERT INTO realtime_device_events(device_id, event_id, destination, payload)
                     VALUES (?, ?, ?, CAST(? AS jsonb))
                     ON CONFLICT (device_id, event_id, destination) DO NOTHING
                     RETURNING sequence
                 )
-                SELECT sequence FROM inserted
-                UNION ALL
-                SELECT sequence FROM realtime_device_events
-                 WHERE device_id = ? AND event_id = ? AND destination = ?
-                LIMIT 1
-                """, Long.class, deviceId, eventId, destination, json,
-                deviceId, eventId, destination);
-        ObjectNode result = payload.deepCopy();
-        if (sequence != null) {
-            result.put("sequence", sequence);
-        }
-        result.put("eventId", eventId);
-        return result;
+                SELECT sequence, (SELECT COUNT(*) FROM inserted) > 0 AS inserted
+                  FROM (
+                        SELECT sequence FROM inserted
+                        UNION ALL
+                        SELECT sequence FROM realtime_device_events
+                         WHERE device_id = ? AND event_id = ? AND destination = ?
+                  ) rows
+                 LIMIT 1
+                """, (rs, rowNum) -> {
+            ObjectNode result = payload.deepCopy();
+            long sequence = rs.getLong("sequence");
+            if (!rs.wasNull()) {
+                result.put("sequence", sequence);
+            }
+            result.put("eventId", eventId);
+            return new AppendResult(result, rs.getBoolean("inserted"));
+        }, deviceId, eventId, destination, json, deviceId, eventId, destination);
     }
 
     @Transactional(readOnly = true)

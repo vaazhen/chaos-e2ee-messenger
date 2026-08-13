@@ -72,7 +72,6 @@ services:
       - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       - SPRING_DATA_REDIS_HOST=redis
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
-      - CHAOS_KAFKA_ENABLED=${CHAOS_KAFKA_ENABLED:-true}
       - KAFKA_BOOTSTRAP_SERVERS=redpanda:9092
     depends_on:
       - postgres

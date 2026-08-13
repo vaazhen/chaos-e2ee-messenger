@@ -16,7 +16,6 @@ import ru.messenger.chaosmessenger.chat.dto.UpdateGroupRoleRequest;
 import ru.messenger.chaosmessenger.chat.dto.UpdateGroupSettingsRequest;
 import ru.messenger.chaosmessenger.chat.repository.ChatParticipantRepository;
 import ru.messenger.chaosmessenger.chat.repository.ChatRepository;
-import ru.messenger.chaosmessenger.common.TransactionUtils;
 import ru.messenger.chaosmessenger.common.exception.ChatException;
 import ru.messenger.chaosmessenger.user.domain.User;
 import ru.messenger.chaosmessenger.user.repository.UserRepository;
@@ -87,15 +86,7 @@ public class GroupModerationService {
         participantRepository.saveAll(participantsToSave);
 
         final Long chatId = chat.getId();
-        final List<String> notifyUsers = members.stream()
-                .map(User::getUsername)
-                .filter(Objects::nonNull)
-                .collect(Collectors.toCollection(ArrayList::new));
-        notifyUsers.add(creator.getUsername());
-        final List<String> distinctNotifyUsers = notifyUsers.stream().distinct().toList();
         chatOutboxService.chatListUpdated(chatId, "chat_created");
-        TransactionUtils.afterCommit(() ->
-                distinctNotifyUsers.forEach(u -> chatAccessService.notifyChatListUpdated(u, chatId, "chat_created")));
 
         return chatId;
     }
@@ -141,14 +132,7 @@ public class GroupModerationService {
                 .map(u -> new ChatParticipant(chatId, u.getId(), GroupRole.MEMBER))
                 .toList();
         participantRepository.saveAll(added);
-        List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
         chatOutboxService.chatListUpdated(chatId, "group_participants_invited");
-
-        TransactionUtils.afterCommit(() -> {
-            chatAccessService.notifyChatListUpdated(username, chatId, "group_participants_invited");
-            participantUsernames.forEach(u ->
-                    chatAccessService.notifyChatListUpdated(u, chatId, "group_participants_invited"));
-        });
 
         return chatQueryService.getChatForUser(username, chatId);
     }
@@ -178,13 +162,8 @@ public class GroupModerationService {
             chat.setBio(bio.isBlank() ? null : bio);
         }
         chatRepository.save(chat);
-        List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
 
         chatOutboxService.chatListUpdated(chatId, "group_settings_updated");
-
-        TransactionUtils.afterCommit(() ->
-                participantUsernames.forEach(u ->
-                        chatAccessService.notifyChatListUpdated(u, chatId, "group_settings_updated")));
 
         return chatQueryService.getChatForUser(username, chatId);
     }
@@ -206,13 +185,8 @@ public class GroupModerationService {
         }
         targetParticipant.setGroupRole(targetRole);
         participantRepository.save(targetParticipant);
-        List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
 
         chatOutboxService.chatListUpdated(chatId, "group_role_updated");
-
-        TransactionUtils.afterCommit(() ->
-                participantUsernames.forEach(u ->
-                        chatAccessService.notifyChatListUpdated(u, chatId, "group_role_updated")));
 
         return chatQueryService.getChatForUser(username, chatId);
     }
@@ -236,13 +210,8 @@ public class GroupModerationService {
             chat.setWhoCanInvite(chatAccessService.parsePolicy(request.whoCanInvite(), false).name());
         }
         chatRepository.save(chat);
-        List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
 
         chatOutboxService.chatListUpdated(chatId, "group_permissions_updated");
-
-        TransactionUtils.afterCommit(() ->
-                participantUsernames.forEach(u ->
-                        chatAccessService.notifyChatListUpdated(u, chatId, "group_permissions_updated")));
 
         return chatQueryService.getChatForUser(username, chatId);
     }
@@ -257,13 +226,7 @@ public class GroupModerationService {
         chatAccessService.validateCanModerate(actorParticipant, targetParticipant, actor.getId(), "remove participants");
 
         participantRepository.delete(targetParticipant);
-        List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
         chatOutboxService.chatListUpdated(chatId, "group_participant_removed");
-        TransactionUtils.afterCommit(() -> {
-            chatAccessService.notifyChatListUpdated(username, chatId, "group_participant_removed");
-            participantUsernames.forEach(u ->
-                    chatAccessService.notifyChatListUpdated(u, chatId, "group_participant_removed"));
-        });
     }
 
     @Transactional
@@ -276,13 +239,8 @@ public class GroupModerationService {
         }
         chat.setDeletedAt(LocalDateTime.now());
         chatRepository.save(chat);
-        List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
 
         chatOutboxService.chatListUpdated(chatId, "group_archived");
-
-        TransactionUtils.afterCommit(() ->
-                participantUsernames.forEach(u ->
-                        chatAccessService.notifyChatListUpdated(u, chatId, "group_archived")));
     }
 
     @Transactional
@@ -307,12 +265,7 @@ public class GroupModerationService {
         chat.setDeletedAt(LocalDateTime.now());
         chatRepository.save(chat);
 
-        List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
         chatOutboxService.chatListUpdated(chatId, "chat_deleted_for_everyone");
-
-        TransactionUtils.afterCommit(() ->
-                participantUsernames.forEach(u ->
-                        chatAccessService.notifyChatListUpdated(u, chatId, "chat_deleted_for_everyone")));
     }
 
     @Transactional
@@ -328,13 +281,8 @@ public class GroupModerationService {
 
         targetParticipant.setMutedUntil(LocalDateTime.now().plusMinutes(minutes));
         participantRepository.save(targetParticipant);
-        List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
 
         chatOutboxService.chatListUpdated(chatId, "group_participant_muted");
-
-        TransactionUtils.afterCommit(() ->
-                participantUsernames.forEach(u ->
-                        chatAccessService.notifyChatListUpdated(u, chatId, "group_participant_muted")));
         return chatQueryService.getChatForUser(username, chatId);
     }
 
@@ -348,12 +296,7 @@ public class GroupModerationService {
 
         targetParticipant.setMutedUntil(null);
         participantRepository.save(targetParticipant);
-        List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
         chatOutboxService.chatListUpdated(chatId, "group_participant_unmuted");
-
-        TransactionUtils.afterCommit(() ->
-                participantUsernames.forEach(u ->
-                        chatAccessService.notifyChatListUpdated(u, chatId, "group_participant_unmuted")));
         return chatQueryService.getChatForUser(username, chatId);
     }
 
@@ -370,12 +313,7 @@ public class GroupModerationService {
         targetParticipant.setBanReason(chatAccessService.normalizeReason(reason));
         targetParticipant.setMutedUntil(null);
         participantRepository.save(targetParticipant);
-        List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
         chatOutboxService.chatListUpdated(chatId, "group_participant_banned");
-
-        TransactionUtils.afterCommit(() ->
-                participantUsernames.forEach(u ->
-                        chatAccessService.notifyChatListUpdated(u, chatId, "group_participant_banned")));
         return chatQueryService.getChatForUser(username, chatId);
     }
 
@@ -391,12 +329,7 @@ public class GroupModerationService {
         targetParticipant.setBannedBy(null);
         targetParticipant.setBanReason(null);
         participantRepository.save(targetParticipant);
-        List<String> participantUsernames = participantRepository.findDistinctUsernamesByChatId(chatId);
         chatOutboxService.chatListUpdated(chatId, "group_participant_unbanned");
-
-        TransactionUtils.afterCommit(() ->
-                participantUsernames.forEach(u ->
-                        chatAccessService.notifyChatListUpdated(u, chatId, "group_participant_unbanned")));
         return chatQueryService.getChatForUser(username, chatId);
     }
 }

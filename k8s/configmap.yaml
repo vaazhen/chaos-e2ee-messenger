@@ -12,7 +12,6 @@ data:
   CHAOS_ATTACHMENTS_STORAGE_PATH: "/app/attachments"
   VAPID_PUBLIC_KEY: ""
   # Kafka is expected to be provided by Strimzi/Redpanda/MSK/etc. in production.
-  CHAOS_KAFKA_ENABLED: "true"
   KAFKA_BOOTSTRAP_SERVERS: "chaos-kafka-bootstrap:9092"
   CHAOS_KAFKA_CONSUMER_GROUP: "chaos-workers"
   # Shared across all backend pods. Redis pub/sub fans the event out to the pod that owns the socket.

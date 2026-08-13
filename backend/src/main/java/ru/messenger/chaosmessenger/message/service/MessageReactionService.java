@@ -5,7 +5,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.messenger.chaosmessenger.chat.domain.Message;
-import ru.messenger.chaosmessenger.common.TransactionUtils;
 import ru.messenger.chaosmessenger.common.exception.MessageException;
 import ru.messenger.chaosmessenger.crypto.device.UserDevice;
 import ru.messenger.chaosmessenger.message.access.MessageAccessService;
@@ -90,14 +89,6 @@ public class MessageReactionService {
         messageFanoutService.saveMessageEvent(message, user.getId(), "REACTION", Map.of("emoji", cleanEmoji, "active", active));
         messageOutboxService.messageReaction(message.getChatId(), event);
         messageOutboxService.chatListUpdated(message.getChatId(), "message_reaction");
-
-        TransactionUtils.afterCommit(() -> {
-            try {
-                messageFanoutService.fanoutReactionEvent(message.getChatId(), event);
-            } catch (Exception e) {
-                log.error("afterCommit reaction fanout failed for message {}", messageId, e);
-            }
-        });
 
         return event;
     }
