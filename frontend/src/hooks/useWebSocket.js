@@ -52,6 +52,8 @@ export default function useWebSocket({
   const recoveringRef = useRef(false);
   const liveBufferRef = useRef([]);
   const cursorRef = useRef(0);
+  const applyingIdsRef = useRef(new Set());
+  const applyChainRef = useRef(Promise.resolve());
   const handlersRef = useRef({ onMessage, onChatListUpdate, onRequestsUpdate, onStatusUpdate, onTyping, onConnectionState });
 
   useEffect(() => {
@@ -73,15 +75,24 @@ export default function useWebSocket({
 
   const isDuplicateEvent = (event) => {
     const eventId = event?.eventId;
-    if (!eventId) return false;
+    return Boolean(eventId && seenEventIdsRef.current.has(eventId));
+  };
+
+  const rememberEventId = (event) => {
+    const eventId = event?.eventId;
+    if (!eventId) return;
     const seen = seenEventIdsRef.current;
-    if (seen.has(eventId)) return true;
     seen.add(eventId);
     if (seen.size > 10000) {
       const oldest = seen.values().next().value;
       seen.delete(oldest);
     }
-    return false;
+  };
+
+  const enqueueApply = (task) => {
+    const run = applyChainRef.current.then(task);
+    applyChainRef.current = run.then(() => undefined, () => undefined);
+    return run;
   };
 
   const advanceCursor = (deviceId, event) => {
@@ -91,23 +102,33 @@ export default function useWebSocket({
     writeCursor(deviceId, sequence);
   };
 
-  const dispatchRecoveredEvent = (deviceId, destination, event) => {
-    if (!event || isDuplicateEvent(event)) {
+  const dispatchRecoveredEvent = async (deviceId, destination, event) => {
+    if (!event) return;
+    const eventId = event.eventId;
+    if (eventId && applyingIdsRef.current.has(eventId)) {
+      return;
+    }
+    if (isDuplicateEvent(event)) {
       advanceCursor(deviceId, event);
       return;
     }
-
-    if (/^\/chats\/\d+$/.test(destination || "")) {
-      const chatId = Number(event.chatId || String(destination).split("/").pop());
-      handlersRef.current.onMessage?.(event, chatId);
-    } else if (destination === "/status") {
-      handlersRef.current.onStatusUpdate?.({ type: "delivery", ...event });
-    } else if (destination === "/chats") {
-      handlersRef.current.onChatListUpdate?.(event);
-    } else if (destination === "/requests") {
-      handlersRef.current.onRequestsUpdate?.(event);
+    if (eventId) applyingIdsRef.current.add(eventId);
+    try {
+      if (/^\/chats\/\d+$/.test(destination || "")) {
+        const chatId = Number(event.chatId || String(destination).split("/").pop());
+        await handlersRef.current.onMessage?.(event, chatId);
+      } else if (destination === "/status") {
+        await handlersRef.current.onStatusUpdate?.({ type: "delivery", ...event });
+      } else if (destination === "/chats") {
+        await handlersRef.current.onChatListUpdate?.(event);
+      } else if (destination === "/requests") {
+        await handlersRef.current.onRequestsUpdate?.(event);
+      }
+      rememberEventId(event);
+      advanceCursor(deviceId, event);
+    } finally {
+      if (eventId) applyingIdsRef.current.delete(eventId);
     }
-    advanceCursor(deviceId, event);
   };
 
   const handleDurableLive = (deviceId, destination, event) => {
@@ -118,14 +139,16 @@ export default function useWebSocket({
       }
       return;
     }
-    dispatchRecoveredEvent(deviceId, destination, event);
+    void enqueueApply(() => dispatchRecoveredEvent(deviceId, destination, event));
   };
 
-  const flushLiveBuffer = (deviceId) => {
+  const flushLiveBuffer = async (deviceId) => {
     const buffered = liveBufferRef.current.splice(0);
     buffered.sort((left, right) => Number(left.event?.sequence || Number.MAX_SAFE_INTEGER)
       - Number(right.event?.sequence || Number.MAX_SAFE_INTEGER));
-    buffered.forEach(({ destination, event }) => dispatchRecoveredEvent(deviceId, destination, event));
+    for (const { destination, event } of buffered) {
+      await dispatchRecoveredEvent(deviceId, destination, event);
+    }
   };
 
   const recoverMissedEvents = async (deviceId) => {
@@ -141,7 +164,7 @@ export default function useWebSocket({
           const payload = { ...(item?.payload || {}) };
           if (item?.eventId && !payload.eventId) payload.eventId = item.eventId;
           if (item?.sequence != null) payload.sequence = Number(item.sequence);
-          dispatchRecoveredEvent(deviceId, item?.destination, payload);
+          await dispatchRecoveredEvent(deviceId, item?.destination, payload);
         }
         cursor = Number(response?.nextCursor ?? cursorRef.current);
         if (Number.isSafeInteger(cursor) && cursor > cursorRef.current) {
@@ -154,7 +177,7 @@ export default function useWebSocket({
       debugLog("[WS] realtime recovery failed; timeline sync remains available", error?.message || error);
     } finally {
       recoveringRef.current = false;
-      flushLiveBuffer(deviceId);
+      await flushLiveBuffer(deviceId);
     }
   };
 
@@ -186,7 +209,10 @@ export default function useWebSocket({
     subsRef.current.userStatus = client.subscribe("/topic/user/status", (msg) => {
       try {
         const event = { type: "user_status", ...JSON.parse(msg.body || "{}") };
-        if (!isDuplicateEvent(event)) handlersRef.current.onStatusUpdate?.(event);
+        if (!isDuplicateEvent(event)) {
+          handlersRef.current.onStatusUpdate?.(event);
+          rememberEventId(event);
+        }
       } catch (_) { /* ignore malformed websocket payload */ }
     });
 
@@ -210,13 +236,19 @@ export default function useWebSocket({
     subsRef.current.chats = client.subscribe(`/topic/users/${username}/chats`, (msg) => {
       try {
         const data = JSON.parse(msg?.body || "{}");
-        if (!isDuplicateEvent(data)) handlersRef.current.onChatListUpdate?.(data);
+        if (!isDuplicateEvent(data)) {
+          handlersRef.current.onChatListUpdate?.(data);
+          rememberEventId(data);
+        }
       } catch (_) { handlersRef.current.onChatListUpdate?.(); }
     });
     subsRef.current.requests = client.subscribe(`/topic/users/${username}/requests`, (msg) => {
       try {
         const data = JSON.parse(msg?.body || "{}");
-        if (!isDuplicateEvent(data)) handlersRef.current.onRequestsUpdate?.(data);
+        if (!isDuplicateEvent(data)) {
+          handlersRef.current.onRequestsUpdate?.(data);
+          rememberEventId(data);
+        }
       } catch (_) { handlersRef.current.onRequestsUpdate?.(); }
     });
 
