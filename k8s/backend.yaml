@@ -48,10 +48,6 @@ spec:
             capabilities:
               drop: ["ALL"]
           env:
-            - name: HOSTNAME
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.name
             - name: SPRING_DATASOURCE_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -62,8 +58,6 @@ spec:
                 secretKeyRef:
                   name: chaos-messenger-secret
                   key: REDIS_PASSWORD
-            - name: CHAOS_KAFKA_REALTIME_GROUP_ID
-              value: "chaos-realtime-$(HOSTNAME)"
             - name: SERVER_SHUTDOWN
               value: "graceful"
           envFrom:

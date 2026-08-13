@@ -7,7 +7,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Pageable;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.core.Authentication;
 import ru.messenger.chaosmessenger.TestFixtures;
 import ru.messenger.chaosmessenger.chat.repository.ChatParticipantRepository;
@@ -36,7 +35,6 @@ class UserControllerTest {
     @Mock UserRepository userRepository;
     @Mock JwtService jwtService;
     @Mock ChatParticipantRepository participantRepository;
-    @Mock SimpMessagingTemplate messagingTemplate;
     @Mock Authentication authentication;
 
     @InjectMocks UserController userController;

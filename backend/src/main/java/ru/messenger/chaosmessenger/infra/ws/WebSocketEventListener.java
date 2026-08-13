@@ -3,13 +3,13 @@ package ru.messenger.chaosmessenger.infra.ws;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.messaging.SessionConnectedEvent;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 import ru.messenger.chaosmessenger.infra.presence.OnlineService;
 import ru.messenger.chaosmessenger.infra.presence.UserStatusEvent;
+import ru.messenger.chaosmessenger.realtime.StompEventPublisher;
 
 @Slf4j
 @Component
@@ -17,7 +17,7 @@ import ru.messenger.chaosmessenger.infra.presence.UserStatusEvent;
 public class WebSocketEventListener {
 
     private final OnlineService onlineService;
-    private final SimpMessagingTemplate messagingTemplate;
+    private final StompEventPublisher stompEventPublisher;
 
     @EventListener
     public void handleConnect(SessionConnectedEvent event) {
@@ -30,7 +30,7 @@ public class WebSocketEventListener {
             log.info("USER CONNECTED: {} sessionId={}", username, sessionId);
 
             if (onlineService.markSessionOnline(username, sessionId)) {
-                messagingTemplate.convertAndSend("/topic/user/status",
+                stompEventPublisher.publishGlobal("/topic/user/status",
                         new UserStatusEvent(username, "ONLINE", System.currentTimeMillis()));
             }
         }
@@ -47,7 +47,7 @@ public class WebSocketEventListener {
             log.info("USER DISCONNECTED: {} sessionId={}", username, sessionId);
 
             if (onlineService.markSessionOffline(username, sessionId)) {
-                messagingTemplate.convertAndSend("/topic/user/status",
+                stompEventPublisher.publishGlobal("/topic/user/status",
                         new UserStatusEvent(username, "OFFLINE", System.currentTimeMillis()));
             }
         }

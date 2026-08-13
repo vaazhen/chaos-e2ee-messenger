@@ -5,7 +5,6 @@ import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import ru.messenger.chaosmessenger.chat.domain.Message;
 import ru.messenger.chaosmessenger.chat.dto.ChatListUpdateEvent;
@@ -24,6 +23,7 @@ import ru.messenger.chaosmessenger.message.dto.TimelineEnvelopeDto;
 import ru.messenger.chaosmessenger.message.repository.MessageEventRepository;
 import ru.messenger.chaosmessenger.message.repository.MessageReactionRepository;
 import ru.messenger.chaosmessenger.push.service.PushNotificationService;
+import ru.messenger.chaosmessenger.realtime.StompEventPublisher;
 import ru.messenger.chaosmessenger.user.domain.User;
 import ru.messenger.chaosmessenger.user.repository.UserRepository;
 import ru.messenger.chaosmessenger.user.service.UserIdentityService;
@@ -47,7 +47,7 @@ public class MessageFanoutService {
     private final MessageReactionRepository messageReactionRepository;
     private final ChatParticipantRepository participantRepository;
     private final UserDeviceRepository userDeviceRepository;
-    private final SimpMessagingTemplate messagingTemplate;
+    private final StompEventPublisher stompEventPublisher;
     private final ObjectMapper objectMapper;
     private final MeterRegistry meterRegistry;
     private final UnreadService unreadService;
@@ -67,8 +67,9 @@ public class MessageFanoutService {
 
     public void fanoutCreatedEvent(Message message, Map<String, MessageEnvelope> byDevice) {
         if (!kafkaEnabled) {
-            byDevice.forEach((deviceId, envelope) -> messagingTemplate.convertAndSend(
-                    "/topic/devices/" + deviceId + "/chats/" + message.getChatId(),
+            byDevice.forEach((deviceId, envelope) -> stompEventPublisher.publishToDevice(
+                    deviceId,
+                    "/chats/" + message.getChatId(),
                     toDeviceEvent("MESSAGE_CREATED", message, envelope, Map.of(), Set.of())
             ));
         }
@@ -76,8 +77,9 @@ public class MessageFanoutService {
 
     public void fanoutEditedEvent(Message message, Map<String, MessageEnvelope> byDevice) {
         if (!kafkaEnabled) {
-            byDevice.forEach((deviceId, envelope) -> messagingTemplate.convertAndSend(
-                    "/topic/devices/" + deviceId + "/chats/" + message.getChatId(),
+            byDevice.forEach((deviceId, envelope) -> stompEventPublisher.publishToDevice(
+                    deviceId,
+                    "/chats/" + message.getChatId(),
                     toDeviceEvent("MESSAGE_EDITED", message, envelope, envelope.getTargetUserId())
             ));
         }
@@ -90,8 +92,9 @@ public class MessageFanoutService {
                     .toList();
             if (!participants.isEmpty()) {
                 userDeviceRepository.findActiveByUserIdsWithUser(participants).forEach(device ->
-                        messagingTemplate.convertAndSend(
-                                "/topic/devices/" + device.getDeviceId() + "/chats/" + message.getChatId(),
+                        stompEventPublisher.publishToDevice(
+                                device.getDeviceId(),
+                                "/chats/" + message.getChatId(),
                                 toDeviceEvent("MESSAGE_DELETED", message, null, device.getUser().getId())
                         )
                 );
@@ -106,8 +109,9 @@ public class MessageFanoutService {
                     .toList();
             if (!participants.isEmpty()) {
                 userDeviceRepository.findByUserIdInAndActiveTrue(participants).forEach(device ->
-                        messagingTemplate.convertAndSend(
-                                "/topic/devices/" + device.getDeviceId() + "/chats/" + chatId,
+                        stompEventPublisher.publishToDevice(
+                                device.getDeviceId(),
+                                "/chats/" + chatId,
                                 event
                         )
                 );
@@ -119,8 +123,9 @@ public class MessageFanoutService {
     public void sendStatusToSenderDevices(Message message, String status) {
         if (!kafkaEnabled) {
             for (UserDevice device : userDeviceRepository.findByUserIdAndActiveTrue(message.getSenderId())) {
-                messagingTemplate.convertAndSend(
-                        "/topic/devices/" + device.getDeviceId() + "/status",
+                stompEventPublisher.publishToDevice(
+                        device.getDeviceId(),
+                        "/status",
                         new StatusUpdateEvent(message.getId(), status)
                 );
             }
@@ -135,8 +140,9 @@ public class MessageFanoutService {
         if (!kafkaEnabled) {
             StatusBulkUpdateEvent event = new StatusBulkUpdateEvent("delivery_bulk", chatId, status, actorUserId);
             userDeviceRepository.findByUserIdInAndActiveTrue(senderIds).forEach(device ->
-                    messagingTemplate.convertAndSend(
-                            "/topic/devices/" + device.getDeviceId() + "/status",
+                    stompEventPublisher.publishToDevice(
+                            device.getDeviceId(),
+                            "/status",
                             event
                     )
             );
@@ -163,7 +169,7 @@ public class MessageFanoutService {
         if (!kafkaEnabled) {
             ChatListUpdateEvent payload = ChatListUpdateEvent.forChat(chatId, reason);
             participantRepository.findDistinctUsernamesByChatId(chatId).forEach(username ->
-                    messagingTemplate.convertAndSend("/topic/users/" + username + "/chats", payload)
+                    stompEventPublisher.publishToUser(username, "/chats", payload)
             );
         }
     }

@@ -42,7 +42,7 @@ public class RealtimeEventConsumer {
                     KafkaConfig.USER_EVENTS_TOPIC,
                     KafkaConfig.SECURITY_EVENTS_TOPIC
             },
-            groupId = "${chaos.kafka.realtime.group-id:chaos-realtime-${random.uuid}}",
+            groupId = "${chaos.kafka.realtime.group-id:chaos-realtime}",
             containerFactory = "kafkaListenerContainerFactory"
     )
     @Transactional
