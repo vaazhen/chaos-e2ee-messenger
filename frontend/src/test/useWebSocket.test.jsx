@@ -32,16 +32,11 @@ const wsMocks = vi.hoisted(() => {
     getToken: vi.fn(() => "jwt-token"),
     syncRealtime: vi.fn(async (after = 0) => ({ events: [], nextCursor: after, hasMore: false })),
     getOrCreateDeviceId: vi.fn(() => "device-a"),
-    sockJs: vi.fn(() => ({ socket: true })),
   };
 });
 
 vi.mock("@stomp/stompjs", () => ({
   Client: wsMocks.MockClient,
-}));
-
-vi.mock("sockjs-client", () => ({
-  default: wsMocks.sockJs,
 }));
 
 vi.mock("../api", () => ({
@@ -54,9 +49,10 @@ vi.mock("../deviceId", () => ({
   getOrCreateDeviceId: wsMocks.getOrCreateDeviceId,
 }));
 
-vi.mock("../config", () => ({
-  WS_URL: "http://localhost/ws",
-}));
+vi.mock("../config", async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, WS_URL: "http://localhost/ws" };
+});
 
 describe("useWebSocket", () => {
   beforeEach(() => {
@@ -115,6 +111,8 @@ describe("useWebSocket", () => {
 
     const client = wsMocks.clients[0];
 
+    expect(client.config.brokerURL).toBe("ws://localhost/ws");
+    expect(client.config.webSocketFactory).toBeUndefined();
     expect(client.config.connectHeaders).toEqual({
       Authorization: "Bearer jwt-token",
       "X-Device-Id": "device-a",

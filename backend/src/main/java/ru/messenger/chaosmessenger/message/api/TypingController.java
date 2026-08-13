@@ -5,19 +5,19 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 import ru.messenger.chaosmessenger.infra.ws.WebSocketAuthChannelInterceptor;
 import ru.messenger.chaosmessenger.message.service.TypingService;
 import ru.messenger.chaosmessenger.message.dto.TypingEvent;
 import ru.messenger.chaosmessenger.message.dto.TypingRequest;
+import ru.messenger.chaosmessenger.realtime.StompEventPublisher;
 
 @Slf4j
 @Controller
 @RequiredArgsConstructor
 public class TypingController {
 
-    private final SimpMessagingTemplate messagingTemplate;
+    private final StompEventPublisher stompEventPublisher;
     private final WebSocketAuthChannelInterceptor authInterceptor;
     private final TypingService typingService;
 
@@ -41,7 +41,7 @@ public class TypingController {
 
         log.debug("Typing event from {} in chat {}: {}", username, request.chatId(), request.typing());
 
-        messagingTemplate.convertAndSend(
+        stompEventPublisher.publishGlobal(
                 "/topic/chats/" + request.chatId() + "/typing",
                 new TypingEvent(username, request.typing())
         );

@@ -4,7 +4,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.MessageBuilder;
@@ -18,6 +17,7 @@ import ru.messenger.chaosmessenger.crypto.device.UserDeviceRepository;
 import ru.messenger.chaosmessenger.infra.presence.OnlineService;
 import ru.messenger.chaosmessenger.infra.presence.UserStatusEvent;
 import ru.messenger.chaosmessenger.infra.security.JwtService;
+import ru.messenger.chaosmessenger.realtime.StompEventPublisher;
 import ru.messenger.chaosmessenger.realtime.WebSocketSessionRegistry;
 import ru.messenger.chaosmessenger.user.domain.User;
 import ru.messenger.chaosmessenger.user.repository.UserRepository;
@@ -208,8 +208,8 @@ class WebSocketInfraTest {
     @Test
     void eventListenerPublishesOnlineStatusOnConnect() {
         OnlineService onlineService = mock(OnlineService.class);
-        SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
-        WebSocketEventListener listener = new WebSocketEventListener(onlineService, messagingTemplate);
+        StompEventPublisher stompEventPublisher = mock(StompEventPublisher.class);
+        WebSocketEventListener listener = new WebSocketEventListener(onlineService, stompEventPublisher);
 
         Message<byte[]> message = stomp(StompCommand.CONNECT, "s1", null, accessor ->
                 accessor.setUser(principal("alice"))
@@ -220,7 +220,7 @@ class WebSocketInfraTest {
         listener.handleConnect(new SessionConnectedEvent(this, message));
 
         verify(onlineService).markSessionOnline("alice", "s1");
-        verify(messagingTemplate).convertAndSend(
+        verify(stompEventPublisher).publishGlobal(
                 eq("/topic/user/status"),
                 org.mockito.ArgumentMatchers.any(UserStatusEvent.class)
         );
@@ -229,15 +229,15 @@ class WebSocketInfraTest {
     @Test
     void eventListenerIgnoresAnonymousConnect() {
         OnlineService onlineService = mock(OnlineService.class);
-        SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
-        WebSocketEventListener listener = new WebSocketEventListener(onlineService, messagingTemplate);
+        StompEventPublisher stompEventPublisher = mock(StompEventPublisher.class);
+        WebSocketEventListener listener = new WebSocketEventListener(onlineService, stompEventPublisher);
 
         Message<byte[]> message = stomp(StompCommand.CONNECT, "s1", null, accessor -> {});
 
         listener.handleConnect(new SessionConnectedEvent(this, message));
 
         verify(onlineService, never()).markSessionOnline("alice", "s1");
-        verify(messagingTemplate, never()).convertAndSend(
+        verify(stompEventPublisher, never()).publishGlobal(
                 eq("/topic/user/status"),
                 org.mockito.ArgumentMatchers.any(UserStatusEvent.class)
         );
@@ -246,8 +246,8 @@ class WebSocketInfraTest {
     @Test
     void eventListenerPublishesOfflineStatusOnDisconnect() {
         OnlineService onlineService = mock(OnlineService.class);
-        SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
-        WebSocketEventListener listener = new WebSocketEventListener(onlineService, messagingTemplate);
+        StompEventPublisher stompEventPublisher = mock(StompEventPublisher.class);
+        WebSocketEventListener listener = new WebSocketEventListener(onlineService, stompEventPublisher);
 
         Message<byte[]> message = stomp(StompCommand.DISCONNECT, "s1", null, accessor ->
                 accessor.setUser(principal("alice"))
@@ -258,7 +258,7 @@ class WebSocketInfraTest {
         listener.handleDisconnect(new SessionDisconnectEvent(this, message, "s1", CloseStatus.NORMAL));
 
         verify(onlineService).markSessionOffline("alice", "s1");
-        verify(messagingTemplate).convertAndSend(
+        verify(stompEventPublisher).publishGlobal(
                 eq("/topic/user/status"),
                 org.mockito.ArgumentMatchers.any(UserStatusEvent.class)
         );
@@ -267,8 +267,8 @@ class WebSocketInfraTest {
     @Test
     void eventListenerDoesNotPublishOfflineStatusWhenAnotherSessionIsStillOnline() {
         OnlineService onlineService = mock(OnlineService.class);
-        SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
-        WebSocketEventListener listener = new WebSocketEventListener(onlineService, messagingTemplate);
+        StompEventPublisher stompEventPublisher = mock(StompEventPublisher.class);
+        WebSocketEventListener listener = new WebSocketEventListener(onlineService, stompEventPublisher);
 
         Message<byte[]> message = stomp(StompCommand.DISCONNECT, "s1", null, accessor ->
                 accessor.setUser(principal("alice"))
@@ -279,7 +279,7 @@ class WebSocketInfraTest {
         listener.handleDisconnect(new SessionDisconnectEvent(this, message, "s1", CloseStatus.NORMAL));
 
         verify(onlineService).markSessionOffline("alice", "s1");
-        verify(messagingTemplate, never()).convertAndSend(
+        verify(stompEventPublisher, never()).publishGlobal(
                 eq("/topic/user/status"),
                 org.mockito.ArgumentMatchers.any(UserStatusEvent.class)
         );

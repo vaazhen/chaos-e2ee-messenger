@@ -32,6 +32,8 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         String[] origins = AllowedOriginParser.parse(allowedOriginPatterns);
 
         registry.addEndpoint("/ws")
+                .setAllowedOriginPatterns(origins);
+        registry.addEndpoint("/ws-sockjs")
                 .setAllowedOriginPatterns(origins)
                 .withSockJS();
     }

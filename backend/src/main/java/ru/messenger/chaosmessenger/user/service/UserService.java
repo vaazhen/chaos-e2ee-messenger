@@ -4,7 +4,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.messenger.chaosmessenger.chat.dto.ChatListUpdateEvent;
@@ -12,6 +11,7 @@ import ru.messenger.chaosmessenger.chat.repository.ChatParticipantRepository;
 import ru.messenger.chaosmessenger.common.TransactionUtils;
 import ru.messenger.chaosmessenger.infra.security.JwtService;
 import ru.messenger.chaosmessenger.outbox.OutboxService;
+import ru.messenger.chaosmessenger.realtime.StompEventPublisher;
 import ru.messenger.chaosmessenger.user.domain.User;
 import ru.messenger.chaosmessenger.user.dto.CurrentUserResponse;
 import ru.messenger.chaosmessenger.user.dto.UpdateProfileRequest;
@@ -34,7 +34,7 @@ public class UserService {
     private final UserIdentityService userIdentityService;
     private final JwtService jwtService;
     private final ChatParticipantRepository participantRepository;
-    private final SimpMessagingTemplate messagingTemplate;
+    private final StompEventPublisher stompEventPublisher;
     private final OutboxService outboxService;
 
     @Value("${chaos.kafka.enabled:false}")
@@ -164,8 +164,9 @@ public class UserService {
         if (!kafkaEnabled) {
             ChatListUpdateEvent payload = ChatListUpdateEvent.profileUpdated(updatedUserId);
             participantRepository.findDistinctUsernamesSharingChatsWithUserId(updatedUserId)
-                    .forEach(username -> messagingTemplate.convertAndSend(
-                            "/topic/users/" + username + "/chats",
+                    .forEach(username -> stompEventPublisher.publishToUser(
+                            username,
+                            "/chats",
                             payload
                     ));
         }

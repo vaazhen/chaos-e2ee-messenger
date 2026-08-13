@@ -1,7 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Client } from "@stomp/stompjs";
-import SockJS from "sockjs-client";
-import { WS_URL } from "../config";
+import { WS_URL, toStompBrokerUrl } from "../config";
 import { api, getToken } from "../api";
 import { getOrCreateDeviceId } from "../deviceId";
 
@@ -263,7 +262,7 @@ export default function useWebSocket({
     const did = getOrCreateDeviceId();
     const username = me.username;
     const client = new Client({
-      webSocketFactory: () => new SockJS(WS_URL),
+      brokerURL: toStompBrokerUrl(WS_URL),
       reconnectDelay: 2000,
       heartbeatIncoming: 10000,
       heartbeatOutgoing: 10000,
