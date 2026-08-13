@@ -120,6 +120,10 @@ export default function ChaosMessenger() {
   const auth      = useAuth();
   const { lang, t, loadTranslations, switchLang } = useI18n();
   useUiTranslator(lang);
+  const l = useMemo(() => {
+    const effectiveLang = String(lang || "ru").toLowerCase().startsWith("en") ? "en" : "ru";
+    return (ru, en) => (effectiveLang === "ru" ? ru : en);
+  }, [lang]);
   const chatStore = useChats(auth.me?.id, lang);
   const msgStore  = useMessages(auth.me?.id);
 
@@ -437,11 +441,6 @@ const [safetyModal, setSafetyModal] = useState({ open: false, devices: [], selec
     if (uid == null) return;
     loadChats(uid);
   }, [myMutedUntilIso, myGroupMuteUntilMs, auth.me?.id, loadChats]);
-
-  const l = useMemo(() => {
-    const effectiveLang = String(lang || "ru").toLowerCase().startsWith("en") ? "en" : "ru";
-    return (ru, en) => (effectiveLang === "ru" ? ru : en);
-  }, [lang]);
 
   const showGroupAdminBtn = useMemo(() => {
     if (!activeChat || activeChat.type !== "group") return false;
