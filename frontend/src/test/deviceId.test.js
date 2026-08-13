@@ -143,6 +143,7 @@ describe("deviceId", () => {
     const [url, opts] = fetch.mock.calls[0];
 
     expect(url).toContain("/crypto/devices/current");
+    expect(opts.credentials).toBe("include");
     expect(opts.headers.Authorization).toBe("Bearer jwt-token");
     expect(opts.headers["X-Device-Id"]).toBe("device-current");
   });

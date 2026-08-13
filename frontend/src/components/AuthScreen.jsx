@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import useLocalText from "../i18n/useLocalText";
+import BrandMark from "./BrandMark";
 
 const COUNTRIES = [
   { code: "+7",   flag: "🇷🇺", name: "Russia",        mask: "999 000 00 00", len: 10 },
@@ -35,30 +36,6 @@ function CountrySelector({ selected, onChange }) {
   const [search, setSearch] = useState("");
   const inputRef = useRef(null);
   const rootRef = useRef(null);
-
-  const isDark =
-    typeof document !== "undefined" &&
-    !!document.querySelector("[data-theme='dark']");
-
-  const menu = isDark
-    ? {
-        bg: "#181d2c",
-        fg: "#ffffff",
-        muted: "rgba(255,255,255,.58)",
-        border: "rgba(255,255,255,.13)",
-        searchBg: "rgba(255,255,255,.07)",
-        rowHover: "rgba(255,255,255,.08)",
-        shadow: "0 26px 70px rgba(0,0,0,.38)",
-      }
-    : {
-        bg: "#ffffff",
-        fg: "var(--t1)",
-        muted: "rgba(0,0,0,.48)",
-        border: "rgba(0,0,0,.075)",
-        searchBg: "rgba(0,0,0,.035)",
-        rowHover: "rgba(0,0,0,.055)",
-        shadow: "0 26px 70px rgba(0,0,0,.16)",
-      };
 
   useEffect(() => {
     if (!open) return;
@@ -117,12 +94,6 @@ function CountrySelector({ selected, onChange }) {
         }}
         aria-expanded={open}
         className="country-selector-btn"
-        style={{
-          background: isDark ? "rgba(255,255,255,.08)" : "rgba(255,255,255,.72)",
-          boxShadow: isDark
-            ? "inset 0 0 0 1px rgba(255,255,255,.08)"
-            : "inset 0 0 0 1px rgba(0,0,0,.045), 0 10px 24px rgba(0,0,0,.045)",
-        }}
       >
         <span className="country-selector-abbr">{shortCode(current.name)}</span>
         <span>{current.code}</span>
@@ -130,73 +101,27 @@ function CountrySelector({ selected, onChange }) {
       </button>
 
       {open && (
-        <div
-          style={{
-            position: "absolute",
-            top: "calc(100% + 10px)",
-            left: 0,
-            zIndex: 3000,
-            width: 292,
-            maxHeight: 360,
-            overflow: "hidden",
-            borderRadius: 22,
-            background: menu.bg,
-            border: "1px solid " + menu.border,
-            boxShadow: menu.shadow,
-            color: menu.fg,
-          }}
-        >
-          <div style={{ padding: 10, borderBottom: "1px solid " + menu.border }}>
+        <div className="country-menu">
+          <div className="country-menu-search">
             <input
               ref={inputRef}
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder={t("Поиск страны...", "Search country...")}
-              style={{
-                width: "100%",
-                height: 38,
-                borderRadius: 12,
-                border: "1px solid " + menu.border,
-                background: menu.searchBg,
-                color: menu.fg,
-                outline: "none",
-                padding: "0 12px",
-                fontSize: 14,
-                boxSizing: "border-box",
-              }}
             />
           </div>
 
-          <div style={{ maxHeight: 300, overflowY: "auto", padding: 4 }}>
+          <div className="country-menu-list">
             {filtered.map((country, idx) => (
               <button
                 key={idx}
                 type="button"
                 onClick={() => select(country)}
-                style={{
-                  width: "100%",
-                  height: 48,
-                  border: 0,
-                  borderRadius: 14,
-                  background: "transparent",
-                  color: menu.fg,
-                  display: "grid",
-                  gridTemplateColumns: "42px 1fr auto",
-                  alignItems: "center",
-                  gap: 8,
-                  padding: "0 12px",
-                  cursor: "pointer",
-                  textAlign: "left",
-                  fontFamily: "inherit",
-                }}
-                onMouseEnter={e => { e.currentTarget.style.background = menu.rowHover; }}
-                onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
+                className="country-menu-item"
               >
-                <b style={{ fontSize: 15, opacity: .9 }}>{shortCode(country.name)}</b>
-                <span style={{ fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {country.name}
-                </span>
-                <em style={{ fontStyle: "normal", opacity: .62 }}>{country.code}</em>
+                <b>{shortCode(country.name)}</b>
+                <span>{country.name}</span>
+                <em>{country.code}</em>
               </button>
             ))}
           </div>
@@ -265,8 +190,9 @@ export default function AuthScreen({
       <div className="auth-glow" />
       <div className="auth-card">
         {error && <div className="err-bar">{error}</div>}
-        <div className="auth-logo">🔐</div>
-        <h1 className="auth-title">Chaos Messenger</h1>
+        <BrandMark size={64} />
+        <p className="brand-kicker">Chaos</p>
+        <h1 className="auth-title">Messenger</h1>
         <p className="auth-sub">{t("E2E-шифрование — сервер не может читать сообщения", "E2E encryption — the server cannot read messages")}</p>
 
         <div style={{ display: "flex", gap: 4, marginBottom: 18, background: "var(--bg3)", borderRadius: 10, padding: 4 }}>

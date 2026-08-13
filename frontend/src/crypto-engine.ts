@@ -50,13 +50,52 @@ await (async function () {
     // ─── Base64 utilities ───────────────────────────────────────────────────────
 
     function b64ToBytes(base64) {
-        return Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+        return Uint8Array.from(atob(normalizeB64(base64)), c => c.charCodeAt(0));
     }
 
     function bytesToB64(bytes) {
         let binary = '';
         bytes.forEach(b => binary += String.fromCharCode(b));
         return btoa(binary);
+    }
+
+    function normalizeB64(value) {
+        if (value == null) return '';
+        let text = String(value).trim().replace(/-/g, '+').replace(/_/g, '/');
+        const pad = text.length % 4;
+        if (pad) text += '='.repeat(4 - pad);
+        return text;
+    }
+
+    function ratchetPublicKeyString(value) {
+        if (!value) return '';
+        if (typeof value === 'object' && value.publicKey) return String(value.publicKey);
+        return String(value);
+    }
+
+    function publicKeysEqual(left, right) {
+        const a = ratchetPublicKeyString(left);
+        const b = ratchetPublicKeyString(right);
+        if (!a || !b) return false;
+        if (a === b) return true;
+        try {
+            const ba = b64ToBytes(a);
+            const bb = b64ToBytes(b);
+            if (ba.length !== bb.length) return false;
+            let diff = 0;
+            for (let i = 0; i < ba.length; i++) diff |= ba[i] ^ bb[i];
+            return diff === 0;
+        } catch {
+            return false;
+        }
+    }
+
+    function toStandaloneAad(additionalData) {
+        if (!additionalData || additionalData.byteLength === 0) return null;
+        const view = additionalData instanceof Uint8Array
+            ? additionalData
+            : new Uint8Array(additionalData);
+        return view.slice();
     }
 
     function b64ToArrayBuffer(base64) {
@@ -173,9 +212,8 @@ await (async function () {
         const nonce = crypto.getRandomValues(new Uint8Array(12));
         const encoded = new TextEncoder().encode(plainText);
         const params: AesGcmParams = { name: 'AES-GCM', iv: nonce };
-        if (additionalData && additionalData.byteLength > 0) {
-            params.additionalData = new Uint8Array(additionalData);
-        }
+        const aad = toStandaloneAad(additionalData);
+        if (aad) params.additionalData = aad;
         const ct = await crypto.subtle.encrypt(params, aesKey, encoded);
         return { ciphertext: bytesToB64(new Uint8Array(ct)), nonce: bytesToB64(nonce) };
     }
@@ -185,9 +223,8 @@ await (async function () {
         const ct    = b64ToBytes(ciphertextB64);
         const nonce = b64ToBytes(nonceB64);
         const params: AesGcmParams = { name: 'AES-GCM', iv: nonce };
-        if (additionalData && additionalData.byteLength > 0) {
-            params.additionalData = new Uint8Array(additionalData);
-        }
+        const aad = toStandaloneAad(additionalData);
+        if (aad) params.additionalData = aad;
         const plain = await crypto.subtle.decrypt(params, aesKey, ct);
         return new TextDecoder().decode(plain);
     }
@@ -626,9 +663,15 @@ await (async function () {
         return getLocalDeviceBundle();
     }
 
+    function isMissingServerDeviceError(error) {
+        const status = Number(error?.status);
+        if (status === 401 || status === 404) return true;
+        const message = String(error?.message || '');
+        return /not registered|inactive|401|404|current device/i.test(message);
+    }
+
     async function ensureDeviceRegistered(api) {
         const registrationScope = getOrCreateDeviceId();
-        const canRegister = !!(api && (api.__canRegisterDevice || api.canRegisterDevice));
 
         if (registrationPromise && registrationPromiseUsername === registrationScope) return registrationPromise;
         registrationPromiseUsername = registrationScope;
@@ -651,14 +694,23 @@ await (async function () {
                 shouldUploadOneTimeKeys = true;
             }
 
-            if (shouldUploadOneTimeKeys || canRegister) {
+            if (shouldUploadOneTimeKeys) {
                 await registerBundleOnServer(api, bundle, true);
                 bundle = structuredClone(bundle);
                 bundle.oneTimePreKeys = (bundle.oneTimePreKeys || []).map(key => ({ ...key, published: true }));
                 await saveLocalDeviceBundle(bundle);
             } else {
                 log('[E2EE] Existing device detected, skipping re-registration:', bundle.deviceId);
-                await replenishOneTimePreKeys(api);
+                try {
+                    await replenishOneTimePreKeys(api);
+                } catch (error) {
+                    if (!isMissingServerDeviceError(error)) throw error;
+                    log('[E2EE] Local device is missing on server, registering:', bundle.deviceId);
+                    await registerBundleOnServer(api, bundle, true);
+                    bundle = structuredClone(bundle);
+                    bundle.oneTimePreKeys = (bundle.oneTimePreKeys || []).map(key => ({ ...key, published: true }));
+                    await saveLocalDeviceBundle(bundle);
+                }
                 bundle = getLocalDeviceBundle();
             }
             return bundle;
@@ -830,7 +882,35 @@ await (async function () {
     // ─── Double Ratchet core ─────────────────────────────────────────────────
 
     function skippedKeyId(dhPub, n) {
-        return dhPub + ':' + n;
+        return normalizeB64(ratchetPublicKeyString(dhPub)) + ':' + n;
+    }
+
+    async function decryptCiphertextWithEnvelopeAad(ciphertext, nonce, aesKey, envelope) {
+        const candidates = [];
+        const base = {
+            messageType: envelope.messageType,
+            messageIndex: envelope.messageIndex ?? 0,
+            previousChainLength: envelope.previousChainLength ?? 0,
+            ratchetPublicKey: envelope.ratchetPublicKey
+        };
+        if (envelope._chatId != null) {
+            candidates.push(buildEnvelopeAAD({ ...base, chatId: envelope._chatId }));
+        }
+        candidates.push(buildEnvelopeAAD({ ...base, chatId: 0 }));
+        if (envelope.ratchetPublicKey) {
+            candidates.push(buildEnvelopeAAD({ ...base, chatId: envelope._chatId, ratchetPublicKey: null }));
+        }
+        candidates.push(null);
+
+        let lastError = null;
+        for (const aad of candidates) {
+            try {
+                return await aesDecryptWithKey(ciphertext, nonce, aesKey, aad);
+            } catch (error) {
+                lastError = error;
+            }
+        }
+        throw lastError || new Error('AES-GCM decrypt failed');
     }
 
     async function trySkippedMessageKeys(session, envelope) {
@@ -838,14 +918,9 @@ await (async function () {
         const mkRawB64 = session.MKSKIPPED[kid];
         if (!mkRawB64) return null;
         const mk = await importMessageKey(b64ToBytes(mkRawB64));
-        const aad = (envelope._chatId != null) ? buildEnvelopeAAD({
-            messageType: envelope.messageType,
-            chatId: envelope._chatId,
-            messageIndex: envelope.messageIndex,
-            previousChainLength: envelope.previousChainLength ?? 0,
-            ratchetPublicKey: envelope.ratchetPublicKey
-        }) : null;
-        const plainText = await aesDecryptWithKey(envelope.ciphertext, envelope.nonce, mk, aad);
+        const plainText = await decryptCiphertextWithEnvelopeAad(
+            envelope.ciphertext, envelope.nonce, mk, envelope
+        );
         delete session.MKSKIPPED[kid];
         return plainText;
     }
@@ -939,13 +1014,18 @@ await (async function () {
         session.MKSKIPPED = session.MKSKIPPED || {};
         const ratchetPub = envelope.ratchetPublicKey;
         const msgIdx = envelope.messageIndex ?? 0;
+        const sameRatchet = publicKeysEqual(ratchetPub, session.DHr);
 
         // 1. Try previously stored skipped message keys
         const skippedResult = await trySkippedMessageKeys(session, envelope);
         if (skippedResult !== null) return skippedResult;
 
         // 2. If new DH ratchet public key, perform DH ratchet
-        if (ratchetPub && ratchetPub !== session.DHr) {
+        if (ratchetPub && !sameRatchet) {
+            log('[decrypt] DH ratchet sender=' + (envelope.senderDeviceId || '?')
+                + ' idx=' + msgIdx
+                + ' nr=' + (session.Nr || 0)
+                + ' chatId=' + envelope._chatId);
             await skipMessageKeys(session, envelope.previousChainLength ?? 0);
             await dhRatchetStep(session, ratchetPub);
         }
@@ -962,14 +1042,21 @@ await (async function () {
         const { messageKeyRaw, nextChainKey } = await ratchetStep(ckBytes);
 
         const mk = await importMessageKey(messageKeyRaw);
-        const aad = (envelope._chatId != null) ? buildEnvelopeAAD({
-            messageType: envelope.messageType,
-            chatId: envelope._chatId,
-            messageIndex: msgIdx,
-            previousChainLength: envelope.previousChainLength ?? 0,
-            ratchetPublicKey: envelope.ratchetPublicKey
-        }) : null;
-        const plainText = await aesDecryptWithKey(envelope.ciphertext, envelope.nonce, mk, aad);
+        let plainText;
+        try {
+            plainText = await decryptCiphertextWithEnvelopeAad(
+                envelope.ciphertext, envelope.nonce, mk, { ...envelope, messageIndex: msgIdx }
+            );
+        } catch (error) {
+            throw new Error(
+                'AES-GCM failed for ' + (envelope.messageType || 'WHISPER')
+                + ' idx=' + msgIdx
+                + ' nr=' + (session.Nr || 0)
+                + ' chatId=' + envelope._chatId
+                + ' dh=' + (sameRatchet ? 'same' : 'new')
+                + (error?.message ? ' (' + error.message + ')' : '')
+            );
+        }
 
         session.CKr = bytesToB64(nextChainKey);
         session.Nr = (session.Nr || 0) + 1;
@@ -1080,6 +1167,15 @@ await (async function () {
 
     // ─── Decrypt an incoming envelope ─────────────────────────────────────────
 
+    async function forgetSession(localDeviceId, remoteDeviceId) {
+        const sessions = loadSessions();
+        const key = sessionKey(localDeviceId, remoteDeviceId);
+        if (!sessions[key]) return;
+        delete sessions[key];
+        await saveSessions(sessions);
+        log('[E2EE] Forgot stale session with ' + remoteDeviceId);
+    }
+
     async function decryptEnvelope(envelope) {
         return withCryptoStateLock(() => decryptEnvelopeUnlocked(envelope));
     }
@@ -1106,34 +1202,58 @@ await (async function () {
 
         if (isPreKeyBootstrap) {
             if (session) {
-                throw new Error('PREKEY_REPLAY:' + envelope.senderDeviceId);
+                log('[decrypt] Peer re-initiated session with', envelope.senderDeviceId);
+                try {
+                    const fresh = await bootstrapRecipientSession(localBundle, envelope);
+                    const plainText = await decryptWithDoubleRatchet(fresh, envelope);
+                    await commitRecipientBootstrap(
+                        localBundle,
+                        envelope.senderDeviceId,
+                        fresh,
+                        envelope.oneTimePreKeyId
+                    );
+                    log('[decrypt] OK replaced session messageIndex=' + envelope.messageIndex);
+                    return plainText;
+                } catch (error) {
+                    throw new Error('PREKEY_REPLAY:' + envelope.senderDeviceId);
+                }
             }
             log('[decrypt] Bootstrap X3DH + Double Ratchet session with', envelope.senderDeviceId);
             session = await bootstrapRecipientSession(localBundle, envelope);
         }
 
         if (!session) {
-            throw new Error('No session for device ' + envelope.senderDeviceId);
+            throw new Error('SESSION_STALE:' + envelope.senderDeviceId);
         }
 
         if (session.version !== 4) {
+            await forgetSession(localBundle.deviceId, envelope.senderDeviceId);
             throw new Error('Session version mismatch (expected 4, got ' + session.version + ') — re-establish session');
         }
 
-        const plainText = await decryptWithDoubleRatchet(session, envelope);
-        if (isPreKeyBootstrap) {
-            await commitRecipientBootstrap(
-                localBundle,
-                envelope.senderDeviceId,
-                session,
-                envelope.oneTimePreKeyId
-            );
-        } else {
-            await storeSession(localBundle.deviceId, envelope.senderDeviceId, session);
-        }
+        const hadReceivingChain = session.CKr != null;
+        try {
+            const plainText = await decryptWithDoubleRatchet(session, envelope);
+            if (isPreKeyBootstrap) {
+                await commitRecipientBootstrap(
+                    localBundle,
+                    envelope.senderDeviceId,
+                    session,
+                    envelope.oneTimePreKeyId
+                );
+            } else {
+                await storeSession(localBundle.deviceId, envelope.senderDeviceId, session);
+            }
 
-        log('[decrypt] OK messageIndex=' + envelope.messageIndex);
-        return plainText;
+            log('[decrypt] OK messageIndex=' + envelope.messageIndex);
+            return plainText;
+        } catch (error) {
+            if (!isPreKeyBootstrap && !hadReceivingChain) {
+                await forgetSession(localBundle.deviceId, envelope.senderDeviceId);
+                throw new Error('SESSION_STALE:' + envelope.senderDeviceId + ' ' + (error?.message || ''));
+            }
+            throw error;
+        }
     }
 
     // ─── File encryption / decryption (AES-256-GCM with random key) ────────────

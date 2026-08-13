@@ -11,6 +11,9 @@ const mocks = vi.hoisted(() => ({
     updateProfile: vi.fn(),
     listDevices: vi.fn(),
     deactivateDevice: vi.fn(),
+    getBackupInfo: vi.fn(),
+    exportBackup: vi.fn(),
+    importBackup: vi.fn(),
   },
   getCurrentDeviceId: vi.fn(() => "device-current"),
   setToken: vi.fn(),
@@ -235,7 +238,7 @@ describe("NewChatModal critical UI flow", () => {
     expect(mocks.api.createDirect).toHaveBeenCalledWith("bob");
     expect(onCreated).toHaveBeenCalledWith(20);
 
-    fireEvent.click(screen.getByText("×"));
+    fireEvent.click(screen.getByTitle("Закрыть"));
     await act(async () => {
       vi.advanceTimersByTime(200);
     });
@@ -402,14 +405,12 @@ describe("ProfileModal critical UI flow", () => {
       />
     );
 
-    expect(screen.getByText("Параметры")).toBeInTheDocument();
+    expect(screen.getByText("Профиль")).toBeInTheDocument();
     expect(screen.getByText("@alice")).toBeInTheDocument();
-    expect(screen.getByText("Нажмите, чтобы установить")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Имя")).toBeInTheDocument();
 
     const heroEl = container.querySelector(".ps-hero");
     expect(heroEl).not.toBeNull();
-
-    fireEvent.click(screen.getByText("Изм."));
 
     fireEvent.change(screen.getByPlaceholderText("Имя"), {
       target: { value: "  Alice  " },
@@ -443,32 +444,31 @@ describe("ProfileModal critical UI flow", () => {
       lastName: "Updated",
     }));
 
-    fireEvent.click(screen.getByText("Тема"));
-    expect(onToggleTheme).toHaveBeenCalled();
-
-    fireEvent.click(screen.getAllByText("Язык")[1]);
-    expect(onSwitchLang).toHaveBeenCalled();
-
-    fireEvent.click(screen.getByText("Выйти"));
-    expect(onLogout).toHaveBeenCalled();
-
     fireEvent.click(screen.getByTitle("Закрыть"));
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("opens emoji status picker and selects a preset", async () => {
-    const { default: ProfileModal } = await import("../components/ProfileModal");
+  it("opens emoji status picker from Settings and saves a preset", async () => {
+    const { default: SettingsPage } = await import("../components/SettingsPage");
+
+    mocks.api.updateProfile.mockResolvedValue({
+      id: 1,
+      username: "alice",
+      firstName: "Alice",
+      bio: "🟢 Онлайн",
+      token: "jwt-status",
+    });
 
     render(
-      <ProfileModal
+      <SettingsPage
         me={{ id: 1, username: "alice", firstName: "Alice", lastName: "Smith", bio: "" }}
         lang="ru"
         theme="light"
-        onClose={vi.fn()}
-        onSaved={vi.fn()}
+        l={(ru) => ru}
         onToggleTheme={vi.fn()}
         onSwitchLang={vi.fn()}
         onLogout={vi.fn()}
+        onEditProfile={vi.fn()}
       />
     );
 
@@ -480,7 +480,11 @@ describe("ProfileModal critical UI flow", () => {
 
     fireEvent.click(screen.getByText("Онлайн"));
 
-    expect(screen.getByText("🟢 Онлайн")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(mocks.api.updateProfile).toHaveBeenCalledWith(expect.objectContaining({
+        bio: "🟢 Онлайн",
+      }));
+    });
   });
 
   it("shows profile save error in editing mode", async () => {
@@ -500,8 +504,6 @@ describe("ProfileModal critical UI flow", () => {
         onLogout={vi.fn()}
       />
     );
-
-    fireEvent.click(screen.getByText("Изм."));
 
     fireEvent.click(screen.getByText("Готово"));
 

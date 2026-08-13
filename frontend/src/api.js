@@ -50,6 +50,20 @@ export function getCurrentDeviceId() {
 
 let _refreshPromise = null;
 
+export function isMissingCurrentDeviceAuth(status, message) {
+  const text = String(message || "");
+  if (!/not registered|inactive|current device/i.test(text)) return false;
+  const code = Number(status);
+  return !Number.isFinite(code) || code === 401 || code === 404;
+}
+
+function httpError(status, statusText, body) {
+  const error = new Error(body?.message || `${status} ${statusText}`);
+  error.status = status;
+  error.code = body?.code;
+  return error;
+}
+
 function refreshSessionCall() {
   if (_refreshPromise) return _refreshPromise;
   _refreshPromise = call("/auth/refresh", { method: "POST" })
@@ -85,27 +99,33 @@ export async function call(path, opts = {}) {
     },
   });
 
-  // Auto-refresh on 401 (skip refresh endpoint itself to avoid loop)
+  // Auto-refresh only for expired JWTs. A missing/inactive device also returns 401;
+  // rotating the refresh cookie in that case burns the session family.
+  let unauthorizedBody = null;
   if (response.status === 401 && !path.includes("/auth/refresh") && !path.includes("/auth/login")) {
-    const refreshed = await tryAutoRefresh();
-    if (refreshed) {
-      const newToken = getToken();
-      response = await fetch(API_BASE + path, {
-        credentials: "include",
-        ...opts,
-        headers: {
-          "Content-Type": "application/json",
-          ...(newToken ? { Authorization: "Bearer " + newToken } : {}),
-          ...(deviceId ? { "X-Device-Id": deviceId }             : {}),
-          ...(opts.headers || {}),
-        },
-      });
+    unauthorizedBody = await response.clone().json().catch(() => ({}));
+    if (!isMissingCurrentDeviceAuth(response.status, unauthorizedBody?.message)) {
+      const refreshed = await tryAutoRefresh();
+      if (refreshed) {
+        const newToken = getToken();
+        unauthorizedBody = null;
+        response = await fetch(API_BASE + path, {
+          credentials: "include",
+          ...opts,
+          headers: {
+            "Content-Type": "application/json",
+            ...(newToken ? { Authorization: "Bearer " + newToken } : {}),
+            ...(deviceId ? { "X-Device-Id": deviceId }             : {}),
+            ...(opts.headers || {}),
+          },
+        });
+      }
     }
   }
 
   if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    throw new Error(body?.message || `${response.status} ${response.statusText}`);
+    const body = unauthorizedBody || await response.json().catch(() => ({}));
+    throw httpError(response.status, response.statusText, body);
   }
 
   return response.json().catch(() => null);

@@ -1,5 +1,19 @@
 ﻿import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+
+const apiMocks = vi.hoisted(() => ({
+  listDevices: vi.fn(async () => []),
+  deactivateDevice: vi.fn(async () => ({ ok: true })),
+  updateProfile: vi.fn(),
+  createSaved: vi.fn(),
+  getBackupInfo: vi.fn(async () => ({ hasBackup: false })),
+}));
+
+vi.mock("../api", () => ({
+  api: apiMocks,
+  getCurrentDeviceId: () => "device-1",
+  setToken: vi.fn(),
+}));
 
 // ── mock VoiceMessage so MsgRow tests do not depend on audio DOM ──────────
 vi.mock("../components/VoiceMessage", () => ({
@@ -329,7 +343,7 @@ describe("BottomNav", () => {
     cleanup();
   });
 
-  it("renders all 4 tabs", async () => {
+  it("renders chats and settings tabs", async () => {
     const BottomNav = (await import("../components/BottomNav")).default;
 
     render(
@@ -343,10 +357,10 @@ describe("BottomNav", () => {
       />
     );
 
-    expect(screen.getByText("Звонки")).toBeInTheDocument();
-    expect(screen.getByText("Контакты")).toBeInTheDocument();
     expect(screen.getByText("Чаты")).toBeInTheDocument();
     expect(screen.getByText("Настройки")).toBeInTheDocument();
+    expect(screen.queryByText("Звонки")).toBeNull();
+    expect(screen.queryByText("Контакты")).toBeNull();
   });
 
   it("highlights active tab", async () => {
@@ -356,7 +370,7 @@ describe("BottomNav", () => {
       <BottomNav
         me={{ id: 1, username: "alice" }}
         myName="Alice"
-        activeTab="contacts"
+        activeTab="settings"
         onNavChange={vi.fn()}
         unreadTotal={0}
         l={defaultL}
@@ -366,8 +380,6 @@ describe("BottomNav", () => {
     const buttons = document.querySelectorAll(".bottom-nav-item");
     expect(buttons[0].classList.contains("active")).toBe(false);
     expect(buttons[1].classList.contains("active")).toBe(true);
-    expect(buttons[2].classList.contains("active")).toBe(false);
-    expect(buttons[3].classList.contains("active")).toBe(false);
   });
 
   it("shows unread badge on Chats", async () => {
@@ -439,12 +451,6 @@ describe("BottomNav", () => {
       />
     );
 
-    fireEvent.click(screen.getByText("Звонки"));
-    expect(onNavChange).toHaveBeenCalledWith("calls");
-
-    fireEvent.click(screen.getByText("Контакты"));
-    expect(onNavChange).toHaveBeenCalledWith("contacts");
-
     fireEvent.click(screen.getByText("Чаты"));
     expect(onNavChange).toHaveBeenCalledWith("chats");
 
@@ -498,16 +504,17 @@ describe("SettingsPage", () => {
       />
     );
 
-    expect(screen.getByText("Settings")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Settings" })).toBeInTheDocument();
     expect(screen.getByText("Status")).toBeInTheDocument();
-    expect(screen.getByText("Calls")).toBeInTheDocument();
-    expect(screen.getByText("System")).toBeInTheDocument();
-    expect(screen.getByText("Chats")).toBeInTheDocument();
-    expect(screen.getByText("Notifications")).toBeInTheDocument();
-    expect(screen.getByText("Data")).toBeInTheDocument();
-    expect(screen.getByText("Appearance")).toBeInTheDocument();
-    expect(screen.getAllByText("Language").length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText("Support")).toBeInTheDocument();
+    expect(screen.getByText("Devices")).toBeInTheDocument();
+    expect(screen.getByText("Backup")).toBeInTheDocument();
+    expect(screen.getByText("Saved Messages")).toBeInTheDocument();
+    expect(screen.getByText("Theme")).toBeInTheDocument();
+    expect(screen.getByText("Language")).toBeInTheDocument();
+    expect(screen.getByText("FAQ")).toBeInTheDocument();
+    expect(screen.getByText("About")).toBeInTheDocument();
+    expect(screen.queryByText("Notifications")).toBeNull();
+    expect(screen.queryByText("soon")).toBeNull();
   });
 
   it("theme toggle works", async () => {
@@ -568,6 +575,24 @@ describe("DevicesPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+    apiMocks.listDevices.mockResolvedValue([
+      {
+        id: 1,
+        deviceId: "device-1",
+        deviceName: "Chrome · Windows",
+        active: true,
+        current: true,
+        lastSeen: "2026-07-01T10:00:00.000Z",
+      },
+      {
+        id: 2,
+        deviceId: "device-2",
+        deviceName: "Old browser",
+        active: false,
+        current: false,
+        lastSeen: "2026-06-24T10:00:00.000Z",
+      },
+    ]);
   });
 
   afterEach(() => {
@@ -581,8 +606,9 @@ describe("DevicesPage", () => {
 
     expect(screen.getByText("Devices")).toBeInTheDocument();
 
-    const deviceRows = document.querySelectorAll(".device-row");
-    expect(deviceRows.length).toBe(2);
+    await waitFor(() => {
+      expect(document.querySelectorAll(".device-row").length).toBe(2);
+    });
   });
 
   it("shows current/off badges", async () => {
@@ -590,7 +616,9 @@ describe("DevicesPage", () => {
 
     render(<DevicesPage l={englishL} onBack={vi.fn()} />);
 
-    expect(screen.getByText("Current")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("Current")).toBeInTheDocument();
+    });
     expect(screen.getByText("Off")).toBeInTheDocument();
 
     const currentBadge = document.querySelector(".device-badge.current");

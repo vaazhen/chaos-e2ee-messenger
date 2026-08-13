@@ -1,11 +1,21 @@
 import { useMemo, useRef, useEffect, useLayoutEffect, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
+import Ava from "./Ava";
+import { MoreIcon } from "./Icons";
 import { normalizedRole, canFullAdmin, canModerationOnly, eligibleParticipantForModerationAction, eligibleParticipantForRoleAction, assignableRoleValues } from "../utils/groupRbac";
 import { formatMuteCountdown, participantMuteRemainingMs } from "../groupMute";
 import useNowTicker from "../hooks/useNowTicker";
 
 function participantDisplayName(p) {
-  return String(p.firstName || p.username || p.userId || "").trim() || String(p.userId);
+  return `${p.firstName || ""} ${p.lastName || ""}`.trim() || String(p.username || "").trim() || String(p.userId || "");
+}
+
+function roleLabel(role, l) {
+  const value = normalizedRole(role);
+  if (value === "OWNER") return l("Владелец", "Owner");
+  if (value === "ADMIN") return l("Админ", "Admin");
+  if (value === "MODERATOR") return l("Модератор", "Moderator");
+  return l("Участник", "Member");
 }
 
 function buildParticipantMenuDescriptors({ l, participant, actorRole, meId, fullAdmin, assignableRoles, run }) {
@@ -96,7 +106,7 @@ function ParticipantActionsMenu({ menuState, descriptors, onClose, busy }) {
   );
 }
 
-export default function ParticipantSection({ me, chat, l, onRefreshGroup }) {
+export default function ParticipantSection({ me, chat, l, onRefreshGroup, hideTitle }) {
   const [participantFilterInput, setParticipantFilterInput] = useState("");
   const [participantFilterDebounced, setParticipantFilterDebounced] = useState("");
   const [participantRoleFilter, setParticipantRoleFilter] = useState("");
@@ -192,37 +202,38 @@ export default function ParticipantSection({ me, chat, l, onRefreshGroup }) {
 
   return (
     <section className="group-admin-section group-admin-section--participants" aria-label={l("Участники", "Participants")}>
-      <h3 className="group-admin-section__title">{l("Участники", "Participants")}</h3>
+      {!hideTitle && <h3 className="group-admin-section__title">{l("Участники", "Participants")}</h3>}
       {groupActionError && <div className="profile-error">{groupActionError}</div>}
 
-      <div className="group-admin-filters">
-        <div className="group-admin-filters__row">
-          <label className="field-label" htmlFor="ga-participant-filter">{l("Поиск", "Search")}</label>
-          <input id="ga-participant-filter" className="field-inp" value={participantFilterInput}
-            onChange={(e) => setParticipantFilterInput(e.target.value)} placeholder={l("Имя, @username, id…", "Name, @username, id…")} autoComplete="off" />
-        </div>
-        <div className="group-admin-filters__row group-admin-filters__row--split">
-          <div className="group-admin-filters__field">
-            <label className="field-label" htmlFor="ga-participant-role-filter">{l("Роль", "Role")}</label>
-            <select id="ga-participant-role-filter" className="field-inp" value={participantRoleFilter} onChange={(e) => setParticipantRoleFilter(e.target.value)}>
-              <option value="">{l("Все роли", "All roles")}</option>
-              <option value="MEMBER">{l("Участник", "Member")}</option>
-              <option value="MODERATOR">{l("Модератор", "Moderator")}</option>
-              <option value="ADMIN">{l("Администратор", "Admin")}</option>
-              <option value="OWNER">{l("Владелец", "Owner")}</option>
-            </select>
-          </div>
-          {(hasMutedData || hasBannedData) && (
-            <div className="group-admin-filters__toggles" role="group" aria-label={l("Статус", "Status")}>
-              {hasMutedData && <label className="group-admin-filter-chip"><input type="checkbox" checked={participantMutedOnly} onChange={(e) => setParticipantMutedOnly(e.target.checked)} /><span>{l("Только с мутом", "Muted only")}</span></label>}
-              {hasBannedData && <label className="group-admin-filter-chip"><input type="checkbox" checked={participantBannedOnly} onChange={(e) => setParticipantBannedOnly(e.target.checked)} /><span>{l("Только бан", "Banned only")}</span></label>}
-            </div>
-          )}
-        </div>
+      <div className="ga-toolbar">
+        <input
+          id="ga-participant-filter"
+          className="settings-sheet-input ga-search"
+          value={participantFilterInput}
+          onChange={(e) => setParticipantFilterInput(e.target.value)}
+          placeholder={l("Имя, @username, id…", "Name, @username, id…")}
+          autoComplete="off"
+        />
+        <select
+          id="ga-participant-role-filter"
+          className="ga-role-select"
+          value={participantRoleFilter}
+          onChange={(e) => setParticipantRoleFilter(e.target.value)}
+          aria-label={l("Роль", "Role")}
+        >
+          <option value="">{l("Все роли", "All roles")}</option>
+          <option value="MEMBER">{l("Участник", "Member")}</option>
+          <option value="MODERATOR">{l("Модератор", "Moderator")}</option>
+          <option value="ADMIN">{l("Администратор", "Admin")}</option>
+          <option value="OWNER">{l("Владелец", "Owner")}</option>
+        </select>
       </div>
-      <p id="ga-participant-filter-hint" className="tool-note group-admin-hint group-admin-section__hint">
-        {l("Поиск и фильтры выполняются на устройстве. Все совпадения в одном списке — прокрутите его ниже.", "Search and filters run on this device. All matches appear in one list — scroll below.")}
-      </p>
+      {(hasMutedData || hasBannedData) && (
+        <div className="group-admin-filters__toggles" role="group" aria-label={l("Статус", "Status")}>
+          {hasMutedData && <label className="group-admin-filter-chip"><input type="checkbox" checked={participantMutedOnly} onChange={(e) => setParticipantMutedOnly(e.target.checked)} /><span>{l("Только с мутом", "Muted only")}</span></label>}
+          {hasBannedData && <label className="group-admin-filter-chip"><input type="checkbox" checked={participantBannedOnly} onChange={(e) => setParticipantBannedOnly(e.target.checked)} /><span>{l("Только бан", "Banned only")}</span></label>}
+        </div>
+      )}
 
       <div className="group-participant-picker" role="list" aria-busy={groupActionBusy} aria-label={l(`Участники: ${filteredCount}`, `Participants: ${filteredCount}`)}>
         {filteredParticipants.map((p) => {
@@ -233,10 +244,11 @@ export default function ParticipantSection({ me, chat, l, onRefreshGroup }) {
             <div key={p.userId} className={`group-participant-row-wrap${menuOpen ? " group-participant-row-wrap--active" : ""}`}
               onContextMenu={hasMenu ? (e) => { e.preventDefault(); openMenuForParticipant(p, e.clientX, e.clientY); } : undefined}>
               <div className={`group-participant-row${hasMenu ? " group-participant-row--interactive" : ""}`} role="listitem">
+                <Ava name={participantDisplayName(p)} colorIdx={Number(p.userId || 0) % 7} size="sm" avatarUrl={p.avatarUrl} />
                 <span className="group-participant-row__main">
                   <span className="group-participant-row__name">{participantDisplayName(p)}</span>
                   <span className="group-participant-row__meta">
-                    {String(p.role || "MEMBER").toUpperCase()}
+                    {roleLabel(p.role, l)}
                     {p.banned ? ` · ${l("Бан", "Banned")}` : ""}
                     {!p.banned && p.mutedUntil ? (() => {
                       const untilMs = participantMuteRemainingMs(p.mutedUntil, participantMuteTickerNow);
@@ -249,7 +261,7 @@ export default function ParticipantSection({ me, chat, l, onRefreshGroup }) {
                   aria-haspopup="menu" aria-expanded={menuOpen}
                   onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); openMenuForParticipant(p, r.left, r.bottom + 4); }}
                   onKeyDown={(e) => { if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") { e.preventDefault(); const r = e.currentTarget.getBoundingClientRect(); openMenuForParticipant(p, r.left, r.bottom + 4); } }}
-                >⋯</button>}
+                ><MoreIcon /></button>}
               </div>
             </div>
           );

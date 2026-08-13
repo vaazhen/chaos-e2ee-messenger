@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 
 const mocks = vi.hoisted(() => ({
   api: {
@@ -111,7 +111,12 @@ describe("useMessages critical flow", () => {
       await result.current.loadMessages(100);
     });
 
-    expect(window.e2ee.decryptEnvelope).toHaveBeenCalled();
+    expect(window.e2ee.decryptEnvelope).toHaveBeenCalledWith(expect.objectContaining({
+      ciphertext: "cipher",
+      nonce: "nonce",
+      senderDeviceId: undefined,
+      _chatId: 100,
+    }));
     expect(result.current.msgs[100]).toHaveLength(1);
     expect(result.current.msgs[100][0]).toMatchObject({
       id: 500,
@@ -120,7 +125,7 @@ describe("useMessages critical flow", () => {
       _out: false,
     });
 
-    expect(mocks.api.markRead).toHaveBeenCalledWith(100);
+    expect(mocks.api.markRead).not.toHaveBeenCalled();
     expect(mocks.api.markDelivered).toHaveBeenCalledWith(100);
     expect(mocks.saveMessagePreview).toHaveBeenCalledWith(expect.objectContaining({
       userId: 1,
@@ -175,6 +180,13 @@ describe("useMessages critical flow", () => {
       text: "hello from websocket",
       messageId: 700,
     });
+
+    expect(window.e2ee.decryptEnvelope).toHaveBeenCalledWith(expect.objectContaining({
+      ciphertext: "cipher",
+      nonce: "nonce",
+      senderDeviceId: "device-a",
+      _chatId: 100,
+    }));
 
     expect(result.current.msgs[100]).toHaveLength(1);
     expect(result.current.msgs[100][0]).toMatchObject({
@@ -231,6 +243,57 @@ describe("useMessages critical flow", () => {
       messageId: 501,
       preview: "Voice message",
     }));
+  });
+
+  it("loadMessages re-decrypts cached encrypted placeholders and binds chat id into AAD", async () => {
+    const { useMessages } = await import("../hooks/useMessages");
+
+    mocks.localStore.getMessagesByChat.mockResolvedValueOnce([
+      {
+        id: 500,
+        chatId: 100,
+        senderId: 2,
+        content: "[encrypted]",
+        _text: "[encrypted]",
+      },
+    ]);
+    mocks.api.getMessages.mockResolvedValueOnce([
+      {
+        id: 500,
+        chatId: 100,
+        senderId: 2,
+        senderDeviceId: "device-bob",
+        createdAt: "2026-04-28T10:00:00.000Z",
+        envelope: { ciphertext: "cipher", nonce: "nonce", messageType: "WHISPER" },
+      },
+    ]);
+
+    window.e2ee = {
+      decryptEnvelope: vi.fn(async () => "recovered plaintext"),
+    };
+
+    const { result } = renderHook(() => useMessages(1));
+
+    await act(async () => {
+      await result.current.loadMessages(100);
+    });
+
+    await waitFor(() => {
+      expect(result.current.msgs[100][0]).toMatchObject({
+        id: 500,
+        _text: "recovered plaintext",
+      });
+    });
+
+    expect(window.e2ee.decryptEnvelope).toHaveBeenCalledWith(expect.objectContaining({
+      ciphertext: "cipher",
+      nonce: "nonce",
+      senderDeviceId: "device-bob",
+      _chatId: 100,
+    }));
+    expect(mocks.localStore.saveMessages).toHaveBeenCalledWith([
+      expect.objectContaining({ id: 500, _text: "recovered plaintext" }),
+    ]);
   });
 
   it("handleIncomingEvent applies reaction events and updates myReactions for own actor id", async () => {

@@ -53,9 +53,11 @@ export async function ensureDeviceRegistered(deviceRegistrationToken) {
     }
     const r = await fetch(baseUrl + path, {
       ...opts,
+      credentials: "include",
       headers: {
         "Content-Type": "application/json",
         Authorization: "Bearer " + token,
+        "X-Device-Id": getOrCreateDeviceId(),
         ...extraHeaders,
         ...opts.headers,
       },
@@ -104,6 +106,7 @@ export async function ensureCurrentDeviceExists() {
   const deviceId = getOrCreateDeviceId();
   const r = await fetch(`${API_BASE}/crypto/devices/current`, {
     method: "GET",
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       Authorization: "Bearer " + token,
@@ -113,7 +116,10 @@ export async function ensureCurrentDeviceExists() {
 
   if (!r.ok) {
     const body = await r.json().catch(() => ({}));
-    throw new Error(body?.message || `${r.status} ${r.statusText}`);
+    const error = new Error(body?.message || `${r.status} ${r.statusText}`);
+    error.status = r.status;
+    error.code = body?.code;
+    throw error;
   }
 
   if (window.e2ee?.replenishOneTimePreKeys) {

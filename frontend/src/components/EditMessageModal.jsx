@@ -1,45 +1,46 @@
-import { useRef } from "react";
-import useSwipeDown from "../hooks/useSwipeDown";
+import Modal from "./ui/Modal";
+import TextField from "./ui/TextField";
+import Button from "./ui/Button";
 
 export default function EditMessageModal({ editTarget, editText, editLoading, setEditText, setEditTarget, submitEdit, l }) {
-  const modalRef = useRef(null);
-  useSwipeDown(modalRef, () => !editLoading && setEditTarget(null), { enabled: !editLoading });
-
   if (!editTarget) return null;
 
+  const close = () => { if (!editLoading) setEditTarget(null); };
+
+  const isCaption = Boolean(editTarget._img || editTarget._voice);
+
   return (
-    <div className="modal-bg" onClick={() => !editLoading && setEditTarget(null)}>
-      <div ref={modalRef} className="modal small-modal glass-card" onClick={e => e.stopPropagation()}>
-        <div className="modal-title">
-          {l("Изменить сообщение", "Edit message")}
-          <button className="modal-close" onClick={() => !editLoading && setEditTarget(null)}>×</button>
-        </div>
-        <textarea
-          className="field-inp edit-textarea"
-          value={editText}
-          onChange={e => setEditText(e.target.value)}
-          autoFocus rows={4}
-          onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) submitEdit(); }}
-        />
+    <Modal open onClose={close} title={l("Изменить сообщение", "Edit message")} size="sm" className="edit-modal">
+      <div className="modal-body">
         {editTarget._img && (
-          <div className="field-hint">
+          <p className="modal-copy">
             {l("Будет изменена только подпись к изображению.", "Only the image caption will be changed.")}
-          </div>
+          </p>
         )}
         {editTarget._voice && (
-          <div className="field-hint">
+          <p className="modal-copy">
             {l("Будет изменена только подпись к голосовому сообщению.", "Only the voice caption will be changed.")}
-          </div>
+          </p>
         )}
-        <div className="btn-row">
-          <button className="btn-sec" disabled={editLoading} onClick={() => setEditTarget(null)}>
-            {l("Отмена", "Cancel")}
-          </button>
-          <button className="btn-pri" disabled={editLoading || !editText.trim()} onClick={submitEdit}>
-            {editLoading ? l("Сохраняем...", "Saving...") : l("Сохранить", "Save")}
-          </button>
-        </div>
+        <TextField
+          multiline
+          className="edit-textarea"
+          value={editText}
+          onChange={e => setEditText(e.target.value)}
+          autoFocus
+          rows={5}
+          placeholder={isCaption ? l("Подпись", "Caption") : l("Текст сообщения", "Message text")}
+          onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) submitEdit(); }}
+        />
       </div>
-    </div>
+      <div className="modal-actions">
+        <Button variant="secondary" disabled={editLoading} onClick={close}>
+          {l("Отмена", "Cancel")}
+        </Button>
+        <Button disabled={editLoading || !editText.trim()} onClick={submitEdit}>
+          {editLoading ? l("Сохраняем...", "Saving...") : l("Сохранить", "Save")}
+        </Button>
+      </div>
+    </Modal>
   );
 }

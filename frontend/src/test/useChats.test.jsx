@@ -57,7 +57,7 @@ describe("useChats", () => {
     });
   });
 
-  it("selectChat sets active id and resets unread counter", async () => {
+  it("selectChat sets active id and keeps unread until resetUnread", async () => {
     const { useChats } = await import("../hooks/useChats");
 
     mocks.api.getChats.mockResolvedValueOnce([
@@ -75,6 +75,12 @@ describe("useChats", () => {
     });
 
     expect(result.current.activeId).toBe(100);
+    expect(result.current.chats[0].unread).toBe(5);
+
+    act(() => {
+      result.current.resetUnread(100);
+    });
+
     expect(result.current.chats[0].unread).toBe(0);
   });
 
