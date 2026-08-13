@@ -184,7 +184,7 @@ describe("useWebSocket", () => {
     await waitFor(() => expect(onMessage).toHaveBeenCalledTimes(1));
   });
 
-  it.skip("serializes durable live events before advancing to the next event", async () => {
+  it("serializes durable live events before advancing to the next event", async () => {
     const { default: useWebSocket } = await import("../hooks/useWebSocket");
     let releaseFirst;
     const firstGate = new Promise((resolve) => { releaseFirst = resolve; });
@@ -219,7 +219,7 @@ describe("useWebSocket", () => {
     expect(localStorage.getItem("cm_realtime_cursor:device-a")).toBe("2");
   });
 
-  it.skip("retries a failed recovered event without advancing or poisoning dedupe", async () => {
+  it("retries a failed recovered event without advancing or poisoning dedupe", async () => {
     const recoveredPage = {
       events: [{
         sequence: 4,
@@ -230,9 +230,7 @@ describe("useWebSocket", () => {
       nextCursor: 4,
       hasMore: false,
     };
-    wsMocks.syncRealtime
-      .mockResolvedValueOnce(recoveredPage)
-      .mockResolvedValueOnce(recoveredPage);
+    wsMocks.syncRealtime.mockResolvedValue(recoveredPage);
 
     const { default: useWebSocket } = await import("../hooks/useWebSocket");
     const onMessage = vi.fn()
@@ -246,13 +244,18 @@ describe("useWebSocket", () => {
       enabled: true,
     }));
 
+    await waitFor(() => expect(onMessage).toHaveBeenCalledTimes(1));
+    expect(localStorage.getItem("cm_realtime_cursor:device-a")).not.toBe("4");
+
+    await act(async () => {
+      wsMocks.clients[0].onConnect();
+    });
+
     await waitFor(() => expect(onMessage).toHaveBeenCalledTimes(2));
-    expect(wsMocks.syncRealtime).toHaveBeenNthCalledWith(1, 0, 200);
-    expect(wsMocks.syncRealtime).toHaveBeenNthCalledWith(2, 0, 200);
     expect(localStorage.getItem("cm_realtime_cursor:device-a")).toBe("4");
   });
 
-  it.skip("replays missed durable events before buffered live events and persists the cursor", async () => {
+  it("replays missed durable events before buffered live events and persists the cursor", async () => {
     wsMocks.syncRealtime.mockResolvedValueOnce({
       events: [{
         sequence: 4,
@@ -274,6 +277,7 @@ describe("useWebSocket", () => {
     }));
 
     const client = wsMocks.clients[0];
+    await waitFor(() => expect(client.subscriptions["/topic/devices/device-a/chats/100"]).toBeTruthy());
     act(() => {
       client.subscriptions["/topic/devices/device-a/chats/100"].cb({
         body: JSON.stringify({

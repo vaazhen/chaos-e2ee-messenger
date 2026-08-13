@@ -13,8 +13,8 @@ function chatActivityMs(chat) {
 
 export default function ChatList({
   me, chats = [], requests = [], activeId, search = "", loadingChats,
-  filter = "all", onFilterChange = () => {}, onSelectChat, onПоиск = () => {},
-  onNewChat, onOpenНастройки, onMarkAllRead, onDeleteChat, onDeleteChatEveryone,
+  filter = "all", onFilterChange = () => {}, onSelectChat, onSearch = () => {},
+  onNewChat, onMarkAllRead, onDeleteChat, onDeleteChatEveryone,
   onToggleMuteChat, onToggleArchiveChat, sidebarCompact = false,
   sidebarResizeEnabled = false, onSidebarResizePointerDown,
   onSidebarResizePointerMove, onSidebarResizePointerUp,
@@ -177,8 +177,8 @@ export default function ChatList({
             <>
               <div className="search-shell">
                 <span className="shell-icon"><SearchIcon /></span>
-                <input value={search} onChange={e => onПоиск(e.target.value)} placeholder={l("Поиск чатов", "Search chats")} />
-                {search && <button className="shell-clear" onClick={() => onПоиск("")}><CloseIcon /></button>}
+                <input value={search} onChange={e => onSearch(e.target.value)} placeholder={l("Поиск чатов", "Search chats")} />
+                {search && <button className="shell-clear" onClick={() => onSearch("")}><CloseIcon /></button>}
               </div>
 
               <div className="chat-filters">

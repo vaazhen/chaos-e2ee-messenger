@@ -84,10 +84,9 @@ describe("critical UI components", () => {
         search=""
         filter="all"
         onSelectChat={onSelectChat}
-        onПоиск={onSearch}
+        onSearch={onSearch}
         onNewChat={onNewChat}
         onFilterChange={onFilterChange}
-        onOpenНастройки={onNavChange}
         onNavChange={onNavChange}
       />
     );
