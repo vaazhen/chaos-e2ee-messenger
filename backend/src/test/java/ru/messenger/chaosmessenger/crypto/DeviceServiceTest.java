@@ -259,6 +259,75 @@ class DeviceServiceTest {
         }
 
         @Test
+        void rejectsIdentityOverwriteOnExistingDevice() throws Exception {
+            DeviceRegistrationRequest request = validRegistrationRequest("dev-1");
+
+            UserDevice existingDevice = TestFixtures.device(10L, alice.getId(), "dev-1");
+            existingDevice.setUser(alice);
+            existingDevice.setIdentityPublicKey(b64(randomBytes(32)));
+            existingDevice.setSigningPublicKey(request.signingPublicKey());
+
+            when(userIdentityService.require("alice")).thenReturn(alice);
+            when(userDeviceRepository.findByUserUsernameAndDeviceId("alice", "dev-1"))
+                    .thenReturn(Optional.of(existingDevice));
+
+            assertThatThrownBy(() -> deviceService.registerDevice("alice", request))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("identity keys cannot be rotated");
+
+            verify(userDeviceRepository, never()).save(any());
+            verify(signedPreKeyRepository, never()).save(any());
+        }
+
+        @Test
+        void allowsJwtRebindWhenIdentityKeysMatch() throws Exception {
+            DeviceRegistrationRequest request = validRegistrationRequest("dev-1");
+
+            UserDevice existingDevice = TestFixtures.device(10L, alice.getId(), "dev-1");
+            existingDevice.setUser(alice);
+            existingDevice.setActive(false);
+            existingDevice.setIdentityPublicKey(request.identityPublicKey());
+            existingDevice.setSigningPublicKey(request.signingPublicKey());
+
+            SignedPreKey existingSignedPreKey = SignedPreKey.builder()
+                    .id(100L)
+                    .device(existingDevice)
+                    .preKeyId(7)
+                    .publicKey(request.signedPreKey().publicKey())
+                    .signature(request.signedPreKey().signature())
+                    .createdAt(LocalDateTime.now().minusDays(1))
+                    .build();
+
+            when(userIdentityService.require("alice")).thenReturn(alice);
+            when(userDeviceRepository.findByUserUsernameAndDeviceId("alice", "dev-1"))
+                    .thenReturn(Optional.of(existingDevice));
+            when(userDeviceRepository.save(existingDevice)).thenReturn(existingDevice);
+            when(signedPreKeyRepository.findByDeviceIdAndPreKeyId(10L, 7))
+                    .thenReturn(Optional.of(existingSignedPreKey));
+
+            DeviceRegistrationResponse response = deviceService.registerDevice("alice", request, false);
+
+            assertThat(response.serverDeviceInternalId()).isEqualTo(10L);
+            assertThat(existingDevice.isActive()).isTrue();
+            verify(userDeviceRepository).save(existingDevice);
+        }
+
+        @Test
+        void rejectsNewDeviceWithoutEnrollmentToken() throws Exception {
+            DeviceRegistrationRequest request = validRegistrationRequest("dev-1");
+
+            when(userIdentityService.require("alice")).thenReturn(alice);
+            when(userDeviceRepository.findByUserUsernameAndDeviceId("alice", "dev-1"))
+                    .thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> deviceService.registerDevice("alice", request, false))
+                    .isInstanceOf(AuthException.class)
+                    .hasMessageContaining("login registration token");
+
+            verify(userDeviceRepository, never()).save(any());
+        }
+
+        @Test
         void requiresMandatoryRegistrationFields() {
             DeviceRegistrationRequest missingDeviceId = new DeviceRegistrationRequest(
                     null, null, null, null, null, null, null);

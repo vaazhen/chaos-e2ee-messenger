@@ -44,7 +44,7 @@ class CryptoApiControllerTest {
     void registerRejectsMissingDeviceRegistrationToken() {
         DeviceRegistrationRequest request = minimalRequest();
 
-        assertThatThrownBy(() -> deviceController.register(" ", request))
+        assertThatThrownBy(() -> deviceController.register(" ", null, request))
                 .isInstanceOf(ResponseStatusException.class)
                 .satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED));
     }
@@ -55,7 +55,7 @@ class CryptoApiControllerTest {
 
         when(deviceRegTokenService.consumeAndGetUsername("bad-token")).thenReturn(null);
 
-        assertThatThrownBy(() -> deviceController.register("bad-token", request))
+        assertThatThrownBy(() -> deviceController.register("bad-token", null, request))
                 .isInstanceOf(ResponseStatusException.class)
                 .satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED));
     }
@@ -66,13 +66,13 @@ class CryptoApiControllerTest {
         DeviceRegistrationResponse expected = new DeviceRegistrationResponse("dev-a", 10L);
 
         when(deviceRegTokenService.consumeAndGetUsername("device-token")).thenReturn("alice");
-        when(deviceService.registerDevice("alice", request)).thenReturn(expected);
+        when(deviceService.registerDevice("alice", request, true)).thenReturn(expected);
 
-        DeviceRegistrationResponse response = deviceController.register("device-token", request);
+        DeviceRegistrationResponse response = deviceController.register("device-token", null, request);
 
         assertThat(response).isSameAs(expected);
         verify(deviceRegTokenService).consumeAndGetUsername("device-token");
-        verify(deviceService).registerDevice("alice", request);
+        verify(deviceService).registerDevice("alice", request, true);
     }
 
     @Test
@@ -161,13 +161,14 @@ class CryptoApiControllerTest {
         PreKeyBundleResponse expected = new PreKeyBundleResponse("bob", List.of());
 
         when(currentDeviceService.requireCurrentDevice()).thenReturn(new UserDevice());
-        when(preKeyService.getBundleByUsername("bob")).thenReturn(expected);
+        when(authentication.getName()).thenReturn("alice");
+        when(preKeyService.getBundleByUsername("alice", "bob")).thenReturn(expected);
 
         PreKeyBundleResponse response = bundleController.getBundle("bob", authentication);
 
         assertThat(response).isSameAs(expected);
         verify(currentDeviceService).requireCurrentDevice();
-        verify(preKeyService).getBundleByUsername("bob");
+        verify(preKeyService).getBundleByUsername("alice", "bob");
     }
 
     @Test

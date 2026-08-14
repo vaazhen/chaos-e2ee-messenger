@@ -91,6 +91,31 @@ describe("deviceId", () => {
     expect(secondHeaders["X-Device-Registration-Token"]).toBeUndefined();
   });
 
+  it("ensureDeviceRegistered can re-bind with JWT and without an enrollment token", async () => {
+    const { setToken } = await import("../api");
+    setToken("jwt-token");
+
+    window.e2ee = {
+      getOrCreateDeviceId: vi.fn(() => "device-a"),
+      ensureDeviceRegistered: vi.fn(async (apiFn) => {
+        expect(apiFn.__canRegisterDevice).toBe(false);
+        await apiFn("/api/crypto/devices/register", {
+          method: "POST",
+          body: JSON.stringify({ deviceId: "device-a" }),
+        });
+      }),
+    };
+
+    fetch.mockResolvedValueOnce(await okJson({ registered: true }));
+
+    const { ensureDeviceRegistered } = await import("../deviceId");
+    await expect(ensureDeviceRegistered()).resolves.toBe("device-a");
+
+    const headers = fetch.mock.calls[0][1].headers;
+    expect(headers.Authorization).toBe("Bearer jwt-token");
+    expect(headers["X-Device-Registration-Token"]).toBeUndefined();
+  });
+
   it("ensureDeviceRegistered resets local identity and retries once on device id conflict", async () => {
     const { setToken } = await import("../api");
     setToken("jwt-token");

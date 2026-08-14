@@ -111,6 +111,20 @@ class AuthServiceTest {
     }
 
     @Test
+    void refreshRotatesTokensWithoutIssuingADeviceRegistrationToken() {
+        when(refreshTokenService.rotate("old-refresh"))
+                .thenReturn(new RefreshTokenService.Rotation("alice", "new-refresh", "session-1"));
+        when(jwtService.generateToken("alice", "session-1")).thenReturn("new-jwt");
+
+        var response = service.refresh("old-refresh");
+
+        assertThat(response.token()).isEqualTo("new-jwt");
+        assertThat(response.refreshToken()).isEqualTo("new-refresh");
+        assertThat(response.deviceRegistrationToken()).isNull();
+        verifyNoInteractions(deviceRegTokenService);
+    }
+
+    @Test
     void completeSetupRejectsRaceWhenTokenWasConsumedAfterValidation() {
         User user = phoneUser();
         when(setupTokenService.getPhone("setup-token")).thenReturn("+79001234567");

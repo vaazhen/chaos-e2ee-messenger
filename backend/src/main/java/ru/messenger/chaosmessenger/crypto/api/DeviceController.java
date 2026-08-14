@@ -42,29 +42,35 @@ public class DeviceController {
 
     @Operation(
             summary = "Register a device and upload its X3DH key bundle",
-            description = "Requires X-Device-Registration-Token issued by /api/auth/verify-code."
+            description = "New devices require X-Device-Registration-Token from login. "
+                    + "An authenticated session may re-bind an existing device only when identity keys match."
     )
     @PostMapping("/register")
     public DeviceRegistrationResponse register(
             @RequestHeader(value = "X-Device-Registration-Token", required = false) String registrationToken,
+            Authentication authentication,
             @Valid @RequestBody DeviceRegistrationRequest request
     ) {
-        if (registrationToken == null || registrationToken.isBlank()) {
+        boolean enrollment = registrationToken != null && !registrationToken.isBlank();
+        String username;
+        if (enrollment) {
+            username = deviceRegTokenService.consumeAndGetUsername(registrationToken);
+            if (username == null) {
+                throw new ResponseStatusException(
+                        HttpStatus.UNAUTHORIZED,
+                        "Invalid or expired device registration token. Obtain a fresh token from login."
+                );
+            }
+        } else if (isAuthenticatedPrincipal(authentication)) {
+            username = authentication.getName();
+        } else {
             throw new ResponseStatusException(
                     HttpStatus.UNAUTHORIZED,
-                    "Missing device registration token. Obtain a fresh token from POST /api/auth/verify-code."
+                    "Missing device registration token. Obtain a fresh token from login."
             );
         }
 
-        String username = deviceRegTokenService.consumeAndGetUsername(registrationToken);
-        if (username == null) {
-            throw new ResponseStatusException(
-                    HttpStatus.UNAUTHORIZED,
-                    "Invalid or expired device registration token. Obtain a fresh token from POST /api/auth/verify-code."
-            );
-        }
-
-        return deviceService.registerDevice(username, request);
+        return deviceService.registerDevice(username, request, enrollment);
     }
 
     @Operation(
@@ -134,8 +140,16 @@ public class DeviceController {
     }
 
     private void requireAuth(Authentication authentication) {
-        if (authentication == null || authentication.getName() == null || authentication.getName().isBlank()) {
+        if (!isAuthenticatedPrincipal(authentication)) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "JWT authentication is required");
         }
+    }
+
+    private static boolean isAuthenticatedPrincipal(Authentication authentication) {
+        if (authentication == null) {
+            return false;
+        }
+        String name = authentication.getName();
+        return name != null && !name.isBlank() && !"anonymousUser".equalsIgnoreCase(name);
     }
 }

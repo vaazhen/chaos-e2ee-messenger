@@ -33,9 +33,10 @@ export function getOrCreateDeviceId() {
 
 /**
  * Registers the device through crypto-engine.js.
- * Called right after OTP verify-code or complete-setup.
+ * Login passes a one-time enrollment token. Session restore may omit it and
+ * only re-bind an already enrolled device whose identity keys still match.
  *
- * @param {string} deviceRegistrationToken — short-lived token (60 s) from verify-code.
+ * @param {string} [deviceRegistrationToken] — short-lived token (60 s) from login.
  */
 export async function ensureDeviceRegistered(deviceRegistrationToken) {
   if (!window.e2ee?.ensureDeviceRegistered) {

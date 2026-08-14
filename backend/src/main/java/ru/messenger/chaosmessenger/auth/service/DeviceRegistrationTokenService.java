@@ -11,15 +11,16 @@ import java.util.UUID;
  *
  * <p>Flow:
  * <ol>
- *   <li>{@code /api/auth/verify-code} succeeds → returns a {@code deviceRegistrationToken}
- *       (UUID, TTL 60 s, stored in Redis under {@code dev_reg_token:<uuid>} → username).</li>
- *   <li>{@code POST /api/crypto/devices/register} reads the token from the
- *       {@code X-Device-Registration-Token} header, validates it, and consumes it
- *       (one-time use).</li>
+ *   <li>Login ({@code /api/auth/verify-code}, {@code /api/auth/complete-setup},
+ *       email login/register) returns a one-time {@code deviceRegistrationToken}
+ *       (UUID, TTL 60 s, Redis {@code dev_reg_token:<uuid>} → username).</li>
+ *   <li>{@code POST /api/crypto/devices/register} consumes the token from
+ *       {@code X-Device-Registration-Token} and enrolls a <em>new</em> device.</li>
  * </ol>
  *
- * <p>This closes the bootstrap gap: device registration no longer requires a
- * fully authenticated JWT, but it still requires proof of a completed OTP flow.
+ * <p>Refresh must not mint this token: a stolen refresh cookie would otherwise
+ * enroll a hostile identity onto an existing device id. JWT re-bind of an
+ * already enrolled device is allowed only when identity keys match.
  */
 @Service
 public class DeviceRegistrationTokenService {

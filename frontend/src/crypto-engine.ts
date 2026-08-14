@@ -281,17 +281,6 @@ await (async function () {
         return crypto.subtle.importKey('raw', bits, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
     }
 
-    async function deriveLegacySelfEnvelopeKey(localBundle) {
-        assertWebCryptoAvailable();
-        const raw = b64ToBytes(localBundle.identity.publicKey);
-        const hkdfKey = await crypto.subtle.importKey('raw', raw, { name: 'HKDF' }, false, ['deriveBits']);
-        const bits = await crypto.subtle.deriveBits(
-            { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(32), info: new TextEncoder().encode('ChaosMessengerSelf') },
-            hkdfKey, 256
-        );
-        return crypto.subtle.importKey('raw', bits, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
-    }
-
     async function encryptSelfEnvelope(localBundle, plainText) {
         const key = await deriveSelfEnvelopeKey(localBundle);
         return aesEncryptWithKey(plainText, key);
@@ -299,12 +288,7 @@ await (async function () {
 
     async function decryptSelfEnvelope(localBundle, envelope) {
         const key = await deriveSelfEnvelopeKey(localBundle);
-        try {
-            return await aesDecryptWithKey(envelope.ciphertext, envelope.nonce, key);
-        } catch (_) {
-            const legacyKey = await deriveLegacySelfEnvelopeKey(localBundle);
-            return aesDecryptWithKey(envelope.ciphertext, envelope.nonce, legacyKey);
-        }
+        return aesDecryptWithKey(envelope.ciphertext, envelope.nonce, key);
     }
 
     // ─── Secure storage ───────────────────────────────────────────────────────

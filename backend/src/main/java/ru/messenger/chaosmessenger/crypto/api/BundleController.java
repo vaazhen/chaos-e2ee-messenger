@@ -24,7 +24,7 @@ public class BundleController {
     @GetMapping("/bundle/{username}")
     public PreKeyBundleResponse getBundle(@PathVariable String username, Authentication authentication) {
         currentDeviceService.requireCurrentDevice();
-        return preKeyService.getBundleByUsername(username);
+        return preKeyService.getBundleByUsername(authentication.getName(), username);
     }
 
     @PostMapping("/resolve-chat-devices/{chatId}")

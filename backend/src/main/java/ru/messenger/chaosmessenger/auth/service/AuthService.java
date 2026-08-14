@@ -137,7 +137,7 @@ public class AuthService {
         return new TokenRefreshResponse(
                 jwtService.generateToken(rotation.username(), rotation.sessionId()),
                 rotation.token(),
-                deviceRegTokenService.issue(rotation.username())
+                null
         );
     }
 

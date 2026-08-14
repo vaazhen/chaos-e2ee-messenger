@@ -94,7 +94,6 @@ async function mockApi(page, state = {}) {
       return route.fulfill(json({
         token: "jwt-refresh-2",
         refreshToken: "refresh-new-2",
-        deviceRegistrationToken: "device-reg-refresh",
       }));
     }
 
@@ -204,7 +203,7 @@ test.describe("auth/setup browser flow", () => {
     expect(state.calls.some(c => c.pathname === "/users/me")).toBeTruthy();
   });
 
-  test("refresh recovery re-registers missing current device and restores session", async ({ page }) => {
+  test("session restore re-binds missing current device without a refresh registration token", async ({ page }) => {
     const state = {
       forceDeviceRecovery: true,
       meUsername: "alice",
@@ -220,7 +219,7 @@ test.describe("auth/setup browser flow", () => {
 
     await expect(page.getByText(/Чаты|Chats/i)).toBeVisible();
 
-    expect(state.refreshCount).toBeGreaterThanOrEqual(2);
+    expect(state.refreshCount).toBeGreaterThanOrEqual(1);
     expect(state.deviceRegisterCount).toBeGreaterThanOrEqual(1);
     expect(state.currentDeviceCount).toBeGreaterThanOrEqual(2);
 

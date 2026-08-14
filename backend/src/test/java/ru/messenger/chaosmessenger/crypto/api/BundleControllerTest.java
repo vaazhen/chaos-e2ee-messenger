@@ -36,13 +36,14 @@ class BundleControllerTest {
         );
 
         when(currentDeviceService.requireCurrentDevice()).thenReturn(null);
-        when(preKeyService.getBundleByUsername("bob")).thenReturn(expected);
+        when(authentication.getName()).thenReturn("alice");
+        when(preKeyService.getBundleByUsername("alice", "bob")).thenReturn(expected);
 
         PreKeyBundleResponse response = bundleController.getBundle("bob", authentication);
 
         assertThat(response).isSameAs(expected);
         verify(currentDeviceService).requireCurrentDevice();
-        verify(preKeyService).getBundleByUsername("bob");
+        verify(preKeyService).getBundleByUsername("alice", "bob");
     }
 
     @Test

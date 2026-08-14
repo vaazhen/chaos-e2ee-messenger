@@ -42,7 +42,7 @@ class DeviceControllerTest {
                 List.of(new OneTimePreKeyDto(1, "pre-key"))
         );
 
-        assertThatThrownBy(() -> deviceController.register(null, request))
+        assertThatThrownBy(() -> deviceController.register(null, null, request))
                 .isInstanceOf(ResponseStatusException.class)
                 .satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode())
                         .isEqualTo(HttpStatus.UNAUTHORIZED));
@@ -56,7 +56,7 @@ class DeviceControllerTest {
                 List.of(new OneTimePreKeyDto(1, "pre-key"))
         );
 
-        assertThatThrownBy(() -> deviceController.register("   ", request))
+        assertThatThrownBy(() -> deviceController.register("   ", null, request))
                 .isInstanceOf(ResponseStatusException.class)
                 .satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode())
                         .isEqualTo(HttpStatus.UNAUTHORIZED));
@@ -72,7 +72,7 @@ class DeviceControllerTest {
 
         when(deviceRegTokenService.consumeAndGetUsername("bad-token")).thenReturn(null);
 
-        assertThatThrownBy(() -> deviceController.register("bad-token", request))
+        assertThatThrownBy(() -> deviceController.register("bad-token", null, request))
                 .isInstanceOf(ResponseStatusException.class)
                 .satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode())
                         .isEqualTo(HttpStatus.UNAUTHORIZED));
@@ -90,13 +90,47 @@ class DeviceControllerTest {
         );
 
         when(deviceRegTokenService.consumeAndGetUsername("valid-token")).thenReturn("alice");
-        when(deviceService.registerDevice("alice", request)).thenReturn(expected);
+        when(deviceService.registerDevice("alice", request, true)).thenReturn(expected);
 
-        DeviceRegistrationResponse response = deviceController.register("valid-token", request);
+        DeviceRegistrationResponse response = deviceController.register("valid-token", null, request);
 
         assertThat(response).isSameAs(expected);
         verify(deviceRegTokenService).consumeAndGetUsername("valid-token");
-        verify(deviceService).registerDevice("alice", request);
+        verify(deviceService).registerDevice("alice", request, true);
+    }
+
+    @Test
+    void registerWithJwtRebindsWithoutEnrollmentToken() {
+        DeviceRegistrationRequest request = new DeviceRegistrationRequest(
+                "dev-a", "device-name", 1, "identity", "signed-key",
+                new SignedPreKeyDto(1, "pre-key", "sig"),
+                List.of(new OneTimePreKeyDto(1, "pre-key"))
+        );
+        DeviceRegistrationResponse expected = new DeviceRegistrationResponse("dev-a", 10L);
+
+        when(authentication.getName()).thenReturn("alice");
+        when(deviceService.registerDevice("alice", request, false)).thenReturn(expected);
+
+        DeviceRegistrationResponse response = deviceController.register(null, authentication, request);
+
+        assertThat(response).isSameAs(expected);
+        verify(deviceService).registerDevice("alice", request, false);
+    }
+
+    @Test
+    void registerRejectsAnonymousAuthenticationWithoutEnrollmentToken() {
+        DeviceRegistrationRequest request = new DeviceRegistrationRequest(
+                "dev-a", "device-name", 1, "identity", "signed-key",
+                new SignedPreKeyDto(1, "pre-key", "sig"),
+                List.of(new OneTimePreKeyDto(1, "pre-key"))
+        );
+
+        when(authentication.getName()).thenReturn("anonymousUser");
+
+        assertThatThrownBy(() -> deviceController.register(null, authentication, request))
+                .isInstanceOf(ResponseStatusException.class)
+                .satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode())
+                        .isEqualTo(HttpStatus.UNAUTHORIZED));
     }
 
     @Test
