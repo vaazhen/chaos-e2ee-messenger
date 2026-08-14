@@ -118,6 +118,8 @@ services:
       dockerfile: Dockerfile
     restart: *restart
     logging: *json-logging
+    env_file:
+      - .env
     environment:
       SPRING_PROFILES_ACTIVE: prod
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/chaos_messenger
@@ -164,7 +166,8 @@ services:
     restart: *restart
     logging: *json-logging
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
       - app-net
 

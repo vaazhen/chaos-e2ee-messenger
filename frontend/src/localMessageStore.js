@@ -41,13 +41,22 @@ function storeImg(img) {
 
 function storeVoice(voice) {
   if (!voice) return null;
-  if (voice.dataUrl && typeof voice.dataUrl === 'string' && voice.dataUrl.startsWith('data:')) {
-    return { dataUrl: voice.dataUrl, durationMs: voice.durationMs || 0, mime: voice.mime || '' };
+  const transcript = voice.transcript || "";
+  if (voice.dataUrl && typeof voice.dataUrl === "string" && voice.dataUrl.startsWith("data:")) {
+    return { dataUrl: voice.dataUrl, durationMs: voice.durationMs || 0, mime: voice.mime || "", transcript };
   }
-  if (voice.dataUrl && typeof voice.dataUrl === 'string' && voice.dataUrl.startsWith('blob:')) {
-    return null;
+  if (transcript || voice.durationMs) {
+    return { durationMs: voice.durationMs || 0, mime: voice.mime || "", transcript };
   }
   return null;
+}
+
+function storeVideoNote(note) {
+  if (!note) return null;
+  if (note.src && typeof note.src === "string" && note.src.startsWith("data:")) {
+    return { src: note.src, durationMs: note.durationMs || 0, mime: note.mime || "" };
+  }
+  return { durationMs: note.durationMs || 0, mime: note.mime || "" };
 }
 
 function toStoreRow(msg) {
@@ -67,6 +76,7 @@ function toStoreRow(msg) {
     _text: msg._text || '',
     _img: storeImg(msg._img),
     _voice: storeVoice(msg._voice),
+    _videoNote: storeVideoNote(msg._videoNote),
     _payload: storePayload,
     _attachment: sanitizeAttachment(msg._attachment),
     _ttl: msg._ttl || null,

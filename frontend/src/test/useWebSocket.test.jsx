@@ -123,6 +123,7 @@ describe("useWebSocket", () => {
       "/topic/user/status",
       "/topic/devices/device-a/status",
       "/topic/users/alice/chats",
+      "/topic/devices/device-a/calls",
       "/topic/devices/device-a/chats/100",
       "/topic/chats/100/typing",
       "/topic/devices/device-a/chats/200",
@@ -335,6 +336,35 @@ describe("useWebSocket", () => {
     expect(client.publish).toHaveBeenCalledWith({
       destination: "/app/typing",
       body: JSON.stringify({ chatId: 100 }),
+    });
+  });
+
+  it("subscribes to device call signaling and sendCall publishes /app/call", async () => {
+    const { default: useWebSocket } = await import("../hooks/useWebSocket");
+    const onCall = vi.fn();
+
+    const { result } = renderHook(() => useWebSocket({
+      me: { username: "alice" },
+      chatIds: [100],
+      onCall,
+      enabled: true,
+    }));
+
+    const client = wsMocks.clients[0];
+    expect(client.subscriptions["/topic/devices/device-a/calls"]).toBeTruthy();
+
+    act(() => {
+      client.subscriptions["/topic/devices/device-a/calls"].cb({
+        body: JSON.stringify({ type: "offer", chatId: 100, fromUsername: "bob" }),
+      });
+      result.current.sendCall({ chatId: 100, type: "hangup" });
+    });
+
+    expect(onCall).toHaveBeenCalledWith({ type: "offer", chatId: 100, fromUsername: "bob" });
+    expect(client.publish).toHaveBeenCalledWith({
+      destination: "/app/call",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ chatId: 100, type: "hangup" }),
     });
   });
 

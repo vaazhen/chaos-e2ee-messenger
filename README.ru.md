@@ -40,12 +40,14 @@ Chaos создаётся как серьёзный инженерный прое
 | Личные и групповые чаты | Активно | Ответы, редактирование, удаление, реакции, receipts и исчезающие сообщения |
 | Мультидевайсное E2EE | Активно | Отдельная identity каждого устройства, pre-key bundles и encrypted fan-out |
 | Durable realtime recovery | Активно | Device-scoped sequence, cursor sync и at-least-once delivery |
-| Зашифрованные вложения | Активно | Клиентское шифрование; эталонный локальный backend хранения ciphertext |
-| Голосовые сообщения | Активно | Зашифрованные media payloads |
+| Зашифрованные вложения | Активно | Клиентский AES-GCM; ciphertext загружается отдельно; в envelope остаются `attachmentId` и ключ файла |
+| Голосовые сообщения | Активно | Удержание для записи, lock/cancel, encrypted upload; опциональная расшифровка через Web Speech API |
+| Видео-кружки | Активно | Круговые видеосообщения доставляются как encrypted attachments, не как `blob:` URL |
+| Фото и файлы | Активно | Отдельное окно отправки, листание в чате, сжатие изображений |
 | Зашифрованный backup ключей | Активно | Восстанавливает identity material, но не обещает историю и ratchet sessions |
 | Web-клиент | Активно | React/Vite |
 | Desktop-клиент | Активно | Electron и проверка secure endpoints |
-| WebRTC-звонки | Экспериментально | Signaling закрыт feature flag; TURN и hardened call state — отдельный этап |
+| WebRTC 1:1 звонки | Экспериментально | Аудио/видео signaling по authenticated STOMP в local/dev; в production выключено, пока нет TURN перед WebRTC |
 | Независимый crypto-аудит | Не выполнен | Необходим перед высокорисковым применением |
 
 ---
@@ -72,7 +74,10 @@ Chaos создаётся как серьёзный инженерный прое
 - ответы, редактирование, удаление и реакции;
 - delivery/read receipts и typing indicators;
 - исчезающие сообщения;
-- зашифрованные файлы, изображения и голосовые сообщения;
+- зашифрованные файлы, изображения, голосовые и видео-кружки;
+- запись как в Telegram (тап переключает голос/видео, удержание пишет);
+- отдельное окно отправки фото и файлов и листание в чате;
+- 1:1 аудио/видео звонки в разработке (DTLS-SRTP всегда; дополнительный insertable-stream E2EE — только Chrome);
 - профили, aliases, управление устройствами и администрирование групп;
 - Web Push;
 - web и Electron-клиенты.
@@ -118,8 +123,9 @@ Chaos создаётся как серьёзный инженерный прое
 | Зашифрованные attachment blobs | Passphrase резервной копии |
 | Delivery, sequence и timing metadata | Расшифрованное содержимое backup |
 | Push subscription metadata | Локальные решения о доверии Safety Number |
+| Метаданные signaling звонка (кто кому звонил, SDP, ICE) | Открытый текст call media |
 
-Chaos **не скрывает все метаданные**. Сервис может видеть состав аккаунтов и чатов, число устройств, время сообщений и размер ciphertext.
+Chaos **не скрывает все метаданные**. Сервис может видеть состав аккаунтов и чатов, число устройств, время сообщений, размер ciphertext и signaling звонков. Медиа WebRTC идёт по DTLS-SRTP; SDP всё равно проходит через backend. Дополнительное insertable-stream шифрование call media есть только в Chrome и не является production-гарантией.
 
 ### Границы доверия endpoint
 
@@ -287,7 +293,7 @@ flowchart TB
         CHAT[Chat и message services]
         RT[Realtime sync и STOMP]
         PUSH[Web Push]
-        CALLS[Feature-gated call signaling]
+        CALLS[1:1 call signaling]
     end
 
     subgraph Data[Данные]
@@ -367,7 +373,7 @@ Kafka обязательна. In-process fallback нет. Если брокер 
 .
 ├── backend/                 Spring Boot и миграции БД
 │   ├── src/main/java/       Auth, users, chats, messages, crypto metadata,
-│   │                        attachments, backup, outbox, realtime и push
+│   │                        attachments, calls, backup, outbox, realtime и push
 │   └── src/test/            Unit и integration tests
 ├── frontend/                React web client и Electron package
 │   ├── src/crypto-engine.ts Клиентский E2EE-движок
@@ -463,6 +469,10 @@ docker compose -f docker-compose.dev.yml up -d
 ```
 
 API слушает `http://localhost:8080`. В production profile management probes вынесены на отдельный порт `9091`.
+
+`docker-compose.dev.yml` поднимает и локальный coturn. Двум браузерам на одной машине он обычно нужен для ICE. Signaling 1:1 звонков включён в профиле `dev` (`chaos.calls.enabled=true`) и выключен в production, пока не задано `CHAOS_CALLS_ENABLED=true`.
+
+После pull миграций перезапусти backend, чтобы Flyway их применил. Загрузка вложений требует `V42` (default для `object_key`); без неё `/api/attachments/upload` отвечает HTTP 409.
 
 ### Frontend
 
@@ -665,6 +675,7 @@ Reference stack включает:
 | `KAFKA_BOOTSTRAP_SERVERS` | Адреса Kafka-compatible brokers |
 | `CHAOS_ATTACHMENTS_STORAGE_PATH` | Reference ciphertext storage directory |
 | `CHAOS_ATTACHMENTS_MAX_BYTES` | Максимальный размер encrypted upload |
+| `CHAOS_CALLS_ENABLED` | Включает signaling 1:1 звонков; по умолчанию `false` вне профиля `dev` |
 | `VAPID_PUBLIC_KEY` | Web Push public key |
 | `VAPID_PRIVATE_KEY` | Web Push private key |
 
@@ -690,7 +701,7 @@ Reference stack включает:
 - завершить strict TypeScript migration всего crypto-engine;
 - сделать real-browser reconnect/full-resync E2E обязательным в CI;
 - production object-storage adapter для ciphertext attachments;
-- hardened WebRTC state machine, TURN и authenticated signaling;
+- production TURN, hardened WebRTC call state и групповые звонки;
 - исследование key transparency и более сильной cross-device verification;
 - внешний pentest и независимый crypto review;
 - formal protocol specification и interoperable test vectors.

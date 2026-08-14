@@ -18,6 +18,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -82,6 +83,19 @@ class OutboxPublisherTest {
 
         verify(kafka).send(eq("chaos.message.events"), eq("10"), any(DomainEvent.class));
         verify(outboxService).markPublished(12L);
+    }
+
+    @Test
+    void dispatchAsyncPublishesOffCallerThread() {
+        OutboxEvent event = event(13L, "message", "10", "MESSAGE_CREATED");
+        when(outboxService.claimEvent(eq(13L), anyString())).thenReturn(Optional.of(event));
+        when(kafka.send(eq("chaos.message.events"), eq("10"), any(DomainEvent.class)))
+                .thenReturn(CompletableFuture.completedFuture(mock(SendResult.class)));
+
+        publisher.dispatchAsync(13L);
+
+        verify(outboxService, timeout(1000)).claimEvent(eq(13L), anyString());
+        verify(outboxService, timeout(1000)).markPublished(13L);
     }
 
     private static OutboxEvent event(long id, String aggregate, String aggregateId, String type) {

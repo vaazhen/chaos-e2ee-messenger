@@ -4,10 +4,10 @@ import EmojiPicker, { EMOJI_CATEGORIES, loadRecentEmojis, saveRecentEmojis, MAX_
 import AttachmentMenu from "./AttachmentMenu";
 import VoiceRecorder from "./VoiceRecorder";
 import TtlPicker from "./TtlPicker";
-import { MicIcon, SendIcon, EmojiIcon, AttachIcon, CloseIcon, ReplyIcon, FileIcon } from "./Icons";
+import { MicIcon, SendIcon, EmojiIcon, AttachIcon, CloseIcon, ReplyIcon, VideoIcon, LockIcon } from "./Icons";
+import SendMediaModal from "./SendMediaModal";
 
-const MAX_VOICE_MS = 30_000;
-const MAX_VOICE_BYTES = 110 * 1024;
+const MAX_VOICE_MS = 60_000;
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 
 export default function MessageInput({
@@ -38,6 +38,8 @@ export default function MessageInput({
   const [recordingMs, setRecordingMs] = useState(0);
   const [voiceLevels, setVoiceLevels] = useState(() => Array(48).fill(0.18));
   const [voiceError, setVoiceError] = useState("");
+  const [recordMode, setRecordMode] = useState("voice");
+  const [slidingCancel, setSlidingCancel] = useState(false);
   const inpRef = useRef(null);
   const fileRef = useRef(null);
   const generalFileRef = useRef(null);
@@ -50,15 +52,28 @@ export default function MessageInput({
   const recordingStartedAtRef = useRef(0);
   const recordingTimerRef = useRef(null);
   const recordingStartYRef = useRef(0);
+  const recordingStartXRef = useRef(0);
   const autoSendVoiceRef = useRef(false);
   const discardVoiceRef = useRef(false);
   const audioContextRef = useRef(null);
   const analyserRef = useRef(null);
   const analyserFrameRef = useRef(null);
   const recordingPausedRef = useRef(false);
+  const speechRef = useRef(null);
+  const videoPreviewRef = useRef(null);
+  const recordModeRef = useRef("voice");
+  const transcriptRef = useRef("");
   const pauseStartedAtRef = useRef(0);
   const pausedTotalMsRef = useRef(0);
+  const recordingLockedRef = useRef(false);
+  const slidingCancelRef = useRef(false);
+  const lockArmedRef = useRef(false);
+  const [lockArmed, setLockArmed] = useState(false);
+  const holdTimerRef = useRef(null);
+  const ignoreClickRef = useRef(false);
+  const pointerActiveRef = useRef(false);
   
+  const sendingRef = useRef(false);
   const emojiRootRef = useRef(null);
 const typingTimerRef = useRef(null);
 
@@ -139,14 +154,35 @@ const typingTimerRef = useRef(null);
     }
   };
 
-  const handleSend = (overrideVoiceFile = null) => {
+  const handleSend = async (overrideVoiceFile = null, overrideVideoNote = null) => {
     const nextVoiceFile = overrideVoiceFile || voiceFile;
-    if (!text.trim() && !imgFile && !nextVoiceFile && !generalFile) return;
-    onSend({ text: text.trim(), imgFile, voiceFile: nextVoiceFile, generalFile, ttl, replyTo });
+    const nextVideoNote = overrideVideoNote;
+    if (!text.trim() && !imgFile && !nextVoiceFile && !nextVideoNote && !generalFile) return;
+    if (sendingRef.current) return;
+    sendingRef.current = true;
+    setVoiceError("");
+    try {
+      await onSend({
+        text: text.trim(),
+        imgFile,
+        voiceFile: nextVoiceFile,
+        videoNoteFile: nextVideoNote,
+        generalFile,
+        ttl,
+        replyTo,
+      });
+    } catch (err) {
+      setVoiceError(formatSendError(err));
+      return;
+    } finally {
+      sendingRef.current = false;
+    }
     setText("");
+    revokeImgPreview(imgFile);
     setImgFile(null);
     setGeneralFile(null);
     setVoiceFile(null);
+    recordingLockedRef.current = false;
     setRecordingLocked(false);
     setVoiceError("");
     setShowEmoji(false);
@@ -165,9 +201,18 @@ const typingTimerRef = useRef(null);
   const onFileChange = e => {
     const file = e.target.files[0]; if (!file) return;
     cancelVoice();
-    const reader = new FileReader();
-    reader.onload = ev => setImgFile({ src: ev.target.result, file });
-    reader.readAsDataURL(file);
+    if (String(file.type || "").startsWith("video/")) {
+      revokeImgPreview(imgFile);
+      setImgFile(null);
+      setGeneralFile(file);
+      e.target.value = "";
+      return;
+    }
+    setGeneralFile(null);
+    setImgFile((prev) => {
+      revokeImgPreview(prev);
+      return { src: URL.createObjectURL(file), file };
+    });
     e.target.value = "";
   };
 
@@ -179,9 +224,16 @@ const typingTimerRef = useRef(null);
       return;
     }
     cancelVoice();
+    revokeImgPreview(imgFile);
     setImgFile(null);
     setGeneralFile(file);
     e.target.value = "";
+  };
+
+  const clearPendingMedia = () => {
+    revokeImgPreview(imgFile);
+    setImgFile(null);
+    setGeneralFile(null);
   };
 
   const stopRecordingTimer = () => {
@@ -258,6 +310,54 @@ const typingTimerRef = useRef(null);
     }
   };
 
+  const setLocked = (value) => {
+    recordingLockedRef.current = value;
+    setRecordingLocked(value);
+  };
+
+  const setCancelSlide = (value) => {
+    slidingCancelRef.current = value;
+    setSlidingCancel(value);
+  };
+
+  const setLockNear = (value) => {
+    lockArmedRef.current = value;
+    setLockArmed(value);
+  };
+
+  const switchRecordMode = (mode) => {
+    recordModeRef.current = mode;
+    setRecordMode(mode);
+  };
+
+  const startSpeech = () => {
+    const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (typeof Ctor !== "function") return;
+    try {
+      const rec = new Ctor();
+      rec.lang = (messagePlaceholder || "").includes("Сообщение") ? "ru-RU" : (navigator.language || "en-US");
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.onresult = (event) => {
+        let next = "";
+        for (let i = 0; i < event.results.length; i += 1) {
+          next += event.results[i][0]?.transcript || "";
+        }
+        transcriptRef.current = next.trim();
+      };
+      rec.start();
+      speechRef.current = rec;
+    } catch (_) {
+      speechRef.current = null;
+    }
+  };
+
+  const stopSpeech = () => {
+    try { speechRef.current?.stop?.(); } catch (_) { /* ignore */ }
+    speechRef.current = null;
+    return transcriptRef.current;
+  };
+
   const startRecording = async () => {
     if (disabled || recording) return;
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
@@ -265,12 +365,18 @@ const typingTimerRef = useRef(null);
       return;
     }
 
+    const mode = recordModeRef.current;
     try {
       setVoiceError("");
-      setImgFile(null);
+      clearPendingMedia();
       cancelVoice();
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mime = pickVoiceMimeType();
+      transcriptRef.current = "";
+      const stream = await navigator.mediaDevices.getUserMedia(
+        mode === "video_note"
+          ? { audio: true, video: { facingMode: "user", width: { ideal: 480 }, height: { ideal: 480 } } }
+          : { audio: true }
+      );
+      const mime = mode === "video_note" ? pickVideoNoteMimeType() : pickVoiceMimeType();
       const recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
 
       voiceChunksRef.current = [];
@@ -281,12 +387,19 @@ const typingTimerRef = useRef(null);
       pausedTotalMsRef.current = 0;
       autoSendVoiceRef.current = false;
       setRecording(true);
-      setRecordingLocked(false);
+      setLocked(false);
+      setCancelSlide(false);
+      setLockNear(false);
       recordingPausedRef.current = false;
       setRecordingPaused(false);
       setRecordingMs(0);
       setVoiceLevels(Array(48).fill(0.18));
       startVoiceAnalyser(stream);
+      startSpeech();
+      if (videoPreviewRef.current && mode === "video_note") {
+        videoPreviewRef.current.srcObject = stream;
+        void videoPreviewRef.current.play?.().catch(() => {});
+      }
 
       recorder.ondataavailable = (event) => {
         if (event.data?.size) voiceChunksRef.current.push(event.data);
@@ -296,54 +409,57 @@ const typingTimerRef = useRef(null);
         stopRecordingTimer();
         cleanupRecordingStream();
         stopVoiceAnalyser();
+        const spoken = stopSpeech();
         const shouldAutoSend = autoSendVoiceRef.current;
         const shouldDiscard = discardVoiceRef.current;
         autoSendVoiceRef.current = false;
         discardVoiceRef.current = false;
         setRecording(false);
-        setRecordingLocked(false);
+        setLocked(false);
+        setCancelSlide(false);
+        setLockNear(false);
         recordingPausedRef.current = false;
         setRecordingPaused(false);
 
         const durationMs = Math.min(MAX_VOICE_MS, effectiveRecordingMs());
-        const blob = new Blob(voiceChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        const blob = new Blob(voiceChunksRef.current, { type: recorder.mimeType || (mode === "video_note" ? "video/webm" : "audio/webm") });
         voiceChunksRef.current = [];
 
-        if (shouldDiscard) {
+        if (shouldDiscard) return;
+        if (durationMs < 400 || !blob.size) {
+          setVoiceError(mode === "video_note" ? "Видео слишком короткое" : "Voice message is too short");
           return;
         }
 
-        if (durationMs < 500 || !blob.size) {
-          setVoiceError("Voice message is too short");
-          return;
-        }
-        if (blob.size > MAX_VOICE_BYTES) {
-          setVoiceError("Voice message is too large. Keep it shorter.");
-          return;
-        }
-
-        const voice = {
+        const file = {
           blob,
-          mime: blob.type || "audio/webm",
+          mime: blob.type || (mode === "video_note" ? "video/webm" : "audio/webm"),
           size: blob.size,
           durationMs,
           previewUrl: URL.createObjectURL(blob),
-          name: "voice-message.webm",
+          name: mode === "video_note" ? "video-note.webm" : "voice-message.webm",
+          transcript: spoken,
         };
 
         if (shouldAutoSend) {
-          handleSend(voice);
-          window.setTimeout(() => URL.revokeObjectURL(voice.previewUrl), 1000);
+          if (mode === "video_note") handleSend(null, file);
+          else handleSend(file);
+          window.setTimeout(() => URL.revokeObjectURL(file.previewUrl), 1000);
           return;
         }
 
+        if (mode === "video_note") {
+          handleSend(null, file);
+          return;
+        }
         setVoiceFile(prev => {
           if (prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl);
-          return voice;
+          return file;
         });
       };
 
-      recorder.start();
+      if (mode === "video_note") recorder.start();
+      else recorder.start(250);
       recordingTimerRef.current = setInterval(() => {
         const elapsed = effectiveRecordingMs();
         setRecordingMs(Math.min(MAX_VOICE_MS, elapsed));
@@ -352,6 +468,7 @@ const typingTimerRef = useRef(null);
     } catch (e) {
       cleanupRecordingStream();
       stopVoiceAnalyser();
+      stopSpeech();
       setRecording(false);
       recordingPausedRef.current = false;
       setRecordingPaused(false);
@@ -367,7 +484,10 @@ const typingTimerRef = useRef(null);
   useEffect(() => {
     if (!pendingFirstMessageOnly) return;
     if (recording) cancelRecording();
-    if (imgFile) setImgFile(null);
+    if (imgFile) {
+      revokeImgPreview(imgFile);
+      setImgFile(null);
+    }
     if (voiceFile?.previewUrl) URL.revokeObjectURL(voiceFile.previewUrl);
     if (voiceFile) setVoiceFile(null);
   }, [pendingFirstMessageOnly]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -376,7 +496,10 @@ const typingTimerRef = useRef(null);
     autoSendVoiceRef.current = false;
     discardVoiceRef.current = true;
     voiceChunksRef.current = [];
-    setRecordingLocked(false);
+    setLocked(false);
+    setCancelSlide(false);
+    setLockNear(false);
+    stopSpeech();
     stopRecordingTimer();
     cleanupRecordingStream();
     stopVoiceAnalyser();
@@ -416,44 +539,101 @@ const typingTimerRef = useRef(null);
     setRecordingPaused(true);
   };
 
+  const clearHoldTimer = () => {
+    if (holdTimerRef.current) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+  };
+
+  const pendingMediaKind = pendingFirstMessageOnly
+    ? null
+    : imgFile
+      ? "image"
+      : generalFile
+        ? (String(generalFile.type || "").startsWith("video/")
+          ? "video"
+          : String(generalFile.type || "").startsWith("image/")
+            ? "image"
+            : "file")
+        : null;
   const canQuickRecord = !pendingFirstMessageOnly && !text.trim() && !imgFile && !voiceFile && !generalFile;
 
   const onPrimaryPointerDown = (e) => {
     if (pendingFirstMessageOnly || disabled || !canQuickRecord || recording) return;
-    e.preventDefault();
-    e.stopPropagation();
+    pointerActiveRef.current = true;
     recordingStartYRef.current = e.clientY || e.touches?.[0]?.clientY || 0;
-    e.currentTarget.setPointerCapture?.(e.pointerId);
-    startRecording();
+    recordingStartXRef.current = e.clientX || e.touches?.[0]?.clientX || 0;
+    clearHoldTimer();
+    holdTimerRef.current = window.setTimeout(() => {
+      holdTimerRef.current = null;
+      ignoreClickRef.current = true;
+      startRecording();
+    }, 400);
   };
 
   const onPrimaryPointerMove = (e) => {
-    if (pendingFirstMessageOnly) return;
-    if (!recording || recordingLocked) return;
+    if (pendingFirstMessageOnly || !pointerActiveRef.current) return;
+    if (!mediaRecorderRef.current || recordingLockedRef.current) return;
     const startY = recordingStartYRef.current;
+    const startX = recordingStartXRef.current;
     const currentY = e.clientY || e.touches?.[0]?.clientY || startY;
-    if (startY - currentY > 58) {
-      setRecordingLocked(true);
-    }
+    const currentX = e.clientX || e.touches?.[0]?.clientX || startX;
+    const up = startY - currentY;
+    const left = startX - currentX;
+    setCancelSlide(left > 72);
+    setLockNear(up > 28 && left < 48);
+    if (up > 58 && left < 48) setLocked(true);
   };
 
   const onPrimaryPointerUp = (e) => {
-    if (pendingFirstMessageOnly) return;
-    if (!recording) return;
-    e.preventDefault();
-    e.stopPropagation();
-    e.currentTarget.releasePointerCapture?.(e.pointerId);
-    if (!recordingLocked) {
-      stopRecording(true);
+    if (pendingFirstMessageOnly || !pointerActiveRef.current) return;
+    pointerActiveRef.current = false;
+    const wasTap = Boolean(holdTimerRef.current);
+    clearHoldTimer();
+    if (wasTap && !mediaRecorderRef.current) {
+      switchRecordMode(recordModeRef.current === "voice" ? "video_note" : "voice");
+      ignoreClickRef.current = true;
+      return;
     }
+    if (!mediaRecorderRef.current) return;
+    e.preventDefault();
+    ignoreClickRef.current = true;
+    if (slidingCancelRef.current) {
+      cancelRecording();
+      return;
+    }
+    if (!recordingLockedRef.current) stopRecording(true);
+  };
+
+  const onPrimaryPointerCancel = () => {
+    pointerActiveRef.current = false;
+    const wasTap = Boolean(holdTimerRef.current);
+    clearHoldTimer();
+    if (wasTap && !mediaRecorderRef.current) {
+      switchRecordMode(recordModeRef.current === "voice" ? "video_note" : "voice");
+      ignoreClickRef.current = true;
+      return;
+    }
+    if (!mediaRecorderRef.current || recordingLockedRef.current) return;
+    if (slidingCancelRef.current) return;
+    setLocked(true);
   };
 
   const onPrimaryClick = (e) => {
+    if (ignoreClickRef.current) {
+      ignoreClickRef.current = false;
+      return;
+    }
     if (recording) {
       stopRecording(true);
       return;
     }
-    if (canQuickRecord) return;
+    if (canQuickRecord) {
+      e.preventDefault();
+      switchRecordMode(recordModeRef.current === "voice" ? "video_note" : "voice");
+      return;
+    }
     e.stopPropagation();
     handleSend();
   };
@@ -520,10 +700,24 @@ const typingTimerRef = useRef(null);
     };
   }, [showEmoji]);
 
+  useEffect(() => {
+    recordModeRef.current = recordMode;
+  }, [recordMode]);
+
+  useEffect(() => {
+    if (!recording || recordMode !== "video_note") return;
+    const el = videoPreviewRef.current;
+    if (el && mediaStreamRef.current) {
+      el.srcObject = mediaStreamRef.current;
+      void el.play?.().catch(() => {});
+    }
+  }, [recording, recordMode]);
+
   useEffect(() => () => {
     stopRecordingTimer();
     cleanupRecordingStream();
     stopVoiceAnalyser();
+    stopSpeech();
     if (voiceFile?.previewUrl) URL.revokeObjectURL(voiceFile.previewUrl);
   }, [voiceFile?.previewUrl]);
 
@@ -549,7 +743,7 @@ const typingTimerRef = useRef(null);
   }, [disabled]);
 return (
     <>
-      {replyTo && (
+      {replyTo && !pendingMediaKind && (
         <div className="reply-prev" onClick={e => e.stopPropagation()}>
           <span className="reply-prev-icon"><ReplyIcon /></span>
           <div className="reply-prev-inner">
@@ -560,35 +754,27 @@ return (
         </div>
       )}
 
-      {!pendingFirstMessageOnly && imgFile && (
-        <div className="attachment-preview-wrap">
-          <div className="attachment-preview-img">
-            <img src={imgFile.src} alt="" />
-            <button className="attachment-remove-btn" onClick={() => setImgFile(null)}><CloseIcon /></button>
-          </div>
-        </div>
+      {!pendingFirstMessageOnly && pendingMediaKind && (
+        <SendMediaModal
+          kind={pendingMediaKind}
+          src={imgFile?.src || null}
+          file={imgFile?.file || generalFile}
+          caption={text}
+          error={voiceError}
+          onCaptionChange={setText}
+          onSend={() => handleSend()}
+          onClose={clearPendingMedia}
+          l={(ru, en) => messagePlaceholder === "Сообщение..." ? ru : en}
+        />
       )}
 
-      {!pendingFirstMessageOnly && generalFile && (
-        <div className="attachment-preview-file">
-          <div className="msg-file">
-            <span className="msg-file-icon"><FileIcon /></span>
-            <div className="msg-file-info">
-              <div className="msg-file-name">{generalFile.name}</div>
-              <div className="msg-file-size">{formatFileSize(generalFile.size)}</div>
-            </div>
-          </div>
-          <button className="attachment-remove-btn" onClick={() => setGeneralFile(null)}><CloseIcon /></button>
-        </div>
-      )}
-
-      {voiceError && (
+      {voiceError && !pendingMediaKind && (
         <div className="voice-error">{voiceError}</div>
       )}
 
 
 
-      {!pendingFirstMessageOnly && voiceFile && (
+      {!pendingMediaKind && !pendingFirstMessageOnly && voiceFile && (
         <div className="voice-preview-wrap" onClick={e => e.stopPropagation()}>
           <VoiceMessage
             variant="preview"
@@ -596,10 +782,18 @@ return (
             durationMs={voiceFile.durationMs}
             onCancel={cancelVoice}
           />
+          {voiceFile.transcript ? <div className="voice-transcript">{voiceFile.transcript}</div> : null}
         </div>
       )}
 
+      {!pendingMediaKind && (
       <div ref={emojiRootRef} className="input-bar" onClick={e => e.stopPropagation()}>
+        {recording && recordMode === "video_note" && (
+          <div className="video-note-stage">
+            <video ref={videoPreviewRef} autoPlay muted playsInline />
+            <span className="video-note-stage-time">{formatRecTime(recordingMs)}</span>
+          </div>
+        )}
         {!groupMuteLocksInput && showEmoji && (
           <EmojiPicker
             emojiClosing={emojiClosing}
@@ -626,6 +820,8 @@ return (
               recordingPaused={recordingPaused}
               recordingMs={recordingMs}
               voiceLevels={voiceLevels}
+              mode={recordMode}
+              slidingCancel={slidingCancel}
               onCancel={cancelRecording}
               onTogglePause={toggleRecordingPause}
             />
@@ -692,23 +888,44 @@ return (
         </div>
 
         {!groupMuteLocksInput && (
-          <button
-            type="button"
-            className={`send-btn${canQuickRecord ? " voice-ready" : ""}${recording ? " recording" : ""}${recordingLocked ? " locked" : ""}`}
-            onClick={onPrimaryClick}
-            onPointerDown={onPrimaryPointerDown}
-            onPointerMove={onPrimaryPointerMove}
-            onPointerUp={onPrimaryPointerUp}
-            onPointerCancel={pendingFirstMessageOnly ? undefined : cancelRecording}
-            disabled={disabled}
-            title={recording ? "Send voice" : canQuickRecord ? "Hold to record" : "Send"}
-          >
-            {recording ? <SendIcon /> : canQuickRecord ? <MicIcon /> : <SendIcon />}
-          </button>
+          <div className="send-btn-wrap">
+            {recording && !recordingLocked && (
+              <div className={`record-lock-float${lockArmed ? " is-near" : ""}`} aria-hidden="true">
+                <LockIcon />
+              </div>
+            )}
+            <button
+              type="button"
+              className={`send-btn${canQuickRecord ? " voice-ready" : ""}${recording ? " recording" : ""}${recordingLocked ? " locked" : ""}${slidingCancel ? " cancel-armed" : ""}`}
+              onClick={onPrimaryClick}
+              onPointerDown={onPrimaryPointerDown}
+              onPointerMove={onPrimaryPointerMove}
+              onPointerUp={onPrimaryPointerUp}
+              onPointerCancel={onPrimaryPointerCancel}
+              disabled={disabled}
+              title={
+                recording
+                  ? "Send voice"
+                  : canQuickRecord
+                    ? (recordMode === "video_note" ? "Нажми — голос, зажми — запись" : "Нажми — видео, зажми — запись")
+                    : "Send"
+              }
+            >
+              {recording ? <SendIcon /> : canQuickRecord ? (recordMode === "video_note" ? <VideoIcon /> : <MicIcon />) : <SendIcon />}
+            </button>
+          </div>
         )}
       </div>
+      )}
     </>
   );
+}
+
+function formatRecTime(ms) {
+  const total = Math.max(0, Math.round(Number(ms || 0) / 1000));
+  const minutes = Math.floor(total / 60);
+  const seconds = String(total % 60).padStart(2, "0");
+  return `${minutes}:${seconds}`;
 }
 
 function pickVoiceMimeType() {
@@ -716,15 +933,34 @@ function pickVoiceMimeType() {
   return candidates.find(type => MediaRecorder.isTypeSupported?.(type)) || "";
 }
 
+function pickVideoNoteMimeType() {
+  const candidates = ["video/webm;codecs=vp8,opus", "video/webm", "video/mp4"];
+  return candidates.find(type => MediaRecorder.isTypeSupported?.(type)) || "";
+}
+
 function replyPreview(msg) {
   if (msg?._img) return "Photo";
-  if (msg?._voice) return "Voice message";
+  if (msg?._videoNote) return "Video message";
+  if (msg?._voice) return msg._voice.transcript || "Voice message";
+  if (msg?._attachment?.fileName) return msg._attachment.fileName;
   return msg?._text || "";
 }
 
-function formatFileSize(bytes) {
-  if (!bytes || bytes < 0) return "0 B";
-  if (bytes < 1024) return bytes + " B";
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
-  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+function formatSendError(err) {
+  const status = Number(err?.status);
+  const raw = String(err?.message || "");
+  if (status === 409 || /\b409\b/.test(raw) || /conflict/i.test(raw) || /конфликт/i.test(raw)) {
+    if (/device id/i.test(raw)) return "Это устройство уже привязано к другому аккаунту. Выйди и зайди заново.";
+    if (/one message|until request/i.test(raw)) return "Пока запрос не принят, можно отправить только одно сообщение.";
+    if (/integrity/i.test(raw) || /не удалось загрузить файл/i.test(raw)) {
+      return "Не удалось сохранить файл. Обнови страницу и попробуй ещё раз.";
+    }
+    return "Сервер отклонил отправку. Попробуй ещё раз.";
+  }
+  return raw || "Сообщение не отправилось";
+}
+
+function revokeImgPreview(value) {
+  const src = value?.src;
+  if (src && String(src).startsWith("blob:")) URL.revokeObjectURL(src);
 }

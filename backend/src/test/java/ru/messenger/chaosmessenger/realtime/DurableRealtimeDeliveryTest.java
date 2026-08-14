@@ -14,11 +14,15 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
+import ru.messenger.chaosmessenger.outbox.DomainEvent;
 import ru.messenger.chaosmessenger.outbox.OutboxPublisher;
 import ru.messenger.chaosmessenger.outbox.OutboxRepository;
 import ru.messenger.chaosmessenger.outbox.OutboxService;
 import ru.messenger.chaosmessenger.outbox.OutboxStatus;
 import ru.messenger.chaosmessenger.realtime.dto.RealtimeSyncResponse;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -27,6 +31,7 @@ import java.util.Map;
 import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
 @Testcontainers(disabledWithoutDocker = true)
@@ -70,6 +75,10 @@ class DurableRealtimeDeliveryTest {
     RealtimeEventStore realtimeEventStore;
     @Autowired
     OutboxRepository outboxRepository;
+    @Autowired
+    DomainEventProcessor domainEventProcessor;
+    @Autowired
+    ObjectMapper objectMapper;
 
     @Test
     void outboxWriteBecomesDurableDeviceEventThroughKafka() {
@@ -159,6 +168,97 @@ class DurableRealtimeDeliveryTest {
         RealtimeSyncResponse rest = realtimeEventStore.readAfter("device-c", afterFirst, 20);
         assertThat(rest.events()).hasSize(1);
         assertThat(rest.events().get(0).payload().get("envelope").get("ciphertext").asText()).isEqualTo("two");
+    }
+
+    @Test
+    void outboxRowDisappearsWhenTheSurroundingTransactionRollsBack() {
+        transactionTemplate.executeWithoutResult(status -> {
+            outboxService.write(
+                    "message",
+                    "30",
+                    "MESSAGE_CREATED",
+                    Map.of(
+                            "chatId", 30,
+                            "messageId", 700,
+                            "senderId", 1,
+                            "deviceIds", List.of("device-rollback"),
+                            "envelopes", Map.of("device-rollback", Map.of("ciphertext", "nope"))
+                    ),
+                    null,
+                    "msg:700:MESSAGE_CREATED:rollback"
+            );
+            status.setRollbackOnly();
+        });
+
+        assertThat(outboxRepository.findAll())
+                .noneMatch(event -> "msg:700:MESSAGE_CREATED:rollback".equals(event.getIdempotencyKey()));
+        assertThat(realtimeEventStore.readAfter("device-rollback", 0, 20).events()).isEmpty();
+    }
+
+    @Test
+    void crashMidFanoutDoesNotLeavePartialDeviceLog() {
+        com.fasterxml.jackson.databind.node.ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("eventId", "partial-1");
+        assertThatThrownBy(() -> transactionTemplate.executeWithoutResult(status -> {
+            realtimeEventStore.append("device-partial-a", "partial-1", "/chats/40", payload);
+            realtimeEventStore.append("device-partial-b", "partial-1", "/chats/40", payload);
+            throw new IllegalStateException("consumer crashed");
+        })).isInstanceOf(IllegalStateException.class);
+
+        assertThat(realtimeEventStore.readAfter("device-partial-a", 0, 20).events()).isEmpty();
+        assertThat(realtimeEventStore.readAfter("device-partial-b", 0, 20).events()).isEmpty();
+    }
+
+    @Test
+    void sameEventIdIsIdempotentOnDurableLogAndFansOutToOfflineDevice() throws JsonProcessingException {
+        String payload = objectMapper.writeValueAsString(Map.of(
+                "chatId", 50,
+                "messageId", 800,
+                "senderId", 1,
+                "deviceIds", List.of("device-online", "device-offline"),
+                "envelopes", Map.of(
+                        "device-online", Map.of("ciphertext", "blob"),
+                        "device-offline", Map.of("ciphertext", "blob")
+                )
+        ));
+        DomainEvent event = new DomainEvent(
+                "evt-multi-1",
+                "message",
+                "50",
+                "MESSAGE_CREATED",
+                1,
+                1,
+                payload,
+                Instant.parse("2026-08-14T00:00:00Z"),
+                "corr-multi",
+                "msg:800:MESSAGE_CREATED:1"
+        );
+
+        domainEventProcessor.process(event);
+        domainEventProcessor.process(event);
+
+        RealtimeSyncResponse online = realtimeEventStore.readAfter("device-online", 0, 20);
+        RealtimeSyncResponse offline = realtimeEventStore.readAfter("device-offline", 0, 20);
+        assertThat(online.events()).hasSize(1);
+        assertThat(offline.events()).hasSize(1);
+        assertThat(offline.events().get(0).payload().get("envelope").get("ciphertext").asText()).isEqualTo("blob");
+    }
+
+    @Test
+    void syncOrderFollowsPersistSequenceNotArrivalWish() {
+        com.fasterxml.jackson.databind.node.ObjectNode late = objectMapper.createObjectNode();
+        late.put("logical", "second");
+        com.fasterxml.jackson.databind.node.ObjectNode early = objectMapper.createObjectNode();
+        early.put("logical", "first");
+
+        realtimeEventStore.append("device-order", "evt-second", "/chats/60", late);
+        realtimeEventStore.append("device-order", "evt-first", "/chats/60", early);
+
+        RealtimeSyncResponse sync = realtimeEventStore.readAfter("device-order", 0, 20);
+        assertThat(sync.events()).hasSize(2);
+        assertThat(sync.events().get(0).payload().get("logical").asText()).isEqualTo("second");
+        assertThat(sync.events().get(1).payload().get("logical").asText()).isEqualTo("first");
+        assertThat(sync.events().get(0).sequence()).isLessThan(sync.events().get(1).sequence());
     }
 
     private RealtimeSyncResponse awaitEvents(String deviceId, int minSize) {

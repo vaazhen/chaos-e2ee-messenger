@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.jdbc.core.JdbcTemplate;
 import ru.messenger.chaosmessenger.attachment.domain.EncryptedAttachment;
 import ru.messenger.chaosmessenger.attachment.repository.EncryptedAttachmentRepository;
 
@@ -16,7 +17,6 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.time.LocalDateTime;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
@@ -31,6 +31,7 @@ public class AttachmentStorageService {
     );
 
     private final EncryptedAttachmentRepository attachmentRepository;
+    private final JdbcTemplate jdbcTemplate;
 
     @Value("${chaos.attachments.storage-path:./attachments}")
     private String storagePath;
@@ -74,14 +75,20 @@ public class AttachmentStorageService {
             moveAtomically(tempPath, finalPath);
             moved = true;
 
-            EncryptedAttachment attachment = new EncryptedAttachment();
-            attachment.setAttachmentId(attachmentId);
-            attachment.setUploaderId(uploaderId);
-            attachment.setChatId(chatId);
-            attachment.setFileSize((long) encryptedData.length);
-            attachment.setContentType(contentType);
-            attachment.setCreatedAt(LocalDateTime.now());
-            attachmentRepository.save(attachment);
+            jdbcTemplate.update(
+                    """
+                    INSERT INTO encrypted_attachments (
+                        attachment_id, uploader_id, chat_id, file_size, content_type,
+                        storage_backend, object_key, status, ready_at, version, created_at
+                    ) VALUES (?, ?, ?, ?, ?, 'LOCAL', ?, 'READY', NOW(), 0, NOW())
+                    """,
+                    attachmentId,
+                    uploaderId,
+                    chatId,
+                    (long) encryptedData.length,
+                    contentType,
+                    attachmentId
+            );
 
             deleteFileIfTransactionRollsBack(finalPath);
             log.debug("Stored encrypted attachment {} ({} bytes) for user {}",

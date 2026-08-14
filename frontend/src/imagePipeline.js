@@ -51,7 +51,12 @@ function normalizedSize(img, maxSide) {
 }
 
 export async function compressImageToDataUrl(file, profile) {
-  if (!file || !String(file.type || "").startsWith("image/")) {
+  const type = String(file?.type || "").toLowerCase();
+  const name = String(file?.name || "");
+  const looksLikeImage = type.startsWith("image/")
+    || /\.(jpe?g|png|gif|webp|heic|heif|bmp)$/i.test(name)
+    || !type;
+  if (!file || !looksLikeImage) {
     throw new Error(profile.invalidTypeMessage || "Select an image file");
   }
   if (file.size > (profile.maxInputBytes || 7 * MB)) {

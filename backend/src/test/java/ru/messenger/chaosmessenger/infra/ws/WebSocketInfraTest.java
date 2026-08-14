@@ -109,6 +109,7 @@ class WebSocketInfraTest {
 
         assertThat(result).isNotNull();
         assertThat(interceptor.getUsernameBySessionId("s1")).isEqualTo("alice");
+        assertThat(interceptor.getDeviceIdBySessionId("s1")).isEqualTo("dev-a");
         assertThat(device.getLastSeen()).isNotNull();
 
         verify(userDeviceRepository).save(device);

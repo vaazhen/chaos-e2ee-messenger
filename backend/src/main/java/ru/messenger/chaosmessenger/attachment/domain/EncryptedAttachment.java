@@ -39,6 +39,24 @@ public class EncryptedAttachment {
     @Column(name = "content_type", length = 100)
     private String contentType;
 
+    @Column(name = "storage_backend", nullable = false, length = 16)
+    private String storageBackend = "LOCAL";
+
+    @Column(name = "object_key", nullable = false, length = 512)
+    private String objectKey;
+
+    @Column(name = "status", nullable = false, length = 16)
+    private String status = "READY";
+
+    @Column(name = "checksum_sha256", length = 128)
+    private String checksumSha256;
+
+    @Column(name = "ready_at")
+    private LocalDateTime readyAt;
+
+    @Column(name = "version", nullable = false)
+    private Long rowVersion = 0L;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 }

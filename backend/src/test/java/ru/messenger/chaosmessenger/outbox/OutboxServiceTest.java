@@ -59,7 +59,7 @@ class OutboxServiceTest {
                         && event.getPayload().contains("\"chatId\":10")
                         && event.getStatus() == OutboxStatus.PENDING
         ));
-        verify(publisher).dispatch(42L);
+        verify(publisher).dispatchAsync(42L);
     }
 
     @Test
@@ -69,7 +69,7 @@ class OutboxServiceTest {
         service.write("message", "10", "MESSAGE_CREATED", Map.of("chatId", 10), null, "msg:1:MESSAGE_CREATED:1");
 
         verify(repository, never()).saveAndFlush(any());
-        verify(publisher, never()).dispatch(any());
+        verify(publisher, never()).dispatchAsync(any());
     }
 
     @Test
@@ -80,7 +80,7 @@ class OutboxServiceTest {
 
         service.write("message", "10", "MESSAGE_CREATED", Map.of("chatId", 10), null, "msg:1:MESSAGE_CREATED:1");
 
-        verify(publisher, never()).dispatch(any());
+        verify(publisher, never()).dispatchAsync(any());
     }
 
     @Test

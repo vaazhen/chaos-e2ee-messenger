@@ -40,12 +40,14 @@ Chaos is built as an engineering project for secure messaging, distributed syste
 | Direct and group messaging | Active | Replies, edits, deletion, reactions, receipts and disappearing messages |
 | Multi-device E2EE | Active | Per-device identities, pre-key bundles and encrypted fan-out |
 | Durable realtime recovery | Active | Device-scoped sequence, cursor sync and at-least-once delivery |
-| Encrypted attachments | Active | Client-side encryption; reference local ciphertext storage backend |
-| Voice messages | Active | Encrypted media payloads |
+| Encrypted attachments | Active | Client-side AES-GCM; ciphertext uploaded separately; the message envelope stores `attachmentId` and the file key |
+| Voice messages | Active | Hold-to-record, lock or cancel, encrypted upload; optional on-device transcript via the Web Speech API |
+| Video notes | Active | Circular video messages delivered as encrypted attachments, not `blob:` URLs |
+| Photos and files | Active | Full-pane send preview, in-chat paging viewer, compressed images |
 | Encrypted key backup | Active | Restores identity material; does not claim to restore message history or ratchet sessions |
 | Web client | Active | React/Vite application |
 | Desktop client | Active | Electron packaging and secure endpoint validation |
-| WebRTC calls | Experimental | Signaling is feature-gated; production TURN and hardened call state are separate work |
+| WebRTC 1:1 calls | Experimental | Audio/video signaling over authenticated STOMP in local/dev; production remains off until TURN is in front of WebRTC |
 | Independent crypto audit | Pending | Required before high-risk use |
 
 ---
@@ -72,7 +74,10 @@ Chaos is built as an engineering project for secure messaging, distributed syste
 - replies, edits, deletion and reactions;
 - delivery/read receipts and typing indicators;
 - disappearing messages;
-- encrypted files, images and voice messages;
+- encrypted files, images, voice messages and video notes;
+- Telegram-style media recorder (tap to switch voice/video, hold to record);
+- full-pane send preview for photos and files, with in-chat paging;
+- 1:1 audio/video calls in development (DTLS-SRTP always; extra insertable-stream E2EE is Chrome-only);
 - user profiles, aliases, device management and group administration;
 - web push support;
 - web and Electron clients.
@@ -118,8 +123,9 @@ Chaos is built as an engineering project for secure messaging, distributed syste
 | Encrypted attachment blobs | Backup passphrase |
 | Delivery, sequence and timing metadata | Decrypted backup contents |
 | Push subscription metadata | Safety Number decisions made locally |
+| Call signaling metadata (who called whom, SDP, ICE) | Call media plaintext |
 
-Chaos does **not** attempt to hide all metadata. The service can still learn relationships such as account membership, device count, chat membership, message timing and ciphertext size.
+Chaos does **not** attempt to hide all metadata. The service can still learn relationships such as account membership, device count, chat membership, message timing, ciphertext size and call signaling. WebRTC media uses DTLS-SRTP; SDP still passes through the backend. Extra insertable-stream encryption of call media is Chrome-only and is not the production guarantee.
 
 ### Endpoint trust assumptions
 
@@ -287,7 +293,7 @@ flowchart TB
         CHAT[Chat and message services]
         RT[Realtime sync and STOMP]
         PUSH[Web Push]
-        CALLS[Feature-gated call signaling]
+        CALLS[1:1 call signaling]
     end
 
     subgraph Data
@@ -367,7 +373,7 @@ Idempotency is a business key on the outbox row. Redis WebSocket fan-out is a no
 .
 ├── backend/                 Spring Boot application and database migrations
 │   ├── src/main/java/       Auth, users, chats, messages, crypto metadata,
-│   │                        attachments, backup, outbox, realtime and push
+│   │                        attachments, calls, backup, outbox, realtime and push
 │   └── src/test/            Unit and integration tests
 ├── frontend/                React web client and Electron package
 │   ├── src/crypto-engine.ts Client-side E2EE engine
@@ -465,6 +471,10 @@ docker compose -f docker-compose.dev.yml up -d
 ```
 
 The application API listens on `http://localhost:8080`. In production profile, management probes run on the separate management port `9091`.
+
+`docker-compose.dev.yml` also starts local coturn. Two browsers on the same machine often need it for ICE. 1:1 call signaling is on in the `dev` profile (`chaos.calls.enabled=true`) and off in production unless `CHAOS_CALLS_ENABLED=true`.
+
+After pulling database migrations, restart the backend so Flyway can apply them. Attachment uploads need `V42` (`object_key` default); without it `/api/attachments/upload` returns HTTP 409.
 
 ### Frontend
 
@@ -667,6 +677,7 @@ Current hardening status is tracked in [docs/PRODUCTION_READINESS.md](docs/PRODU
 | `KAFKA_BOOTSTRAP_SERVERS` | Kafka-compatible broker addresses |
 | `CHAOS_ATTACHMENTS_STORAGE_PATH` | Reference ciphertext storage directory |
 | `CHAOS_ATTACHMENTS_MAX_BYTES` | Maximum encrypted upload size |
+| `CHAOS_CALLS_ENABLED` | Enables 1:1 call signaling; default `false` outside the `dev` profile |
 | `VAPID_PUBLIC_KEY` | Web Push public key |
 | `VAPID_PRIVATE_KEY` | Web Push private key |
 
@@ -692,7 +703,7 @@ See `.env.example`, `backend/.env.example` and `frontend/.env.example` for compl
 - complete strict TypeScript migration for the full cryptographic engine;
 - make real-browser reconnect/full-resync E2E mandatory in CI;
 - production object-storage adapter for ciphertext attachments;
-- hardened WebRTC state machine, TURN and authenticated signaling;
+- production TURN, hardened WebRTC call state and group calls;
 - key-transparency and stronger cross-device verification research;
 - external pentest and independent cryptographic review;
 - formal protocol specification and interoperable test vectors.

@@ -24,6 +24,7 @@ export default function SettingsPage({
   onOpenChat,
   onNavChange,
   unreadTotal = 0,
+  callsEnabled = false,
 }) {
   const [page, setPage] = useState("main");
   const [sheet, setSheet] = useState(null);
@@ -87,7 +88,7 @@ export default function SettingsPage({
     return (
       <div className="settings-shell settings-shell--full">
         <DevicesPage l={l} lang={lang} onBack={() => setPage("main")} />
-        <BottomNav me={me} myName={myName} activeTab="settings" onNavChange={onNavChange} unreadTotal={unreadTotal} l={l} />
+        <BottomNav me={me} myName={myName} activeTab="settings" onNavChange={onNavChange} unreadTotal={unreadTotal} l={l} callsEnabled={callsEnabled} />
       </div>
     );
   }
@@ -155,7 +156,7 @@ export default function SettingsPage({
         <div className="settings-bottom-spacer" />
       </div>
 
-      <BottomNav me={me} myName={myName} activeTab="settings" onNavChange={onNavChange} unreadTotal={unreadTotal} l={l} />
+      <BottomNav me={me} myName={myName} activeTab="settings" onNavChange={onNavChange} unreadTotal={unreadTotal} l={l} callsEnabled={callsEnabled} />
 
       <Sheet open={sheet === "status"} onClose={() => setSheet(null)} title={l("Статус", "Status")} className="settings-sheet">
         <div className="settings-sheet-list">

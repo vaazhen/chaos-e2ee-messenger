@@ -4,7 +4,7 @@ import MessageInput from "./MessageInput";
 import UserProfileModal from "./UserProfileModal";
 import GroupAdminModal from "./GroupAdminModal";
 import ChatSearchBar from "./ChatSearchBar";
-import { ShieldIcon, BackIcon } from "./Icons";
+import { ShieldIcon, BackIcon, PhoneIcon, PhoneOffIcon } from "./Icons";
 
 export default function ChatView({
   chatBg,
@@ -53,16 +53,19 @@ export default function ChatView({
   myGroupMuteUntilMs,
   myGroupMuteCountdown,
   messagePlaceholder,
+  callsEnabled = false,
+  callPhase = "idle",
+  callChatId = null,
+  micError = false,
+  onStartCall,
+  onHangup,
+  onOpenMedia,
 }) {
   return (
     <section className={`chat-view chat-bg-${chatBg}`}>
       {!activeChat ? (
         <div className="product-empty">
-          <div className="product-empty-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-            </svg>
-          </div>
+          <div className="product-empty-icon" aria-hidden="true" />
           <div className="product-empty-title">{l("Нет сообщений", "No messages")}</div>
           <div className="product-empty-sub">
             {l("Создайте новую переписку.", "Start a new conversation.")}
@@ -96,6 +99,38 @@ export default function ChatView({
               </span>
             </button>
             <div className="chat-head-right">
+              {callsEnabled && activeChat.type === "direct" && !isPendingRequestChat && (
+                <button
+                  type="button"
+                  className={`chat-head-mini-btn${Number(callChatId) === Number(activeChat.id) && callPhase !== "idle" ? " active" : ""}`}
+                  title={
+                    micError
+                      ? l("Нет доступа к микрофону", "Microphone permission denied")
+                      : Number(callChatId) === Number(activeChat.id) && callPhase !== "idle"
+                        ? l("Завершить звонок", "Hang up")
+                        : l("Позвонить", "Call")
+                  }
+                  aria-label={
+                    Number(callChatId) === Number(activeChat.id) && callPhase !== "idle"
+                      ? l("Завершить звонок", "Hang up")
+                      : l("Позвонить", "Call")
+                  }
+                  disabled={callPhase !== "idle" && Number(callChatId) !== Number(activeChat.id)}
+                  onClick={() => {
+                    if (Number(callChatId) === Number(activeChat.id) && callPhase !== "idle") {
+                      onHangup?.();
+                      return;
+                    }
+                    onStartCall?.(activeChat);
+                    setProfileOpen(false);
+                    setChatSearchOpen(false);
+                  }}
+                >
+                  {Number(callChatId) === Number(activeChat.id) && callPhase !== "idle"
+                    ? <PhoneOffIcon />
+                    : <PhoneIcon />}
+                </button>
+              )}
               {activeChat.type === "direct" && (
                 <button
                   type="button"
@@ -172,6 +207,7 @@ export default function ChatView({
             unreadCount={unreadCount}
             onPinChange={onPinChange}
             onReachedBottom={onReachedBottom}
+            onOpenMedia={onOpenMedia}
           />
 
           {isRequesterInPendingChat && requesterFirstMsgSent && (

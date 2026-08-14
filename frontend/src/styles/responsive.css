@@ -36,6 +36,8 @@
   }
   .desktop-hidden{display:flex}
   .bubble{max-width:78%}
+  .bubble-photo,
+  .bubble-circle{max-width:100%}
 }
 @media (min-width: 861px){
   .mobile-product-shell{
