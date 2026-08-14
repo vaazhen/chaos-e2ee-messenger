@@ -1,292 +1,117 @@
 <div align="center">
 
-# Chaos E2EE Messenger
+# Chaos
 
-**E2EE messenger for web and desktop: chats, voice, circles, calls.**
+**A self-hosted encrypted messenger for web and desktop.**
 
-Client-side cryptography · Durable realtime delivery · Security-focused authentication · Observable infrastructure
+Private chats · Groups · Voice & video notes · 1:1 calls · Multi-device E2EE
 
 [![CI/CD](https://github.com/vaazhen/chaos-e2ee-messenger/actions/workflows/ci.yml/badge.svg)](https://github.com/vaazhen/chaos-e2ee-messenger/actions/workflows/ci.yml)
 [![Java](https://img.shields.io/badge/Java-17-ED8B00?logo=openjdk&logoColor=white)](backend/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5-6DB33F?logo=springboot&logoColor=white)](backend/)
 [![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](frontend/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-migration-3178C6?logo=typescript&logoColor=white)](frontend/src/crypto-engine.ts)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-[Русская версия](README.ru.md) · [What works](#what-works-today) · [Local development](#local-development) · [Architecture](#architecture) · [Security model](#security-model)
+[Русская версия](README.ru.md) · [Run it](#run-it) · [Security](#security) · [Architecture](#architecture) · [Self-host](#self-host)
 
 </div>
 
-> [!IMPORTANT]
-> Chaos implements an original X3DH-inspired pre-key handshake and Double Ratchet-style protocol using WebCrypto. It is **not affiliated with Signal**, is not a drop-in implementation of the Signal Protocol, and has not yet completed an independent cryptographic audit.
+Chaos is a messenger you run yourself. Messages, photos, files, voice and video notes are encrypted on the device before they reach the server. You get a Slack-like workspace for teams and a Signal-like guarantee that the host does not read the content.
+
+It is not affiliated with Signal and is not a copy of the Signal Protocol. There is no independent cryptographic audit yet. Do not treat it as a finished high-risk product.
 
 ---
 
-## Overview
+## Product
 
-Chaos is an E2EE messenger for web and Electron. The server sees ciphertext, metadata and call signaling. Message, file and key plaintext stay on the device.
-
-This is an engineering project, not a Signal replacement. There is no independent cryptographic audit yet.
-
-The backend is built around four invariants:
-
-1. **Plaintext stays on the endpoint.** Private keys, decrypted messages and attachment bytes are handled by the client.
-2. **Delivery survives failures.** Database transaction, transactional outbox, Kafka and cursor recovery.
-3. **Tokens can be stolen.** Refresh tokens are single-use, token-family reuse is detected, and device enrollment uses a separate short-lived token.
-4. **The system is operable.** Compose, Kubernetes, metrics, logs, alerts, runbooks and CI/CD.
-
-## What works today
-
-This is a working messenger, not a stub:
-
-- direct and group chats: replies, edits, deletion, reactions, receipts, disappearing messages;
-- voice: tap the mic to switch voice/circle, hold to record, slide up to lock, left to cancel;
-- video notes: full-stage recorder; the recipient gets real video, not an empty circle;
-- photos and files: a separate send window (not a strip above the input), in-chat paging;
-- 1:1 calls in local/dev: audio and video, overlay, local-camera PiP.
-
-Limits, stated plainly:
-
-- circles and media travel as encrypted attachments (`attachmentId` + file key), not as `blob:` URLs in JSON;
-- after pulling migrations, **restart the backend** — without Flyway `V42`, uploads return HTTP 409;
-- voice transcripts use the Web Speech API (Chrome is fine, Safari is often empty);
-- Word/Excel are download-only inside the chat;
-- production calls stay off until TURN is in front of WebRTC. Media is always DTLS-SRTP; extra insertable-stream E2EE is Chrome-only. SDP is visible to the server.
-
-## Project status
-
-| Capability | Status | Notes |
-|---|---|---|
-| Direct and group messaging | Active | Replies, edits, deletion, reactions, receipts and disappearing messages |
-| Multi-device E2EE | Active | Per-device identities, pre-key bundles and encrypted fan-out |
-| Durable realtime recovery | Active | Device-scoped sequence, cursor sync and at-least-once delivery |
-| Encrypted attachments | Active | Client-side AES-GCM; ciphertext uploaded separately; the message envelope stores `attachmentId` and the file key |
-| Voice messages | Active | Hold-to-record, lock or cancel, encrypted upload; optional on-device transcript via the Web Speech API |
-| Video notes | Active | Circular video messages delivered as encrypted attachments, not `blob:` URLs |
-| Photos and files | Active | Full-pane send preview, in-chat paging viewer, compressed images |
-| Encrypted key backup | Active | Restores identity material; does not claim to restore message history or ratchet sessions |
-| Web client | Active | React/Vite application |
-| Desktop client | Active | Electron packaging and secure endpoint validation |
-| WebRTC 1:1 calls | Experimental | Audio/video signaling over authenticated STOMP in local/dev; production remains off until TURN is in front of WebRTC |
-| Independent crypto audit | Pending | Required before high-risk use |
-
----
-
-## Highlights
-
-### Secure messaging
-
-- X25519 device identity and pre-key material;
-- ECDSA-signed pre-key verification;
-- X3DH-inspired session bootstrap;
-- Double Ratchet-style root, sending and receiving chains;
-- HMAC-SHA-256 chain derivation and HKDF-SHA-256 root derivation;
-- AES-256-GCM message and attachment encryption;
-- versioned AAD binding for routing and ratchet headers;
-- skipped-message-key handling for out-of-order delivery;
-- per-device encrypted envelopes, including the sender's other devices;
-- Safety Number verification and explicit `KEY_CHANGED` handling;
-- client-side encrypted key backups whose passphrase never reaches the backend.
-
-### Messaging product
-
-- direct chats, groups and saved messages;
-- replies, edits, deletion and reactions;
-- delivery/read receipts and typing indicators;
-- disappearing messages;
-- encrypted files, images, voice messages and video notes;
-- Telegram-style media recorder (tap to switch voice/video, hold to record);
-- full-pane send preview for photos and files, with in-chat paging;
-- 1:1 audio/video calls in development (DTLS-SRTP always; extra insertable-stream E2EE is Chrome-only);
-- user profiles, aliases, device management and group administration;
-- web push support;
-- web and Electron clients.
-
-### Backend and distributed delivery
-
-- Java 17 and Spring Boot;
-- PostgreSQL with Flyway migrations;
-- Redis for rate limits, sessions, token state and WebSocket fan-out;
-- transactional outbox;
-- Kafka/Redpanda-compatible event transport;
-- retry and dead-letter paths;
-- durable device-scoped realtime event storage;
-- durable device events combined with STOMP notification delivery;
-- monotonic sequence and recovery cursor;
-- idempotent event processing.
-
-### Production engineering
-
-- Docker Compose reference stack;
-- Kubernetes/Kustomize manifests;
-- readiness/liveness probes, HPA and PodDisruptionBudgets;
-- non-root runtime containers;
-- immutable image tags, provenance and SBOM generation;
-- CodeQL, dependency review and Trivy security gates;
-- staging deployment, smoke test and manually approved production promotion;
-- Prometheus, Grafana, Loki and Promtail;
-- operational alerts and incident runbooks.
-
----
-
-## Security model
-
-### What the server stores
-
-| Server may observe or store | Server should not receive |
+| | |
 |---|---|
-| Account and profile metadata | Message plaintext |
-| Device identifiers | Private identity keys |
-| Public identity keys and pre-key bundles | Private signed/one-time pre-keys |
-| Chat membership and authorization data | Ratchet message keys |
-| Encrypted message envelopes | Decrypted attachment bytes |
-| Encrypted attachment blobs | Backup passphrase |
-| Delivery, sequence and timing metadata | Decrypted backup contents |
-| Push subscription metadata | Safety Number decisions made locally |
-| Call signaling metadata (who called whom, SDP, ICE) | Call media plaintext |
+| **Chat** | Direct messages, groups and saved messages. Replies, edits, deletion, reactions, typing, delivery and read receipts, disappearing messages. |
+| **Media** | Encrypted photos, files, voice messages and circular video notes. Hold-to-record, lock or cancel, send preview, in-chat paging. |
+| **Calls** | 1:1 audio and video, with camera picture-in-picture. |
+| **Identity** | Safety Number / QR verification. A changed device key is a security event, not a silent update. |
+| **Devices** | Every device has its own keys. Messages fan out encrypted to each of them, including your other devices. |
+| **Clients** | Web app and Electron desktop. Push notifications on the web. |
+| **Backup** | Encrypted key backup. The passphrase never leaves the device. It restores identity, not chat history. |
 
-Chaos does **not** attempt to hide all metadata. The service can still learn relationships such as account membership, device count, chat membership, message timing, ciphertext size and call signaling. WebRTC media uses DTLS-SRTP; SDP still passes through the backend. Extra insertable-stream encryption of call media is Chrome-only and is not the production guarantee.
+The server stores accounts, chat membership, ciphertext, delivery metadata and call signaling. It does not receive message plaintext, file plaintext, private keys or backup passphrases. Relationships, timing and ciphertext size are still visible. That is the same class of metadata tradeoff Signal and Mattermost document: content is protected, traffic analysis is not.
 
-### Endpoint trust assumptions
-
-E2EE protects content in transit and at rest on the server. It does not protect plaintext from:
-
-- malware or a compromised operating system;
-- a malicious browser extension;
-- injected JavaScript from a compromised trusted origin;
-- an unlocked or compromised Electron process;
-- screen capture, clipboard capture or local forensic access while the client is active.
-
-### Device identity lifecycle
-
-```mermaid
-stateDiagram-v2
-    [*] --> UNVERIFIED: new remote device
-    UNVERIFIED --> VERIFIED: Safety Number / QR verification
-    VERIFIED --> KEY_CHANGED: identity key changes
-    KEY_CHANGED --> VERIFIED: explicit re-verification
-    KEY_CHANGED --> BLOCKED: user rejects new identity
-```
-
-A previously verified identity change is treated as a security event rather than silently trusted.
-
-### One-time device enrollment
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User
-    participant Client
-    participant Auth as Auth service
-    participant Redis
-    participant Devices as Device API
-
-    User->>Client: Password or OTP authentication
-    Client->>Auth: Login / verification request
-    Auth->>Redis: Store short-lived registration token
-    Auth-->>Client: Access token, refresh token and device token
-    Client->>Client: Generate identity and pre-key bundle
-    Client->>Devices: Register public bundle + device token
-    Devices->>Redis: Atomically consume token with GETDEL
-    Devices-->>Client: Registered device
-```
-
-The registration token is short-lived and one-time. It is separate from the device's cryptographic identity and is consumed when the public key bundle is registered.
+Calls use DTLS-SRTP. Signaling (who called whom, SDP, ICE) still goes through the server. Production calls stay off until you put TURN in front of WebRTC.
 
 ---
 
-## Cryptographic message flow
+## Run it
 
-Each device owns a separate cryptographic identity. A message is encrypted independently for every destination device and, when required, for the sender's other devices.
+You need Docker Engine, Docker Compose v2 and about 4 GB of free memory.
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant A as Alice device
-    participant API as Chaos backend
-    participant DB as PostgreSQL
-    participant O as Outbox
-    participant K as Kafka / Redpanda
-    participant R as Realtime consumer
-    participant B as Bob device
-
-    A->>API: Fetch Bob device pre-key bundles
-    API-->>A: Public identity, signed pre-key, one-time pre-key
-    Note over A: Verify signed pre-key<br/>derive X3DH-inspired session<br/>create/advance Double Ratchet
-    A->>A: Encrypt one envelope per target device<br/>AES-GCM + versioned AAD
-    A->>API: Ciphertext envelopes and metadata
-    API->>DB: Save message + envelopes + outbox event
-    DB-->>API: Transaction committed
-    O->>K: Publish committed domain event
-    K->>R: At-least-once delivery
-    R->>DB: Persist device-scoped realtime event
-    R-->>B: STOMP notification
-    B->>B: Verify identity, derive ratchet key,<br/>decrypt and persist locally
+```bash
+git clone https://github.com/vaazhen/chaos-e2ee-messenger.git
+cd chaos-e2ee-messenger
+cp .env.example .env
 ```
 
-### Envelope authentication
+Replace every `CHANGE_ME` value:
 
-AAD binds ciphertext to protocol context such as:
+```bash
+openssl rand -base64 32   # POSTGRES_PASSWORD
+openssl rand -base64 32   # REDIS_PASSWORD
+openssl rand -base64 48   # JWT_SECRET
+openssl rand -base64 32   # GRAFANA_ADMIN_PASSWORD
+```
 
-- protocol/message type;
-- chat identifier;
-- message index;
-- previous chain length;
-- ratchet public key.
+For a machine on localhost:
 
-Changing authenticated header fields causes AES-GCM authentication to fail.
+```dotenv
+DOMAIN=localhost
+CORS_ORIGINS=https://localhost
+CHAOS_DEMO_ENABLED=false
+KAFKA_BOOTSTRAP_SERVERS=localhost:19092
+```
 
-### Backup semantics
+```bash
+docker compose up --build -d
+```
 
-Backups are encrypted in the client with a passphrase-derived AES-GCM key. The passphrase remains local.
+Open [https://localhost](https://localhost). Register two accounts and start a chat. Caddy uses a local CA on localhost and a public certificate when you set a real domain.
 
-A backup restores cryptographic identity material. It does **not** promise restoration of:
+Stop with `docker compose down`. Wipe local data with `docker compose down -v`.
 
-- locally cached message plaintext;
-- previously consumed one-time pre-keys;
-- all Double Ratchet sessions;
-- complete historical message decryption on a fresh device.
+### Develop against a live API
+
+```bash
+cd backend && docker compose -f docker-compose.dev.yml up -d && ./mvnw spring-boot:run
+cd frontend && cp .env.example .env && npm ci && npm run dev
+```
+
+API: `http://localhost:8080`. App: `http://localhost:5173`. The dev compose file includes PostgreSQL, Redis, Redpanda and coturn so two browsers on the same machine can call each other.
+
+Desktop:
+
+```bash
+cd frontend
+cp .env.electron.example .env.electron
+npm run electron:dev
+```
+
+Packaged Electron builds require absolute `https` / `wss` endpoints.
 
 ---
 
-## Durable realtime delivery
+## Security
 
-Chaos separates durable state from low-latency notification.
+Chaos encrypts with WebCrypto on the client: X25519 identities, an X3DH-inspired handshake, Double Ratchet-style chains and AES-256-GCM for messages and attachments. Each destination device gets its own envelope.
 
-```mermaid
-flowchart LR
-    CMD["Send Message Command"] --> TX["Database Transaction"]
+| Server may see | Server must not receive |
+|---|---|
+| Accounts, profiles, chat membership | Message plaintext |
+| Device ids and public pre-key bundles | Private identity or pre-keys |
+| Encrypted envelopes and attachment blobs | Attachment plaintext, ratchet keys |
+| Delivery timing and ciphertext size | Backup passphrase |
+| Call signaling (peers, SDP, ICE) | Call media plaintext |
 
-    TX --> MSG[("Messages and E2EE Envelopes")]
-    TX --> OUT[("Outbox Event")]
+E2EE does not protect a compromised OS, a malicious browser extension, injected JavaScript on a trusted origin, or an unlocked desktop session.
 
-    OUT --> PUB["Outbox Publisher"]
-    PUB --> BUS["Kafka / Redpanda"]
-    BUS --> CONSUMER["Realtime Consumer"]
-
-    CONSUMER --> STORE[("Device Event Store")]
-    CONSUMER --> FANOUT["Redis pub/sub"]
-    FANOUT --> WS["Native STOMP / WebSocket"]
-
-    STORE --> SYNC["GET /api/realtime/sync"]
-    WS --> QUEUE["Client Event Queue"]
-    SYNC --> QUEUE
-
-    QUEUE --> APPLY["Decrypt and Durable Local Apply"]
-    APPLY --> CURSOR["Advance Cursor"]
-```
-
-### Delivery guarantees
-
-- Kafka transport is treated as **at least once**;
-- every event has a stable `eventId`;
-- device events have a monotonic sequence;
-- device-scoped events are retained as the recovery source;
-- reconnecting clients request events after their last cursor;
-- duplicate delivery must be safe;
-- the client tracks a recovery cursor and ignores previously seen event IDs.
-
-Realtime notification is an optimization. Durable recovery is the correctness path.
+A backup restores cryptographic identity. It does not restore local message history or every previous ratchet session.
 
 ---
 
@@ -295,46 +120,37 @@ Realtime notification is an optimization. Durable recovery is the correctness pa
 ```mermaid
 flowchart TB
     subgraph Clients
-        WEB[React web client]
-        DESKTOP[Electron desktop client]
+        WEB[Web]
+        DESKTOP[Desktop]
         CRYPTO[WebCrypto + IndexedDB]
         WEB --- CRYPTO
         DESKTOP --- CRYPTO
     end
 
     subgraph Edge
-        CADDY[Caddy TLS edge]
-        NGINX[Nginx frontend and API proxy]
+        CADDY[Caddy]
+        NGINX[Nginx]
     end
 
     subgraph Application
-        API[Spring Boot API]
-        AUTH[Auth and device security]
-        CHAT[Chat and message services]
-        RT[Realtime sync and STOMP]
-        PUSH[Web Push]
-        CALLS[1:1 call signaling]
+        API[Spring Boot]
+        AUTH[Auth]
+        CHAT[Chat]
+        RT[Realtime]
+        CALLS[Calls]
+        PUSH[Push]
     end
 
     subgraph Data
         PG[(PostgreSQL)]
         REDIS[(Redis)]
-        BLOB[(Encrypted attachment storage)]
+        BLOB[(Encrypted files)]
     end
 
     subgraph Events
-        OUTBOX[(Transactional outbox)]
-        PUB[OutboxPublisher]
+        OUTBOX[Outbox]
         KAFKA[Kafka / Redpanda]
-        PROC[DomainEventProcessor]
-        DURABLE[(realtime_device_events)]
-    end
-
-    subgraph Observability
-        ACT[Spring Actuator]
-        PROM[Prometheus]
-        LOKI[Loki / Promtail]
-        GRAFANA[Grafana]
+        DURABLE[(Device event log)]
     end
 
     WEB --> CADDY
@@ -344,435 +160,93 @@ flowchart TB
     API --> AUTH
     API --> CHAT
     API --> RT
-    API --> PUSH
     API --> CALLS
+    API --> PUSH
     AUTH --> REDIS
     CHAT --> PG
     CHAT --> BLOB
     CHAT --> OUTBOX
-    OUTBOX --> PUB
-    PUB --> KAFKA
-    KAFKA --> PROC
-    PROC --> DURABLE
-    PROC --> RT
-    RT --> PG
-    RT --> NGINX
-    API --> ACT
-    ACT --> PROM
-    NGINX --> LOKI
-    PROM --> GRAFANA
-    LOKI --> GRAFANA
+    OUTBOX --> KAFKA
+    KAFKA --> DURABLE
+    DURABLE --> RT
 ```
 
-### Delivery contract
+A send is one database transaction: message, envelopes, outbox row. After commit the outbox publisher writes to Kafka. The realtime consumer appends a device-scoped log first, then notifies over WebSocket and push. If the broker is down, outbox rows stay pending and retry. Clients catch up through `/api/realtime/sync`. Typing and presence stay ephemeral.
 
-One path for durable events. Domain services write the outbox in the same database transaction as the command. After commit, `OutboxPublisher` sends to Kafka. `RealtimeEventConsumer` is the only consumer: it appends a device-scoped durable log first, then notifies over STOMP/Redis and push. Typing and presence stay ephemeral and do not go through the outbox.
-
-Kafka is required. There is no in-process fallback. If the broker is down, outbox rows stay pending and retry.
-
-Idempotency is a business key on the outbox row. Redis WebSocket fan-out is a notification channel, not a second source of truth. Clients recover missed events through `/api/realtime/sync`.
-
-### Technology stack
-
-| Layer | Technologies |
-|---|---|
-| Web client | React 18, Vite, WebCrypto, IndexedDB, native STOMP WebSocket |
-| Desktop | Electron, electron-builder |
-| Protocol types | TypeScript migration with a strict DTO gate |
-| Backend | Java 17, Spring Boot 3.5, Spring Security, JPA/Hibernate |
-| Primary data | PostgreSQL 16, Flyway |
-| Coordination and auth state | Redis 7 |
-| Event transport | Kafka-compatible broker / Redpanda |
-| Edge | Caddy, Nginx |
-| Observability | Actuator, Prometheus, Grafana, Loki, Promtail |
-| Delivery | Docker, Kubernetes/Kustomize, GitHub Actions, GHCR |
-
-### Repository layout
+Stack: React 18, Vite, Electron, Java 17, Spring Boot 3.5, PostgreSQL 16, Redis 7, Kafka-compatible broker, Caddy, Nginx, Prometheus, Grafana, Loki.
 
 ```text
-.
-├── backend/                 Spring Boot application and database migrations
-│   ├── src/main/java/       Auth, users, chats, messages, crypto metadata,
-│   │                        attachments, calls, backup, outbox, realtime and push
-│   └── src/test/            Unit and integration tests
-├── frontend/                React web client and Electron package
-│   ├── src/crypto-engine.ts Client-side E2EE engine
-│   ├── src/hooks/           Auth, chat, message, WebSocket and WebRTC flows
-│   ├── src/test/            Frontend unit/integration tests
-│   ├── e2e/                 Mocked browser flows
-│   └── e2e-real/            Real-stack E2EE browser scenarios
-├── infra/                   Caddy, Prometheus, Loki and Promtail configuration
-├── k8s/                     Stateless production manifests and dev dependencies
-├── docs/runbooks/           Operational incident procedures
-├── docker-compose.yml       Full reference stack
-└── .github/workflows/       Verification, security scan and deployment pipeline
+backend/     API, Flyway, tests
+frontend/    Web client, Electron, crypto engine
+infra/       Caddy, Prometheus, Loki
+k8s/         Stateless production manifests
+docs/        Runbooks and production checklist
 ```
 
 ---
 
-## Quick start
+## Self-host
 
-### Requirements
-
-- Docker Engine;
-- Docker Compose v2;
-- OpenSSL for secret generation;
-- at least 4 GB of free memory for the complete reference stack.
-
-### 1. Configure secrets
-
-```bash
-cp .env.example .env
-```
-
-Generate replacement values for every `CHANGE_ME` entry:
-
-```bash
-openssl rand -base64 32   # POSTGRES_PASSWORD
-openssl rand -base64 32   # REDIS_PASSWORD
-openssl rand -base64 48   # JWT_SECRET
-openssl rand -base64 32   # GRAFANA_ADMIN_PASSWORD
-```
-
-For local use:
-
-```dotenv
-DOMAIN=localhost
-CORS_ORIGINS=https://localhost
-CHAOS_DEMO_ENABLED=false
-KAFKA_BOOTSTRAP_SERVERS=localhost:19092
-```
-
-### 2. Start the stack
-
-```bash
-docker compose up --build -d
-docker compose ps
-```
-
-Open:
-
-```text
-https://localhost
-```
-
-Caddy uses its local CA for `localhost` and obtains a public certificate when a real domain is configured.
-
-### 3. Inspect logs
-
-```bash
-docker compose logs -f backend frontend caddy redpanda
-```
-
-### Stop
-
-```bash
-docker compose down
-```
-
-Remove local volumes as well:
-
-```bash
-docker compose down -v
-```
-
----
-
-## Local development
-
-### Backend
-
-Start PostgreSQL and Redis using the development compose file:
-
-```bash
-cd backend
-docker compose -f docker-compose.dev.yml up -d
-./mvnw spring-boot:run
-```
-
-The application API listens on `http://localhost:8080`. In production profile, management probes run on the separate management port `9091`.
-
-`docker-compose.dev.yml` starts PostgreSQL, Redis, Redpanda and coturn. Two browsers on the same machine usually need coturn for ICE. 1:1 call signaling is on in the `dev` profile (`chaos.calls.enabled=true`) and off in production unless `CHAOS_CALLS_ENABLED=true`.
-
-After pulling migrations, **restart the backend** so Flyway can apply them. Attachment uploads need `V42` (`object_key` default). Without it `/api/attachments/upload` returns HTTP 409, and the other user sees empty circles and photos.
-
-### Frontend
-
-```bash
-cd frontend
-cp .env.example .env
-npm ci
-npm run dev
-```
-
-The default development configuration targets:
-
-```dotenv
-VITE_BACKEND_URL=http://localhost:8080
-VITE_API_BASE=http://localhost:8080/api
-VITE_WS_URL=http://localhost:8080/ws
-```
-
-Vite serves the app at `http://localhost:5173` by default.
-
-### Two local users
-
-1. Start backend and frontend as above.
-2. Open two windows (two browsers, or one normal + one private).
-3. Register two accounts and start a direct chat.
-4. Check text, photo, voice and a video note — the other side should see content, not an empty bubble.
-5. For a call on the same machine, coturn from `docker-compose.dev.yml` must be up.
-
-An empty circle on the other device is almost always an old backend without `V42`, or a message that was sent with a `blob:` URL in the payload. Restart the API and send it again.
-
-### Electron
-
-```bash
-cd frontend
-cp .env.electron.example .env.electron
-```
-
-Set secure absolute endpoints:
-
-```dotenv
-VITE_BACKEND_URL=https://messenger.example.com
-VITE_API_BASE=https://messenger.example.com/api
-VITE_WS_URL=wss://messenger.example.com/ws
-```
-
-Run or package:
-
-```bash
-npm run electron:dev
-npm run electron:build
-```
-
-The production desktop build validates endpoint presence and secure schemes. Public installers should be code-signed; macOS distributions also require notarization.
-
----
-
-## Verification
-
-### Backend
-
-```bash
-cd backend
-./mvnw --batch-mode --no-transfer-progress verify
-```
-
-The Maven lifecycle includes compilation, Checkstyle, unit/integration tests and JaCoCo verification.
-
-### Frontend
-
-```bash
-cd frontend
-npm ci --ignore-scripts --no-audit --no-fund
-npm run lint
-npm run typecheck
-npm run typecheck:crypto
-npm run typecheck:protocol
-npm run test:coverage -- --run
-npm run build
-```
-
-### Browser E2E
-
-```bash
-cd frontend
-npx playwright install --with-deps chromium
-npm run test:e2e
-npm run test:e2e:real
-```
-
-The real-stack suite requires the backend and its dependencies to be running.
-
----
-
-## CI/CD
-
-```mermaid
-flowchart LR
-    PR[Pull request] --> BE[Backend verify]
-    PR --> FE[Frontend verify]
-    PR --> DEP[Dependency review]
-    PR --> CODEQL[CodeQL]
-    BE --> IMG[Build immutable images]
-    FE --> IMG
-    CODEQL --> IMG
-    IMG --> SBOM[SBOM and provenance]
-    SBOM --> TRIVY[Trivy HIGH/CRITICAL gate]
-    TRIVY --> STAGE[Deploy staging]
-    STAGE --> SMOKE[Staging smoke test]
-    SMOKE --> APPROVAL[Protected environment approval]
-    APPROVAL --> PROD[Deploy production]
-```
-
-The workflow includes:
-
-- backend `mvn verify`;
-- frontend lint, three TypeScript gates, coverage and production build;
-- dependency review on pull requests;
-- CodeQL for Java and JavaScript/TypeScript;
-- immutable images published to GHCR;
-- SBOM and build provenance;
-- blocking HIGH/CRITICAL container scan;
-- staging rollout and health smoke test;
-- protected manual promotion to production.
-
----
-
-## Kubernetes
-
-The root `k8s/` configuration deploys stateless application workloads. Production stateful dependencies are intentionally external.
-
-Required production services:
-
-- PostgreSQL 16 with backup and point-in-time recovery;
-- authenticated Redis 7 with persistence and failover;
-- a multi-replica Kafka/Redpanda cluster;
-- durable encrypted attachment storage;
-- an external secret manager;
-- metrics-server, cert-manager and an Ingress controller.
-
-Render manifests:
+Kubernetes manifests in `k8s/` deploy the stateless app. Bring your own PostgreSQL, Redis, Kafka, object storage and secret manager.
 
 ```bash
 kubectl kustomize k8s/
-```
-
-Apply after replacing image placeholders, hostnames, connection addresses and secrets:
-
-```bash
 kubectl apply -k k8s/
 ```
 
-Disposable development dependencies are available under `k8s/dev/`. They are not a high-availability production database or cache.
-
-See [k8s/README.md](k8s/README.md).
-
----
-
-## Operations
-
-### Observability
-
-The reference stack includes:
-
-- Spring Boot Actuator health and application metrics;
-- Prometheus collection;
-- PostgreSQL and Redis exporters;
-- structured container logs;
-- Loki and Promtail;
-- a provisioned Grafana dashboard;
-- alerts for delivery, database, authentication and recovery failures.
-
-### Runbooks
-
-Operational procedures are maintained in [`docs/runbooks/`](docs/runbooks/):
-
-- database outage;
-- outbox backlog;
-- realtime recovery failure;
-- refresh-token reuse spike;
-- rollback.
-
-### Production checklist
-
-Before a public deployment:
-
-- use an external secret manager and rotate all initial secrets;
-- use managed or operator-backed PostgreSQL, Redis and Kafka;
-- configure tested backups, PITR and restore exercises;
-- run browser E2E against staging;
-- configure alert routing and an incident owner;
-- sign desktop releases;
-- validate resource limits under load;
-- perform an independent application-security review and cryptographic audit.
-
-Current hardening status is tracked in [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md).
-
----
-
-## Configuration
+See [k8s/README.md](k8s/README.md) and [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md).
 
 <details>
-<summary><strong>Core environment variables</strong></summary>
+<summary>Environment variables</summary>
 
 | Variable | Purpose |
 |---|---|
-| `POSTGRES_PASSWORD` | PostgreSQL password used by the reference compose stack |
-| `REDIS_PASSWORD` | Redis authentication password |
-| `JWT_SECRET` | JWT signing secret; use high-entropy material |
-| `DOMAIN` | Public hostname used by Caddy |
-| `CORS_ORIGINS` | Exact trusted web origin |
-| `CHAOS_DEMO_ENABLED` | Enables optional demo endpoints |
-| `KAFKA_BOOTSTRAP_SERVERS` | Kafka-compatible broker addresses |
-| `CHAOS_ATTACHMENTS_STORAGE_PATH` | Reference ciphertext storage directory |
-| `CHAOS_ATTACHMENTS_MAX_BYTES` | Maximum encrypted upload size |
-| `CHAOS_CALLS_ENABLED` | Enables 1:1 call signaling; default `false` outside the `dev` profile |
-| `VAPID_PUBLIC_KEY` | Web Push public key |
-| `VAPID_PRIVATE_KEY` | Web Push private key |
+| `POSTGRES_PASSWORD` | Database password |
+| `REDIS_PASSWORD` | Redis password |
+| `JWT_SECRET` | JWT signing secret |
+| `DOMAIN` | Public hostname for Caddy |
+| `CORS_ORIGINS` | Trusted web origin |
+| `KAFKA_BOOTSTRAP_SERVERS` | Kafka-compatible brokers |
+| `CHAOS_ATTACHMENTS_MAX_BYTES` | Max encrypted upload size |
+| `CHAOS_CALLS_ENABLED` | 1:1 call signaling; off outside `dev` |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Web Push |
 
-See `.env.example`, `backend/.env.example` and `frontend/.env.example` for complete development examples.
+Full examples live in `.env.example`, `backend/.env.example` and `frontend/.env.example`.
 
 </details>
 
----
+CI builds, tests, scans and publishes images. Staging and production deploys are gated. Runbooks for outage, outbox backlog, token reuse and rollback are in [`docs/runbooks/`](docs/runbooks/).
 
-## Design principles
+### Verify
 
-1. **Ciphertext is not an excuse to ignore metadata security.** Authorization is checked independently of encryption.
-2. **Realtime is not durable storage.** WebSocket delivery is backed by a recoverable event log.
-3. **Retries are normal.** Consumers and clients are designed for duplicate delivery.
-4. **A token is not a device identity.** Device enrollment uses a separate one-time registration credential and a client-generated key bundle.
-5. **Green checks are part of the product.** Build, tests, types, security scans and deployment gates are treated as release requirements.
-6. **Security claims must remain bounded.** Experimental or unaudited components are labeled as such.
+```bash
+cd backend && ./mvnw --batch-mode --no-transfer-progress verify
+cd ../frontend && npm ci && npm run lint && npm run typecheck && npm run test:coverage -- --run && npm run build
+```
 
 ---
 
 ## Roadmap
 
-- complete strict TypeScript migration for the full cryptographic engine;
-- make real-browser reconnect/full-resync E2E mandatory in CI;
-- production object-storage adapter for ciphertext attachments;
-- production TURN, hardened WebRTC call state and group calls;
-- key-transparency and stronger cross-device verification research;
-- external pentest and independent cryptographic review;
-- formal protocol specification and interoperable test vectors.
+- Finish the strict TypeScript crypto migration
+- Production object storage for encrypted attachments
+- Production TURN, hardened call state and group calls
+- Independent pentest and cryptographic review
+- Formal protocol spec and test vectors
 
 ---
 
 ## Contributing
 
-Focused pull requests are preferred over broad refactors.
-
-Before opening a PR:
+Small, focused pull requests. Before a PR:
 
 ```bash
 cd backend && ./mvnw verify
 cd ../frontend && npm run lint && npm run typecheck && npm run test:coverage -- --run && npm run build
 ```
 
-Security-sensitive changes should include:
-
-- the protected invariant;
-- a concrete failure scenario;
-- tests for success, replay, tampering and failure paths;
-- migration or compatibility notes;
-- operational impact.
-
-For vulnerabilities, avoid public disclosure before a coordinated fix is available.
-
----
+Report security issues privately until a fix is ready.
 
 ## License
 
-Licensed under the [Apache License 2.0](LICENSE).
-
----
-
-<div align="center">
-
-**Chaos is an engineering exploration of secure messaging under real distributed-system failure modes.**
-
-</div>
+[Apache License 2.0](LICENSE).
