@@ -179,13 +179,13 @@ class AuthPhoneControllerTest {
 
         when(refreshCookieService.resolve("old-refresh", null, null)).thenReturn("old-refresh");
         when(authService.refresh("old-refresh"))
-                .thenReturn(new TokenRefreshResponse("new-jwt", "new-refresh", "new-device-token"));
+                .thenReturn(new TokenRefreshResponse("new-jwt", "new-refresh", null));
 
         var response = controller.refresh(request);
 
         assertThat(response.token()).isEqualTo("new-jwt");
         assertThat(response.refreshToken()).isNull();
-        assertThat(response.deviceRegistrationToken()).isEqualTo("new-device-token");
+        assertThat(response.deviceRegistrationToken()).isNull();
         verify(authService).refresh("old-refresh");
     }
 

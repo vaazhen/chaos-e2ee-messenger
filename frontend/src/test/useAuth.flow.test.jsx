@@ -188,20 +188,10 @@ describe("useAuth critical frontend auth flow", () => {
     expect(mocks.ensureDeviceRegistered).not.toHaveBeenCalled();
   });
 
-  it("restoreSession refreshes JWT and recovers missing device registration", async () => {
+  it("restoreSession re-binds a missing device with JWT instead of a refresh registration token", async () => {
     const { useAuth } = await import("../hooks/useAuth");
 
-    mocks.api.refreshToken
-      .mockResolvedValueOnce({
-        token: "jwt-refreshed-1",
-        refreshToken: "refresh-new-1",
-      })
-      .mockResolvedValueOnce({
-        token: "jwt-refreshed-2",
-        refreshToken: "refresh-new-2",
-        deviceRegistrationToken: "device-reg-recovery",
-      });
-
+    mocks.token = "jwt-existing";
     mocks.api.getMe.mockResolvedValueOnce({
       id: 1,
       username: "alice",
@@ -220,12 +210,9 @@ describe("useAuth critical frontend auth flow", () => {
       await result.current.restoreSession(onRestored);
     });
 
-    expect(mocks.api.refreshToken).toHaveBeenCalledTimes(2);
-    expect(mocks.setToken).toHaveBeenCalledWith("jwt-refreshed-1");
-    expect(mocks.setToken).toHaveBeenCalledWith("jwt-refreshed-2");
-    expect(mocks.ensureDeviceRegistered).toHaveBeenCalledWith("device-reg-recovery");
+    expect(mocks.api.refreshToken).not.toHaveBeenCalled();
+    expect(mocks.ensureDeviceRegistered).toHaveBeenCalledWith();
     expect(mocks.ensureCurrentDeviceExists).toHaveBeenCalledTimes(2);
-
     expect(onRestored).toHaveBeenCalledWith({
       id: 1,
       username: "alice",

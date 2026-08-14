@@ -60,12 +60,13 @@ class PreKeyServiceTest {
         UserDevice aliceDevice = device(10L, alice, "alice-phone");
         SignedPreKey signed = signedPreKey(aliceDevice, 7, "signed-public", "signature");
 
+        when(userIdentityService.require("alice")).thenReturn(alice);
         when(userDeviceRepository.findActiveByUsernameWithUser("alice"))
                 .thenReturn(List.of(aliceDevice));
         when(signedPreKeyRepository.findLatestByDeviceIds(List.of(10L)))
                 .thenReturn(List.of(signed));
 
-        PreKeyBundleResponse response = preKeyService.getBundleByUsername("alice");
+        PreKeyBundleResponse response = preKeyService.getBundleByUsername("alice", "alice");
 
         assertThat(response.username()).isEqualTo("alice");
         assertThat(response.devices()).hasSize(1);
@@ -89,15 +90,60 @@ class PreKeyServiceTest {
     }
 
     @Test
+    void getBundleByUsernameAllowsSharedChatParticipant() {
+        UserDevice bobDevice = device(20L, bob, "bob-phone");
+
+        when(userIdentityService.require("alice")).thenReturn(alice);
+        when(userIdentityService.resolve("bob")).thenReturn(java.util.Optional.of(bob));
+        when(chatParticipantRepository.shareAnyChat(alice.getId(), bob.getId())).thenReturn(true);
+        when(userDeviceRepository.findActiveByUsernameWithUser("bob"))
+                .thenReturn(List.of(bobDevice));
+        when(signedPreKeyRepository.findLatestByDeviceIds(List.of(20L)))
+                .thenReturn(List.of());
+
+        PreKeyBundleResponse response = preKeyService.getBundleByUsername("alice", "bob");
+
+        assertThat(response.username()).isEqualTo("bob");
+        assertThat(response.devices()).extracting(DeviceBundleDto::deviceId)
+                .containsExactly("bob-phone");
+    }
+
+    @Test
+    void getBundleByUsernameRejectsUnrelatedUser() {
+        when(userIdentityService.require("alice")).thenReturn(alice);
+        when(userIdentityService.resolve("bob")).thenReturn(java.util.Optional.of(bob));
+        when(chatParticipantRepository.shareAnyChat(alice.getId(), bob.getId())).thenReturn(false);
+
+        assertThatThrownBy(() -> preKeyService.getBundleByUsername("alice", "bob"))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class)
+                .hasMessageContaining("Bundle lookup is not allowed");
+
+        verify(userDeviceRepository, never()).findActiveByUsernameWithUser("bob");
+    }
+
+    @Test
+    void getBundleByUsernameDoesNotRevealUnknownUsers() {
+        when(userIdentityService.require("alice")).thenReturn(alice);
+        when(userIdentityService.resolve("ghost")).thenReturn(java.util.Optional.empty());
+
+        assertThatThrownBy(() -> preKeyService.getBundleByUsername("alice", "ghost"))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class)
+                .hasMessageContaining("Bundle lookup is not allowed");
+
+        verify(userDeviceRepository, never()).findActiveByUsernameWithUser("ghost");
+    }
+
+    @Test
     void getBundleByUsernameAllowsDevicesWithoutAvailablePreKeys() {
         UserDevice aliceDevice = device(10L, alice, "alice-phone");
 
+        when(userIdentityService.require("alice")).thenReturn(alice);
         when(userDeviceRepository.findActiveByUsernameWithUser("alice"))
                 .thenReturn(List.of(aliceDevice));
         when(signedPreKeyRepository.findLatestByDeviceIds(List.of(10L)))
                 .thenReturn(List.of());
 
-        PreKeyBundleResponse response = preKeyService.getBundleByUsername("alice");
+        PreKeyBundleResponse response = preKeyService.getBundleByUsername("alice", "alice");
 
         DeviceBundleDto dto = response.devices().get(0);
         assertThat(dto.signedPreKey()).isNull();

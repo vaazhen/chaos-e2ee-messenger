@@ -18,7 +18,9 @@ import ru.messenger.chaosmessenger.crypto.prekey.SignedPreKeyRepository;
 import ru.messenger.chaosmessenger.user.domain.User;
 
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
+import java.security.MessageDigest;
 import java.security.Signature;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Arrays;
@@ -51,6 +53,21 @@ public class DeviceService {
 
     @Transactional
     public DeviceRegistrationResponse registerDevice(String username, DeviceRegistrationRequest request) {
+        return registerDevice(username, request, true);
+    }
+
+    /**
+     * @param allowNewDevice {@code true} only when the caller consumed a login-issued
+     *                       registration token. JWT re-bind may update an existing
+     *                       device whose identity keys still match; it must not
+     *                       enroll a new device or rotate identity keys.
+     */
+    @Transactional
+    public DeviceRegistrationResponse registerDevice(
+            String username,
+            DeviceRegistrationRequest request,
+            boolean allowNewDevice
+    ) {
         if (request.deviceId() == null || request.deviceId().isBlank()) {
             throw new IllegalArgumentException("deviceId is required");
         }
@@ -70,6 +87,9 @@ public class DeviceService {
                 .findByUserUsernameAndDeviceId(username, request.deviceId());
 
         if (existingDevice.isEmpty()) {
+            if (!allowNewDevice) {
+                throw new AuthException("New device enrollment requires a login registration token");
+            }
             userDeviceRepository.findByDeviceId(request.deviceId())
                     .ifPresent(device -> {
                         Long ownerId = device.getUser() == null ? null : device.getUser().getId();
@@ -78,6 +98,8 @@ public class DeviceService {
                                     "Device id is already registered to another account. Reset local device identity and retry.");
                         }
                     });
+        } else {
+            assertUnchangedIdentity(existingDevice.get(), request, allowNewDevice);
         }
 
         boolean newDevice = existingDevice.isEmpty();
@@ -184,6 +206,39 @@ public class DeviceService {
         }
         oneTimePreKeyRepository.flush();
         return Math.toIntExact(oneTimePreKeyRepository.countByDeviceIdAndUsedAtIsNull(device.getId()));
+    }
+
+    private void assertUnchangedIdentity(
+            UserDevice existing,
+            DeviceRegistrationRequest request,
+            boolean allowNewDevice
+    ) {
+        boolean storedIdentity = existing.getIdentityPublicKey() != null && !existing.getIdentityPublicKey().isBlank();
+        boolean storedSigning = existing.getSigningPublicKey() != null && !existing.getSigningPublicKey().isBlank();
+        if (!storedIdentity && !storedSigning) {
+            if (!allowNewDevice) {
+                throw new AuthException("New device enrollment requires a login registration token");
+            }
+            return;
+        }
+        if (!sameKeyMaterial(existing.getIdentityPublicKey(), request.identityPublicKey())
+                || !sameKeyMaterial(existing.getSigningPublicKey(), request.signingPublicKey())) {
+            throw new IllegalStateException(
+                    "Device identity keys cannot be rotated. Register a new device id instead.");
+        }
+    }
+
+    private static boolean sameKeyMaterial(String stored, String incoming) {
+        return MessageDigest.isEqual(sha256(stored), sha256(incoming));
+    }
+
+    private static byte[] sha256(String value) {
+        String material = value == null ? "" : value;
+        try {
+            return MessageDigest.getInstance("SHA-256").digest(material.getBytes(StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            throw new IllegalStateException("SHA-256 is unavailable", e);
+        }
     }
 
     private UserDeviceResponse toResponse(UserDevice device, String currentDeviceId) {

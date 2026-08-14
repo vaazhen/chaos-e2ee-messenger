@@ -5,6 +5,7 @@ import ru.messenger.chaosmessenger.common.exception.ChatException;
 import ru.messenger.chaosmessenger.common.exception.CryptoException;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.messenger.chaosmessenger.chat.repository.ChatParticipantRepository;
@@ -41,15 +42,29 @@ public class PreKeyService {
     private final CurrentDeviceService currentDeviceService;
 
     @Transactional(readOnly = true)
-    public PreKeyBundleResponse getBundleByUsername(String username) {
-        List<UserDevice> devices = userDeviceRepository.findActiveByUsernameWithUser(username);
+    public PreKeyBundleResponse getBundleByUsername(String requesterUsername, String targetUsername) {
+        User requester = userIdentityService.require(requesterUsername);
+        String lookupUsername = authorizeBundleLookup(requester, targetUsername);
+        List<UserDevice> devices = userDeviceRepository.findActiveByUsernameWithUser(lookupUsername);
         Map<Long, SignedPreKey> signedByDeviceId = latestSignedPreKeys(devices);
         return new PreKeyBundleResponse(
-                username,
+                lookupUsername,
                 devices.stream()
                         .map(device -> toDeviceBundleWithoutOneTimePreKey(device, signedByDeviceId.get(device.getId())))
                         .toList()
         );
+    }
+
+    private String authorizeBundleLookup(User requester, String targetUsername) {
+        if (targetUsername != null && requester.getUsername().equalsIgnoreCase(targetUsername.trim())) {
+            return requester.getUsername();
+        }
+
+        User target = userIdentityService.resolve(targetUsername).orElse(null);
+        if (target == null || !chatParticipantRepository.shareAnyChat(requester.getId(), target.getId())) {
+            throw new AccessDeniedException("Bundle lookup is not allowed");
+        }
+        return target.getUsername();
     }
 
     @Transactional(readOnly = true)

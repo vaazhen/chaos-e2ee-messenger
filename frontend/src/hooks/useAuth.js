@@ -38,12 +38,14 @@ export function useAuth() {
       await ensureCurrentDeviceExists();
       return;
     } catch (firstError) {
-      const refreshed = await refreshSession().catch(() => null);
-      if (!refreshed?.deviceRegistrationToken) throw firstError;
-      await ensureDeviceRegistered(refreshed.deviceRegistrationToken);
-      await ensureCurrentDeviceExists();
+      try {
+        await ensureDeviceRegistered();
+        await ensureCurrentDeviceExists();
+      } catch {
+        throw firstError;
+      }
     }
-  }, [refreshSession]);
+  }, []);
 
   const restoreSession = useCallback(async (onRestored) => {
     let hasToken = !!getToken();
