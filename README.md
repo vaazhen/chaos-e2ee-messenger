@@ -2,7 +2,7 @@
 
 # Chaos E2EE Messenger
 
-**A production-oriented, multi-device encrypted messenger for web and desktop.**
+**E2EE messenger for web and desktop: chats, voice, circles, calls.**
 
 Client-side cryptography · Durable realtime delivery · Security-focused authentication · Observable infrastructure
 
@@ -13,7 +13,7 @@ Client-side cryptography · Durable realtime delivery · Security-focused authen
 [![TypeScript](https://img.shields.io/badge/TypeScript-migration-3178C6?logo=typescript&logoColor=white)](frontend/src/crypto-engine.ts)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-[Русская версия](README.ru.md) · [Architecture](#architecture) · [Security model](#security-model) · [Quick start](#quick-start) · [Operations](#operations)
+[Русская версия](README.ru.md) · [What works](#what-works-today) · [Local development](#local-development) · [Architecture](#architecture) · [Security model](#security-model)
 
 </div>
 
@@ -24,14 +24,34 @@ Client-side cryptography · Durable realtime delivery · Security-focused authen
 
 ## Overview
 
-Chaos is a full-stack encrypted messaging system designed around four engineering goals:
+Chaos is an E2EE messenger for web and Electron. The server sees ciphertext, metadata and call signaling. Message, file and key plaintext stay on the device.
 
-1. **Plaintext stays on endpoint devices.** Private keys, decrypted messages and attachment plaintext are processed by the client.
-2. **Delivery survives failures.** Messages and device-scoped events use database transactions, a transactional outbox, Kafka-compatible delivery and cursor-based recovery.
-3. **Authentication assumes token theft is possible.** Refresh tokens are single-use, token-family reuse is detected, and device enrollment uses a separate short-lived registration token.
-4. **The system is operable.** The repository includes Docker Compose, Kubernetes manifests, metrics, logs, dashboards, alerts, runbooks and a staged CI/CD pipeline.
+This is an engineering project, not a Signal replacement. There is no independent cryptographic audit yet.
 
-Chaos is built as an engineering project for secure messaging, distributed systems and production hardening—not as a claim of equivalence with mature audited products such as Signal, WhatsApp, Slack or Mattermost.
+The backend is built around four invariants:
+
+1. **Plaintext stays on the endpoint.** Private keys, decrypted messages and attachment bytes are handled by the client.
+2. **Delivery survives failures.** Database transaction, transactional outbox, Kafka and cursor recovery.
+3. **Tokens can be stolen.** Refresh tokens are single-use, token-family reuse is detected, and device enrollment uses a separate short-lived token.
+4. **The system is operable.** Compose, Kubernetes, metrics, logs, alerts, runbooks and CI/CD.
+
+## What works today
+
+This is a working messenger, not a stub:
+
+- direct and group chats: replies, edits, deletion, reactions, receipts, disappearing messages;
+- voice: tap the mic to switch voice/circle, hold to record, slide up to lock, left to cancel;
+- video notes: full-stage recorder; the recipient gets real video, not an empty circle;
+- photos and files: a separate send window (not a strip above the input), in-chat paging;
+- 1:1 calls in local/dev: audio and video, overlay, local-camera PiP.
+
+Limits, stated plainly:
+
+- circles and media travel as encrypted attachments (`attachmentId` + file key), not as `blob:` URLs in JSON;
+- after pulling migrations, **restart the backend** — without Flyway `V42`, uploads return HTTP 409;
+- voice transcripts use the Web Speech API (Chrome is fine, Safari is often empty);
+- Word/Excel are download-only inside the chat;
+- production calls stay off until TURN is in front of WebRTC. Media is always DTLS-SRTP; extra insertable-stream E2EE is Chrome-only. SDP is visible to the server.
 
 ## Project status
 
@@ -472,9 +492,9 @@ docker compose -f docker-compose.dev.yml up -d
 
 The application API listens on `http://localhost:8080`. In production profile, management probes run on the separate management port `9091`.
 
-`docker-compose.dev.yml` also starts local coturn. Two browsers on the same machine often need it for ICE. 1:1 call signaling is on in the `dev` profile (`chaos.calls.enabled=true`) and off in production unless `CHAOS_CALLS_ENABLED=true`.
+`docker-compose.dev.yml` starts PostgreSQL, Redis, Redpanda and coturn. Two browsers on the same machine usually need coturn for ICE. 1:1 call signaling is on in the `dev` profile (`chaos.calls.enabled=true`) and off in production unless `CHAOS_CALLS_ENABLED=true`.
 
-After pulling database migrations, restart the backend so Flyway can apply them. Attachment uploads need `V42` (`object_key` default); without it `/api/attachments/upload` returns HTTP 409.
+After pulling migrations, **restart the backend** so Flyway can apply them. Attachment uploads need `V42` (`object_key` default). Without it `/api/attachments/upload` returns HTTP 409, and the other user sees empty circles and photos.
 
 ### Frontend
 
@@ -492,6 +512,18 @@ VITE_BACKEND_URL=http://localhost:8080
 VITE_API_BASE=http://localhost:8080/api
 VITE_WS_URL=http://localhost:8080/ws
 ```
+
+Vite serves the app at `http://localhost:5173` by default.
+
+### Two local users
+
+1. Start backend and frontend as above.
+2. Open two windows (two browsers, or one normal + one private).
+3. Register two accounts and start a direct chat.
+4. Check text, photo, voice and a video note — the other side should see content, not an empty bubble.
+5. For a call on the same machine, coturn from `docker-compose.dev.yml` must be up.
+
+An empty circle on the other device is almost always an old backend without `V42`, or a message that was sent with a `blob:` URL in the payload. Restart the API and send it again.
 
 ### Electron
 
