@@ -7,10 +7,13 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import jakarta.annotation.PreDestroy;
 import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
@@ -25,6 +28,12 @@ public class OutboxPublisher {
     private final int publishTimeoutSeconds;
     private final int staleLockSeconds;
     private final String lockOwner = buildLockOwner();
+    private final ExecutorService dispatchExecutor = Executors.newSingleThreadExecutor(runnable -> {
+        Thread thread = new Thread(runnable);
+        thread.setName("outbox-dispatch");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     public OutboxPublisher(
             OutboxService outboxService,
@@ -69,6 +78,21 @@ public class OutboxPublisher {
 
     public void dispatch(Long eventId) {
         outboxService.claimEvent(eventId, lockOwner).ifPresent(this::publishOne);
+    }
+
+    public void dispatchAsync(Long eventId) {
+        dispatchExecutor.execute(() -> {
+            try {
+                dispatch(eventId);
+            } catch (RuntimeException e) {
+                log.warn("Eager outbox dispatch failed eventId={}: {}", eventId, e.getMessage());
+            }
+        });
+    }
+
+    @PreDestroy
+    void shutdownDispatchExecutor() {
+        dispatchExecutor.shutdownNow();
     }
 
     private boolean publishOne(OutboxEvent event) {

@@ -54,3 +54,36 @@ const runtime = resolveRuntimeEndpoints({
 
 export const API_BASE = runtime.apiBase;
 export const WS_URL = runtime.wsUrl;
+
+export function resolveCallsEnabled({ isDev = false, viteFlag } = {}) {
+  return Boolean(isDev) || viteFlag === "true";
+}
+
+export const CALLS_ENABLED = resolveCallsEnabled({
+  isDev: import.meta.env.DEV,
+  viteFlag: import.meta.env.VITE_CALLS_ENABLED,
+});
+
+export function resolveIceServers({
+  stunUrl = "stun:stun.l.google.com:19302",
+  turnUrls,
+  turnUsername,
+  turnCredential,
+} = {}) {
+  const servers = [{ urls: stunUrl }];
+  const urls = Array.isArray(turnUrls) ? turnUrls.filter(Boolean) : [];
+  if (urls.length && turnUsername && turnCredential) {
+    servers.push({ urls, username: turnUsername, credential: turnCredential });
+  }
+  return servers;
+}
+
+// Local coturn from backend/docker-compose.dev.yml. Without it two browsers
+// on the same Mac often never get an ICE pair (Safari mDNS + STUN hairpin).
+export const ICE_SERVERS = resolveIceServers({
+  turnUrls: import.meta.env.DEV
+    ? ["turn:127.0.0.1:3478", "turn:127.0.0.1:3478?transport=tcp"]
+    : undefined,
+  turnUsername: import.meta.env.DEV ? "chaos" : undefined,
+  turnCredential: import.meta.env.DEV ? "chaos" : undefined,
+});

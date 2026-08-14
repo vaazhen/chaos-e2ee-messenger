@@ -20,6 +20,7 @@ export default function ChatList({
   onSidebarResizePointerMove, onSidebarResizePointerUp,
   onSidebarResizePointerCancel, onSidebarResizeLostCapture,
   l = (ru) => ru, activeTab = "chats", onNavChange = () => {},
+  callsEnabled = false,
 }) {
   const [chatMenu, setChatMenu] = useState(null);
   const [selectMode, setSelectMode] = useState(false);
@@ -77,11 +78,7 @@ export default function ChatList({
     if (loadingChats) return <div className="product-empty"><div className="spinner" /></div>;
     if (filtered.length === 0) return (
       <div className="product-empty">
-        <div className="product-empty-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-          </svg>
-        </div>
+        <div className="product-empty-icon" aria-hidden="true" />
         <div className="product-empty-title">{l("Нет чатов", "No chats")}</div>
         <div className="product-empty-sub">{l("Создайте переписку.", "Create a conversation.")}</div>
       </div>
@@ -215,7 +212,7 @@ export default function ChatList({
           <button className="ctx-item" onClick={() => { onToggleArchiveChat?.(chatMenu.id); setChatMenu(null); }}><span className="ci"><ArchiveIcon /></span>{chatMenu.archived ? l("Убрать из архива", "Remove from archive") : l("В архив", "Archive")}</button>
         </div>
       )}
-      <BottomNav me={me} myName={myName} activeTab={activeTab} onNavChange={onNavChange} unreadTotal={unreadTotal} l={l} />
+      <BottomNav me={me} myName={myName} activeTab={activeTab} onNavChange={onNavChange} unreadTotal={unreadTotal} l={l} callsEnabled={callsEnabled} />
       {sidebarResizeEnabled && onSidebarResizePointerDown && (
         <div className="sidebar-resize-handle" onPointerDown={onSidebarResizePointerDown} onPointerMove={onSidebarResizePointerMove} onPointerUp={onSidebarResizePointerUp} onPointerCancel={onSidebarResizePointerCancel} onLostPointerCapture={onSidebarResizeLostCapture} role="separator" aria-orientation="vertical" aria-label={l("Изменить ширину списка чатов", "Resize chat list width")} />
       )}

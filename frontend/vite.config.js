@@ -68,6 +68,8 @@ export default defineConfig(({ mode }) => ({
         "src/styles/**",
         "src/types/**",
         "src/test/**",
+        // Dedicated worker: vitest/jsdom cannot execute RTC transform workers.
+        "src/call-e2ee-worker.js",
       ],
       thresholds: {
         // Current repository-wide floor. Security-critical modules are covered

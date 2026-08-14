@@ -182,6 +182,7 @@ describe("critical UI components", () => {
       text: "hello world!😀",
       imgFile: null,
       voiceFile: null,
+      videoNoteFile: null,
       generalFile: null,
       ttl: null,
       replyTo: { _text: "old message" },
@@ -461,7 +462,7 @@ describe("critical UI components", () => {
       }),
     }));
     vi.doMock("../hooks/useWebSocket", () => ({
-      default: () => ({ sendTyping: vi.fn() }),
+      default: () => ({ sendTyping: vi.fn(), sendCall: vi.fn() }),
     }));
     vi.doMock("../i18n/useUiTranslator", () => ({ useUiTranslator: vi.fn() }));
 
@@ -566,7 +567,7 @@ describe("critical UI components", () => {
           switchLang: vi.fn(),
         }),
       }));
-      vi.doMock("../hooks/useWebSocket", () => ({ default: () => ({ sendTyping: vi.fn() }) }));
+      vi.doMock("../hooks/useWebSocket", () => ({ default: () => ({ sendTyping: vi.fn(), sendCall: vi.fn() }) }));
       vi.doMock("../i18n/useUiTranslator", () => ({ useUiTranslator: vi.fn() }));
 
       const { default: App } = await import("../App");
@@ -672,7 +673,7 @@ describe("critical UI components", () => {
     vi.doMock("../hooks/useI18n", () => ({
       useI18n: () => ({ lang: "ru", t: { participants: "участников" }, loadTranslations: vi.fn(), switchLang: vi.fn() }),
     }));
-    vi.doMock("../hooks/useWebSocket", () => ({ default: () => ({ sendTyping: vi.fn() }) }));
+    vi.doMock("../hooks/useWebSocket", () => ({ default: () => ({ sendTyping: vi.fn(), sendCall: vi.fn() }) }));
     vi.doMock("../i18n/useUiTranslator", () => ({ useUiTranslator: vi.fn() }));
 
     const { default: App } = await import("../App");

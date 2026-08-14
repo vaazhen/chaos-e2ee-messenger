@@ -41,6 +41,7 @@ public class DemoService {
             String key = acc.username();
 
             if (userRepository.existsByPhone(acc.phone())) {
+                refreshDemoCode(acc);
                 result.put(key, Map.of(
                         "message", "already exists",
                         "phone", acc.phone(),
@@ -61,14 +62,7 @@ public class DemoService {
             user.setCreatedAt(LocalDateTime.now());
             userRepository.save(user);
 
-            VerificationCode vc = new VerificationCode();
-            vc.setPhone(acc.phone());
-            vc.setCode(passwordEncoder.encode(acc.code()));
-            vc.setExpiresAt(LocalDateTime.now().plusDays(30));
-            vc.setVia("DEMO");
-            vc.setAttempts(0);
-            vc.setCreatedAt(LocalDateTime.now());
-            codeRepository.save(vc);
+            refreshDemoCode(acc);
 
             log.debug("Demo user created: username={}", acc.username());
 
@@ -83,5 +77,16 @@ public class DemoService {
         }
 
         return result;
+    }
+
+    private void refreshDemoCode(DemoAccount acc) {
+        VerificationCode vc = new VerificationCode();
+        vc.setPhone(acc.phone());
+        vc.setCode(passwordEncoder.encode(acc.code()));
+        vc.setExpiresAt(LocalDateTime.now().plusDays(30));
+        vc.setVia("DEMO");
+        vc.setAttempts(0);
+        vc.setCreatedAt(LocalDateTime.now());
+        codeRepository.save(vc);
     }
 }

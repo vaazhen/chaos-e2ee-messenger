@@ -40,6 +40,7 @@ export default function useWebSocket({
   onRequestsUpdate,
   onStatusUpdate,
   onTyping,
+  onCall,
   onConnectionState,
   enabled,
 }) {
@@ -54,11 +55,11 @@ export default function useWebSocket({
   const cursorRef = useRef(0);
   const applyingIdsRef = useRef(new Set());
   const applyChainRef = useRef(Promise.resolve());
-  const handlersRef = useRef({ onMessage, onChatListUpdate, onRequestsUpdate, onStatusUpdate, onTyping, onConnectionState });
+  const handlersRef = useRef({ onMessage, onChatListUpdate, onRequestsUpdate, onStatusUpdate, onTyping, onCall, onConnectionState });
 
   useEffect(() => {
-    handlersRef.current = { onMessage, onChatListUpdate, onRequestsUpdate, onStatusUpdate, onTyping, onConnectionState };
-  }, [onMessage, onChatListUpdate, onRequestsUpdate, onStatusUpdate, onTyping, onConnectionState]);
+    handlersRef.current = { onMessage, onChatListUpdate, onRequestsUpdate, onStatusUpdate, onTyping, onCall, onConnectionState };
+  }, [onMessage, onChatListUpdate, onRequestsUpdate, onStatusUpdate, onTyping, onCall, onConnectionState]);
 
   useEffect(() => { chatIdsRef.current = chatIds; }, [chatIds]);
 
@@ -200,7 +201,7 @@ export default function useWebSocket({
 
   const setupPresence = (client, username) => {
     if (!client?.connected || !username) return;
-    ["userStatus", "myStatus", "chats", "deviceChats", "requests", "deviceRequests"]
+    ["userStatus", "myStatus", "chats", "deviceChats", "requests", "deviceRequests", "deviceCalls"]
       .forEach(unsub);
 
     const did = getOrCreateDeviceId();
@@ -227,6 +228,10 @@ export default function useWebSocket({
       });
       subsRef.current.deviceRequests = client.subscribe(`/topic/devices/${did}/requests`, (msg) => {
         try { handleDurableLive(did, "/requests", JSON.parse(msg.body || "{}")); }
+        catch (_) { /* ignore malformed websocket payload */ }
+      });
+      subsRef.current.deviceCalls = client.subscribe(`/topic/devices/${did}/calls`, (msg) => {
+        try { handlersRef.current.onCall?.(JSON.parse(msg.body || "{}")); }
         catch (_) { /* ignore malformed websocket payload */ }
       });
     }
@@ -344,6 +349,15 @@ export default function useWebSocket({
     isConnected: () => clientRef.current?.connected ?? false,
     sendTyping: (chatId) => {
       clientRef.current?.publish({ destination: "/app/typing", body: JSON.stringify({ chatId }) });
+    },
+    sendCall: (payload) => {
+      if (!clientRef.current?.connected) return false;
+      clientRef.current.publish({
+        destination: "/app/call",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      return true;
     },
     publish: (dest, body) => {
       clientRef.current?.publish({ destination: dest, body: typeof body === "string" ? body : JSON.stringify(body) });

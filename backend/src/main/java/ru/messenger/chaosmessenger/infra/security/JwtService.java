@@ -33,6 +33,9 @@ public class JwtService {
 
     @PostConstruct
     public void init() {
+        if (secret != null) {
+            secret = secret.trim();
+        }
         if (secret == null || secret.length() < 32) {
             throw new CryptoException("JWT_SECRET must be at least 32 characters long");
         }

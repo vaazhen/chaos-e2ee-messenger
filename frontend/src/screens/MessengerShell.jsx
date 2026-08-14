@@ -15,12 +15,18 @@ import DeleteMessageModal from "../components/DeleteMessageModal";
 import ContextMenu from "../components/ContextMenu";
 import SettingsPage from "../components/SettingsPage";
 import ChatView from "../components/ChatView";
+import CallOverlay from "../components/CallOverlay";
+import CallsPage from "../components/CallsPage";
+import MediaViewer from "../components/MediaViewer";
 import { api } from "../api";
+import { CALLS_ENABLED } from "../config";
+import { useCall } from "../hooks/useCall";
 
 import { getTime, messageMatchesQuery } from "../helpers";
 import { clearPreviewCacheForUser } from "../previewCache";
 import { displayNameForChat } from "../contactAliases";
 import { getChatUiPrefs, toggleArchived, toggleMuted } from "../chatUiPrefs";
+import { collectMediaItems, indexOfMediaItem } from "../mediaItems";
 
 export default function MessengerShell({
   auth,
@@ -56,6 +62,7 @@ export default function MessengerShell({
   const [editTarget, setEditTarget] = useState(null);
   const [editText, setEditText] = useState("");
   const [editLoading, setEditLoading] = useState(false);
+  const [viewerIndex, setViewerIndex] = useState(null);
 
   const ctxMenuRef = useRef(null);
   const chatSearchRef = useRef(null);
@@ -68,6 +75,13 @@ export default function MessengerShell({
     setScrollToMessageId(null);
     setChatSearchOpen(false);
   }, []);
+
+  const openMedia = useCallback((msg, kind) => {
+    const items = collectMediaItems(msgStore.msgs[chatStore.activeId] || []);
+    const idx = indexOfMediaItem(items, msg?.id ?? msg?.messageId, kind);
+    if (idx < 0) return;
+    setViewerIndex(idx);
+  }, [chatStore.activeId, msgStore.msgs]);
 
   const { theme, toggleTheme } = useTheme();
   const {
@@ -83,7 +97,17 @@ export default function MessengerShell({
 
   const activeChat = chatStore.chats.find(c => c.id === chatStore.activeId);
   const activeMsgs = msgStore.msgs[chatStore.activeId] || [];
+  const mediaItems = useMemo(() => collectMediaItems(activeMsgs), [activeMsgs]);
   const chatMuted = activeChat ? getChatUiPrefs(auth.me?.id).muted.has(String(activeChat.id)) : false;
+
+  useEffect(() => {
+    setViewerIndex(null);
+  }, [chatStore.activeId]);
+
+  useEffect(() => {
+    if (viewerIndex == null) return;
+    if (!mediaItems.length || viewerIndex >= mediaItems.length) setViewerIndex(null);
+  }, [mediaItems, viewerIndex]);
 
   const aliasedChats = useMemo(() => {
     void aliasTick;
@@ -248,7 +272,9 @@ export default function MessengerShell({
     api.markDelivered(id).catch(() => {});
   }, [chatStore]);
 
-  const { typingUsers, sendTyping } = useMessengerRealtime({
+  const callHandlerRef = useRef(null);
+
+  const { typingUsers, sendTyping, sendCall } = useMessengerRealtime({
     me: auth.me,
     enabled: auth.screen === "app",
     chatStore,
@@ -256,7 +282,37 @@ export default function MessengerShell({
     requestChatIds,
     wsChatIds,
     atBottomRef,
+    onCallSignal: (event) => callHandlerRef.current?.(event),
   });
+
+  const call = useCall({
+    enabled: CALLS_ENABLED && auth.screen === "app",
+    me: auth.me,
+    sendSignal: sendCall,
+  });
+  callHandlerRef.current = call.handleSignal;
+
+  const callTitle = useMemo(() => {
+    const chatId = call.remoteChatId;
+    if (chatId == null) return call.remoteName || "";
+    const chat = [...(chatStore.chats || []), ...(chatStore.requests || [])]
+      .find((item) => Number(item.id) === Number(chatId));
+    if (!chat) return call.remoteName || "";
+    return displayNameForChat(chat, auth.me?.id) || call.remoteName || "";
+  }, [auth.me?.id, call.remoteChatId, call.remoteName, chatStore.chats, chatStore.requests]);
+
+  const callPeer = useMemo(() => {
+    if (call.remoteChatId == null) return null;
+    return aliasedChats.find((item) => Number(item.id) === Number(call.remoteChatId))
+      || (chatStore.requests || []).find((item) => Number(item.id) === Number(call.remoteChatId))
+      || null;
+  }, [aliasedChats, call.remoteChatId, chatStore.requests]);
+
+  const unreadTotal = useMemo(
+    () => aliasedChats.filter((c) => c.unread > 0).length,
+    [aliasedChats]
+  );
+  const myName = [auth.me?.firstName, auth.me?.lastName].filter(Boolean).join(" ") || auth.me?.username || l("Я", "Me");
 
   const logout = async () => {
     clearPreviewCacheForUser(auth.me?.id);
@@ -267,21 +323,26 @@ export default function MessengerShell({
     setShowSettings(false);
   };
 
-  const sendMsg = async ({ text, imgFile, voiceFile, generalFile, ttl }) => {
-    if ((!String(text || "").trim() && !imgFile && !voiceFile && !generalFile) || !chatStore.activeId) return;
+  const sendMsg = async ({ text, imgFile, voiceFile, videoNoteFile, generalFile, ttl, replyTo }) => {
+    if ((!String(text || "").trim() && !imgFile && !voiceFile && !videoNoteFile && !generalFile) || !chatStore.activeId) return;
     const preview = generalFile
       ? (String(text || "").trim() ? `📎 ${String(text).trim()}` : `📎 ${generalFile.name}`)
       : imgFile
         ? (String(text || "").trim() ? `📷 ${String(text).trim()}` : "📷 Фото")
+        : videoNoteFile
+          ? (String(text || "").trim() ? `🎥 ${String(text).trim()}` : "Video message")
         : voiceFile
-          ? (String(text || "").trim() ? `Voice: ${String(text).trim()}` : "Voice message")
+          ? (String(text || "").trim() || voiceFile.transcript
+            ? `Voice: ${String(text || voiceFile.transcript).trim()}`
+            : "Voice message")
         : String(text).trim();
-    chatStore.updateChatPreview(chatStore.activeId, preview, true, getTime());
-    setReplyTo(null);
-    const result = await msgStore.sendMessage(chatStore.activeId, { text, imgFile, voiceFile, generalFile, ttl });
+    const result = await msgStore.sendMessage(chatStore.activeId, { text, imgFile, voiceFile, videoNoteFile, generalFile, ttl, replyTo });
     if (!result) {
       chatStore.loadChats(auth.me?.id);
+      throw new Error("Сообщение не отправилось");
     }
+    chatStore.updateChatPreview(chatStore.activeId, preview, true, getTime());
+    setReplyTo(null);
   };
 
   const closeCtx = () => {
@@ -393,7 +454,20 @@ export default function MessengerShell({
           onEditProfile={() => setShowSettings(true)}
           onOpenChat={onChatCreated}
           onNavChange={setActiveTab}
-          unreadTotal={aliasedChats.filter(c => c.unread > 0).length}
+          unreadTotal={unreadTotal}
+          callsEnabled={CALLS_ENABLED}
+        />
+      ) : activeTab === "calls" && CALLS_ENABLED ? (
+        <CallsPage
+          me={auth.me}
+          myName={myName}
+          l={l}
+          chats={aliasedChats}
+          recents={call.recents}
+          unreadTotal={unreadTotal}
+          onNavChange={setActiveTab}
+          onStartCall={call.startCall}
+          callsEnabled={CALLS_ENABLED}
         />
       ) : (
       <div
@@ -465,6 +539,7 @@ export default function MessengerShell({
           sidebarCompact={sidebarCompact}
           activeTab={activeTab}
           onNavChange={setActiveTab}
+          callsEnabled={CALLS_ENABLED}
           sidebarResizeEnabled={sidebarDesktop}
           onSidebarResizePointerDown={onSidebarResizePointerDown}
           onSidebarResizePointerMove={onSidebarResizePointerMove}
@@ -524,6 +599,13 @@ export default function MessengerShell({
           myGroupMuteUntilMs={myGroupMuteUntilMs}
           myGroupMuteCountdown={myGroupMuteCountdown}
           messagePlaceholder={t.message_placeholder}
+          callsEnabled={CALLS_ENABLED}
+          callPhase={call.phase}
+          callChatId={call.remoteChatId}
+          micError={Boolean(call.mediaError)}
+          onStartCall={call.startCall}
+          onHangup={call.hangup}
+          onOpenMedia={openMedia}
         />
       </div>
       )}
@@ -604,6 +686,36 @@ export default function MessengerShell({
         onClose={closeSafetyNumber}
         l={l}
       />
+
+      <audio ref={call.remoteAudioRef} autoPlay style={{ display: "none" }} />
+      <CallOverlay
+        phase={call.phase}
+        title={callTitle}
+        avatarUrl={callPeer?.avatarUrl}
+        colorIdx={callPeer?.colorIdx}
+        micOn={call.micOn}
+        cameraOn={call.cameraOn}
+        remoteVideoOn={call.remoteVideoOn}
+        mediaError={call.mediaError}
+        mediaProtection={call.mediaProtection}
+        localVideoRef={call.localVideoRef}
+        remoteVideoRef={call.remoteVideoRef}
+        onAccept={call.acceptCall}
+        onDecline={call.declineCall}
+        onHangup={call.hangup}
+        onToggleMic={call.toggleMic}
+        onToggleCamera={call.toggleCamera}
+        l={l}
+      />
+      {viewerIndex != null && mediaItems[viewerIndex] && (
+        <MediaViewer
+          items={mediaItems}
+          index={viewerIndex}
+          onClose={() => setViewerIndex(null)}
+          onIndexChange={setViewerIndex}
+          l={l}
+        />
+      )}
     </div>
   );
 }

@@ -1,8 +1,10 @@
 import { useEffect, useState, useRef } from "react";
 import Ava from "./Ava";
 import VoiceMessage from "./VoiceMessage";
+import VideoNote from "./VideoNote";
 import { FileIcon, CheckIcon, DoubleCheckIcon } from "./Icons";
 import { findWordStartMatches } from "../helpers";
+import { mediaKindForMessage } from "../mediaItems";
 
 /**
  * Single message bubble — text, images, voice, files, reactions, expiry countdown.
@@ -28,6 +30,7 @@ export function MsgRow({
   onReact,
   isFileAttachment,
   attachment,
+  onOpenMedia,
 }) {
   const [expiring, setExpiring] = useState(false);
   const [hidden, setHidden] = useState(false);
@@ -52,8 +55,17 @@ export function MsgRow({
 
   if (hidden) return null;
 
+  const openMedia = (event) => {
+    event?.stopPropagation?.();
+    onOpenMedia?.(msg, mediaKindForMessage(msg));
+  };
+
   const downloadFile = (e) => {
     e.stopPropagation();
+    if (onOpenMedia) {
+      openMedia(e);
+      return;
+    }
     if (!attachment?.objectUrl) return;
     const a = document.createElement("a");
     a.href = attachment.objectUrl;
@@ -65,18 +77,52 @@ export function MsgRow({
   const avaColor = senderColorIdx ?? activeChat?.colorIdx;
   const avaUrl = senderAvatarUrl || activeChat?.avatarUrl;
   const senderTone = Number.isFinite(Number(avaColor)) ? Number(avaColor) % 7 : 0;
+  const voiceTranscript = msg._voice?.transcript || (msg._payload?.type === "voice" ? text : "");
+  const showVoiceCaption = Boolean(voiceTranscript) && msg._voice;
+  const inlineVideoSrc = !msg._videoNote && msg._payload?.type !== "video_note" && String(attachment?.mimeType || "").startsWith("video/")
+    ? (attachment.objectUrl || "")
+    : "";
+  const showCircle = Boolean(msg._videoNote || msg._payload?.type === "video_note");
+  const isCircleOnly = showCircle && !msg._img && !msg._voice && !isFileAttachment && !text && !showVoiceCaption && !msg._replyTo;
+  const isPhotoBubble = Boolean(msg._img || inlineVideoSrc);
 
   return (
     <div data-mid={String(msg.id ?? msg.messageId ?? "")} className={`msg-wrap${isOut ? " out" : ""}${shouldHighlightMessage ? " search-hit-active" : ""}${expiring ? " msg-expiring" : ""}${cluster ? ` cluster-${cluster}` : ""}${isEnter ? " msg-wrap--enter" : ""}`} onContextMenu={e => onContextMenu(e, { ...msg, _text: text, _out: isOut })}>
       {!isOut && (isGroupEnd ? <Ava name={avaName} colorIdx={avaColor} size="sm" avatarUrl={avaUrl} /> : <div className="msg-ava-spacer" />)}
       <div className="msg-col">
         {showSenderName && avaName ? <span className={`msg-sender c${senderTone}`}>{avaName}</span> : null}
-      <div className={`bubble ${isOut ? "out" : "in"}${isGroupEnd ? (isOut ? " tl-out" : " tl-in") : ""}`} onClick={e => e.stopPropagation()}>
+      <div className={`bubble ${isOut ? "out" : "in"}${isCircleOnly ? " bubble-circle" : ""}${isPhotoBubble ? " bubble-photo" : ""}${isGroupEnd ? (isOut ? " tl-out" : " tl-in") : ""}`} onClick={e => e.stopPropagation()}>
         {msg._replyTo && <div className="reply-quote"><div className="reply-q-name">Ответить</div><div className="reply-q-text">{msg._replyTo._text}</div></div>}
-        {msg._img && <img className="msg-img" src={msg._img} alt="" />}
+        {msg._img && (
+          <div className="msg-img-wrap" onClick={openMedia} role="button" tabIndex={0}>
+            <img className="msg-img" src={msg._img} alt="" />
+          </div>
+        )}
+        {(msg._videoNote || msg._payload?.type === "video_note") && (
+          <VideoNote src={msg._videoNote?.src} durationMs={msg._videoNote?.durationMs} onOpen={openMedia} />
+        )}
+        {inlineVideoSrc && (
+          <div className="msg-img-wrap" onClick={openMedia} role="button" tabIndex={0}>
+            <video className="msg-img" src={inlineVideoSrc} muted playsInline />
+          </div>
+        )}
         {msg._voice && <VoiceMessage src={msg._voice.dataUrl} durationMs={msg._voice.durationMs} variant={isOut ? "out" : "in"} />}
-        {isFileAttachment && <div className="msg-file" onClick={downloadFile}><div className="msg-file-icon"><FileIcon /></div><div className="msg-file-info"><div className="msg-file-name">{attachment.fileName}</div>{attachment.size > 0 && <div className="msg-file-size">{fmtSize(attachment.size)}</div>}</div></div>}
-        {text && <span>{renderHighlightedText(text, shouldHighlightMessage ? searchQuery : "")}</span>}
+        {showVoiceCaption && (
+          <div className="voice-transcript">
+            <span className="voice-transcript-label">Расшифровка</span>
+            {voiceTranscript}
+          </div>
+        )}
+        {isFileAttachment && (
+          <div className="msg-file" onClick={downloadFile}>
+            <div className="msg-file-icon"><FileIcon /></div>
+            <div className="msg-file-info">
+              <div className="msg-file-name">{attachment.fileName}</div>
+              {attachment.size > 0 && <div className="msg-file-size">{fmtSize(attachment.size)}</div>}
+            </div>
+          </div>
+        )}
+        {text && !showVoiceCaption && <span>{renderHighlightedText(text, shouldHighlightMessage ? searchQuery : "")}</span>}
         {msg.expiresAt && countdown && <div className="msg-ttl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="13" r="8" /><path d="M12 9v4l2 2" /><path d="M10 2h4" /></svg><span>{countdown}</span></div>}
         <div className="msg-meta">{!!msg.editedAt && <span className="edited-mark">edited</span>}<span>{time}</span>{isOut && <span className={`check${msg.status === "READ" ? " read" : ""}`}>{msg.status === "READ" ? <DoubleCheckIcon /> : <CheckIcon />}</span>}</div>
         {Object.keys(reactions).length > 0 && <div className="message-reactions">{Object.entries(reactions).map(([emoji, count]) => <button key={emoji} type="button" className={`reaction-chip${myReactions.includes(emoji) ? " mine" : ""}`} onClick={e => { e.stopPropagation(); onReact?.({ ...msg, _text: text, _out: isOut }, emoji); }}><span>{emoji}</span><span>{count}</span></button>)}</div>}

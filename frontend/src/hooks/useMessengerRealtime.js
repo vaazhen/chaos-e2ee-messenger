@@ -11,11 +11,17 @@ export function useMessengerRealtime({
   requestChatIds,
   wsChatIds,
   atBottomRef,
+  onCallSignal,
 }) {
   const [typingUsers, setTypingUsers] = useState({});
+  const onCallSignalRef = useRef(onCallSignal);
   const refreshTimeoutRef = useRef(null);
   const requestsRefreshTimeoutRef = useRef(null);
   const requestsRefreshAttemptsRef = useRef(0);
+
+  useEffect(() => {
+    onCallSignalRef.current = onCallSignal;
+  }, [onCallSignal]);
 
   const scheduleChatsRefresh = () => {
     if (refreshTimeoutRef.current) return;
@@ -155,6 +161,9 @@ export function useMessengerRealtime({
         });
       }, 3000);
     },
+    onCall: (event) => {
+      onCallSignalRef.current?.(event);
+    },
     onConnectionState: ({ connected, isReconnect }) => {
       if (!connected || !isReconnect) return;
       scheduleChatsRefresh();
@@ -168,5 +177,6 @@ export function useMessengerRealtime({
   return {
     typingUsers,
     sendTyping: (chatId) => ws.sendTyping(chatId),
+    sendCall: (payload) => ws.sendCall(payload),
   };
 }

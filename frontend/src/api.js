@@ -213,7 +213,11 @@ export const api = {
       },
       body: form,
     });
-    if (!res.ok) throw new Error("Upload failed");
+    if (!res.ok) {
+      const error = new Error(res.status === 413 ? "Файл слишком большой" : `Не удалось загрузить файл (${res.status})`);
+      error.status = res.status;
+      throw error;
+    }
     return res.json();
   },
   downloadAttachment: async (attachmentId) => {

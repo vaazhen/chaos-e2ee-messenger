@@ -11,6 +11,18 @@ export function MicIcon() {
   );
 }
 
+export function MicOffIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" {...S}>
+      <rect x="9" y="3.5" width="6" height="11" rx="3" />
+      <path d="M5.8 11.5a6.2 6.2 0 0 0 12.4 0" />
+      <path d="M12 17.7V21" />
+      <path d="M8.7 21h6.6" />
+      <line x1="4" y1="4" x2="20" y2="20" />
+    </svg>
+  );
+}
+
 export function SendIcon() {
   return (
     <svg className="btn-icon send-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -156,11 +168,30 @@ export function PhoneIcon() {
   );
 }
 
+export function PhoneOffIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" {...S}>
+      <path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91" />
+      <line x1="1" x2="23" y1="1" y2="23" />
+    </svg>
+  );
+}
+
 export function VideoIcon() {
+  return (
+    <svg className="btn-icon video-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="2.5" y="6" width="12.5" height="12" rx="2.2" {...S} />
+      <path d="M15 10.2 20.5 7.5v9L15 13.8V10.2Z" {...S} />
+    </svg>
+  );
+}
+
+export function VideoOffIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" {...S}>
       <polygon points="23 7 16 12 23 17 23 7" />
       <rect x="1" y="5" width="15" height="14" rx="2" />
+      <line x1="2" y1="2" x2="22" y2="22" />
     </svg>
   );
 }

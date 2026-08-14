@@ -15,7 +15,7 @@ const CSP = [
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
   "connect-src 'self' https: wss: ws://localhost:8080 http://localhost:8080",
-  "media-src 'self' blob:",
+  "media-src 'self' blob: data:",
   "worker-src 'self' blob:",
   "object-src 'none'",
   "base-uri 'none'",

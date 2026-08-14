@@ -4,12 +4,13 @@ import { act, renderHook } from "@testing-library/react";
 const wsMocks = vi.hoisted(() => ({
   captured: {},
   sendTyping: vi.fn(),
+  sendCall: vi.fn(),
 }));
 
 vi.mock("../hooks/useWebSocket", () => ({
   default: (options) => {
     wsMocks.captured = options;
-    return { sendTyping: wsMocks.sendTyping };
+    return { sendTyping: wsMocks.sendTyping, sendCall: wsMocks.sendCall };
   },
 }));
 
@@ -18,13 +19,14 @@ describe("useMessengerRealtime", () => {
     vi.useFakeTimers();
     wsMocks.captured = {};
     wsMocks.sendTyping.mockReset();
+    wsMocks.sendCall.mockReset();
   });
 
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  async function setup() {
+  async function setup(extra = {}) {
     const chatStore = {
       activeId: 10,
       loadChats: vi.fn(),
@@ -51,6 +53,7 @@ describe("useMessengerRealtime", () => {
       requestChatIds: new Set(["99"]),
       wsChatIds: [10, 99],
       atBottomRef: { current: true },
+      ...extra,
     }));
     return { chatStore, msgStore, result: rendered.result };
   }
@@ -114,5 +117,24 @@ describe("useMessengerRealtime", () => {
     });
 
     expect(msgStore.updateMessageStatus).toHaveBeenCalledWith(500, "READ");
+  });
+
+  it("forwards call signals immediately and sendCall", async () => {
+    const onCallSignal = vi.fn();
+    const { result } = await setup({ onCallSignal });
+
+    act(() => {
+      wsMocks.captured.onCall({ type: "offer", chatId: 10, fromUsername: "bob" });
+      wsMocks.captured.onCall({ type: "ice", chatId: 10, candidate: { candidate: "x" } });
+    });
+
+    expect(onCallSignal).toHaveBeenCalledTimes(2);
+    expect(onCallSignal).toHaveBeenNthCalledWith(1, { type: "offer", chatId: 10, fromUsername: "bob" });
+    expect(onCallSignal).toHaveBeenNthCalledWith(2, { type: "ice", chatId: 10, candidate: { candidate: "x" } });
+
+    act(() => {
+      result.current.sendCall({ chatId: 10, type: "hangup" });
+    });
+    expect(wsMocks.sendCall).toHaveBeenCalledWith({ chatId: 10, type: "hangup" });
   });
 });

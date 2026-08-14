@@ -7,7 +7,6 @@ import * as localStore from "../localMessageStore";
 import { compressImageToDataUrl, IMAGE_PROFILES } from "../imagePipeline";
 
 const MAX_ENCRYPTED_PAYLOAD_CHARS = 180_000;
-const ATTACHMENT_THRESHOLD_BYTES = 50 * 1024;
 
 /**
  * Manages per-chat message maps, loading, sending (E2EE), editing, deleting.
@@ -56,24 +55,15 @@ export function useMessages(myId) {
       }
     };
     const rehydrateCachedAttachments = async (chatId, messages) => {
-      const needsRehydrate = messages.filter(m =>
-        m._attachment?.attachmentId && !m._img && !m._voice && !m._attachment?.objectUrl && window.e2ee?.decryptFile
-      );
+      const needsRehydrate = messages.filter(needsAttachmentHydration);
       if (needsRehydrate.length === 0) return;
       for (const msg of needsRehydrate) {
         try {
-          const encryptedBuf = await api.downloadAttachment(msg._attachment.attachmentId);
-          const decryptedBuf = await window.e2ee.decryptFile(encryptedBuf, msg._attachment.fileKey);
-          const blob = new Blob([decryptedBuf], { type: msg._attachment.mimeType || "application/octet-stream" });
-          const objectUrl = URL.createObjectURL(blob);
-          const type = msg._payload?.type || '';
-          if (type === 'image') {
-            msg._img = objectUrl;
-          } else if (type === 'voice') {
-            msg._voice = { dataUrl: objectUrl, durationMs: msg._attachment.durationMs || 0, mime: msg._attachment.mimeType };
-          } else {
-            msg._attachment = { ...msg._attachment, objectUrl, blob };
-          }
+          const hydrated = await hydrateAttachment(msg._attachment, msg._payload?.type);
+          msg._img = hydrated.img || msg._img;
+          msg._voice = hydrated.voice || msg._voice;
+          msg._videoNote = hydrated.videoNote || msg._videoNote;
+          msg._attachment = hydrated.attachment;
           await localStore.saveMessage(msg);
         } catch (e) {
           console.warn('[rehydrate] failed for msg', msg.id, e);
@@ -180,26 +170,16 @@ export function useMessages(myId) {
 
     let resolvedImg = parsed.img;
     let resolvedVoice = parsed.voice;
+    let resolvedVideoNote = parsed.videoNote;
     let resolvedAttachment = parsed.attachment || null;
 
     if (resolvedAttachment?.attachmentId && window.e2ee?.decryptFile) {
       try {
-        const encryptedBuf = await api.downloadAttachment(resolvedAttachment.attachmentId);
-        const decryptedBuf = await window.e2ee.decryptFile(encryptedBuf, resolvedAttachment.fileKey);
-        const blob = new Blob([decryptedBuf], { type: resolvedAttachment.mimeType || "application/octet-stream" });
-        const objectUrl = URL.createObjectURL(blob);
-
-        if (parsed.payload?.type === "image") {
-          resolvedImg = objectUrl;
-        } else if (parsed.payload?.type === "voice") {
-          resolvedVoice = {
-            dataUrl: objectUrl,
-            durationMs: resolvedAttachment.durationMs || 0,
-            mime: resolvedAttachment.mimeType || "audio/webm",
-          };
-        } else {
-          resolvedAttachment = { ...resolvedAttachment, objectUrl, blob };
-        }
+        const hydrated = await hydrateAttachment(resolvedAttachment, parsed.payload?.type);
+        resolvedImg = hydrated.img || resolvedImg;
+        resolvedVoice = hydrated.voice || resolvedVoice;
+        resolvedVideoNote = hydrated.videoNote || resolvedVideoNote;
+        resolvedAttachment = hydrated.attachment;
       } catch (e) {
         console.warn("[WS] attachment decrypt:", e.message);
       }
@@ -233,6 +213,7 @@ export function useMessages(myId) {
       _text:     parsed.text,
       _img:      resolvedImg,
       _voice:    resolvedVoice,
+      _videoNote: resolvedVideoNote,
       _payload:  parsed.payload,
       _attachment: resolvedAttachment,
       _ttl:      parsed.ttl || null,
@@ -286,17 +267,18 @@ export function useMessages(myId) {
     const text = typeof input === "string" ? input : String(input?.text || "").trim();
     const imgFile = typeof input === "string" ? null : input?.imgFile;
     const voiceFile = typeof input === "string" ? null : input?.voiceFile;
+    const videoNoteFile = typeof input === "string" ? null : input?.videoNoteFile;
     const generalFile = typeof input === "string" ? null : input?.generalFile;
     const ttl = typeof input === "string" ? null : input?.ttl;
     const replyTo = typeof input === "string" ? null : input?.replyTo;
-    if ((!text && !imgFile && !voiceFile && !generalFile) || !chatId) return null;
+    if ((!text && !imgFile && !voiceFile && !videoNoteFile && !generalFile) || !chatId) return null;
     if (!window.e2ee?.buildFanoutRequest) {
       console.error("[Send] crypto-engine is not loaded");
       return null;
     }
 
     const clientMessageId = "tmp_" + Date.now();
-    let parsedPayload = { text, img: null, voice: null, payload: null, replyTo };
+    let parsedPayload = { text, img: null, voice: null, videoNote: null, payload: null, replyTo };
     let encryptedPlaintext = text;
 
     try {
@@ -316,86 +298,96 @@ export function useMessages(myId) {
         encryptedPlaintext = JSON.stringify(parsedPayload.payload);
       } else if (imgFile?.file) {
         const image = await compressImageFile(imgFile.file);
-        if (estimateBase64Bytes(image.dataUrl) > ATTACHMENT_THRESHOLD_BYTES && window.e2ee?.encryptFile) {
-          const buf = dataUrlToArrayBuffer(image.dataUrl);
-          const { encrypted, fileKey } = await window.e2ee.encryptFile(buf);
-          const uploadResult = await api.uploadAttachment(encrypted, chatId);
-          const attachment = {
-            attachmentId: uploadResult.id || uploadResult.attachmentId,
-            fileKey,
-            fileName: image.name || "image",
-            mimeType: image.mime || "image/jpeg",
-            size: image.size,
-            width: image.width,
-            height: image.height,
-          };
-          parsedPayload = {
-            text,
-            img: image.dataUrl,
-            payload: { v: 1, type: "image", text, attachment },
-          };
-          encryptedPlaintext = JSON.stringify(parsedPayload.payload);
-        } else {
-          parsedPayload = {
-            text,
-            img: image.dataUrl,
-            payload: { v: 1, type: "image", text, image },
-          };
-          encryptedPlaintext = JSON.stringify(parsedPayload.payload);
-        }
+        const buf = dataUrlToArrayBuffer(image.dataUrl);
+        const attachment = await encryptAndUploadBuffer(buf, {
+          fileName: image.name || "image.jpg",
+          mimeType: image.mime || "image/jpeg",
+          width: image.width,
+          height: image.height,
+        }, chatId);
+        parsedPayload = { text, img: image.dataUrl, payload: { v: 1, type: "image", text, attachment } };
+        encryptedPlaintext = JSON.stringify(parsedPayload.payload);
       } else if (voiceFile) {
-        const voice = await prepareVoiceFile(voiceFile);
-        if (estimateBase64Bytes(voice.dataUrl) > ATTACHMENT_THRESHOLD_BYTES && window.e2ee?.encryptFile) {
-          const buf = dataUrlToArrayBuffer(voice.dataUrl);
-          const { encrypted, fileKey } = await window.e2ee.encryptFile(buf);
-          const uploadResult = await api.uploadAttachment(encrypted, chatId);
-          const attachment = {
-            attachmentId: uploadResult.id || uploadResult.attachmentId,
-            fileKey,
-            fileName: voice.name || "voice-message.webm",
-            mimeType: voice.mime || "audio/webm",
-            size: voice.size,
-            durationMs: voice.durationMs,
-          };
+        if (window.e2ee?.encryptFile) {
+          const blob = voiceFile.blob || voiceFile.file;
+          const buf = blob
+            ? await readBlobAsArrayBuffer(blob)
+            : dataUrlToArrayBuffer(voiceFile.dataUrl);
+          const attachment = await encryptAndUploadBuffer(buf, {
+            fileName: voiceFile.name || "voice-message.webm",
+            mimeType: voiceFile.mime || blob?.type || "audio/webm",
+            durationMs: voiceFile.durationMs,
+            transcript: voiceFile.transcript || text || "",
+          }, chatId);
+          const previewUrl = voiceFile.previewUrl
+            || (blob ? URL.createObjectURL(blob) : voiceFile.dataUrl);
           parsedPayload = {
-            text,
+            text: voiceFile.transcript || text,
             img: null,
-            voice,
-            payload: { v: 1, type: "voice", text, attachment },
+            voice: {
+              dataUrl: previewUrl,
+              durationMs: voiceFile.durationMs || 0,
+              mime: attachment.mimeType,
+              transcript: voiceFile.transcript || text || "",
+            },
+            payload: { v: 1, type: "voice", text: voiceFile.transcript || text, attachment },
           };
           encryptedPlaintext = JSON.stringify(parsedPayload.payload);
         } else {
-          parsedPayload = {
-            text,
-            img: null,
-            voice,
-            payload: { v: 1, type: "voice", text, voice },
-          };
-          encryptedPlaintext = JSON.stringify(parsedPayload.payload);
+          const voice = await prepareVoiceFile(voiceFile);
+          const payload = { v: 1, type: "voice", text: voice.transcript || text, voice };
+          const encoded = JSON.stringify(payload);
+          if (encoded.length > MAX_ENCRYPTED_PAYLOAD_CHARS) {
+            throw new Error("Нет клиентского шифрования файла");
+          }
+          parsedPayload = { text: voice.transcript || text, img: null, voice, payload };
+          encryptedPlaintext = encoded;
         }
+      } else if (videoNoteFile) {
+        const blob = videoNoteFile.blob || videoNoteFile.file;
+        if (!blob) throw new Error("Видео не записалось");
+        const mime = playbackMime(videoNoteFile.mime || blob.type, "video/webm");
+        const previewUrl = videoNoteFile.previewUrl || URL.createObjectURL(blob);
+        const localNote = {
+          src: previewUrl,
+          durationMs: videoNoteFile.durationMs || 0,
+          mime,
+        };
+        const attachment = await encryptAndUploadBuffer(await readBlobAsArrayBuffer(blob), {
+          fileName: videoNoteFile.name || "video-note.webm",
+          mimeType: mime,
+          durationMs: localNote.durationMs,
+        }, chatId);
+        parsedPayload = {
+          text,
+          img: null,
+          voice: null,
+          videoNote: localNote,
+          payload: { v: 1, type: "video_note", text, attachment },
+        };
+        encryptedPlaintext = JSON.stringify(parsedPayload.payload);
       }
     } catch (e) {
       console.error("[Send] media prepare error:", e);
-      return null;
+      throw (e instanceof Error ? e : new Error("Не удалось подготовить файл"));
     }
 
     if (ttl || replyTo) {
       try {
         const payloadObj = encryptedPlaintext.startsWith("{") ? JSON.parse(encryptedPlaintext) : { v: 1, type: "text", text: encryptedPlaintext };
         if (ttl) payloadObj.ttl = ttl;
-        if (replyTo) payloadObj.replyTo = replyTo;
+        if (replyTo) payloadObj.replyTo = compactReplyTo(replyTo);
         encryptedPlaintext = JSON.stringify(payloadObj);
       } catch (_) {
         const base = { v: 1, type: "text", text: encryptedPlaintext };
         if (ttl) base.ttl = ttl;
-        if (replyTo) base.replyTo = replyTo;
+        if (replyTo) base.replyTo = compactReplyTo(replyTo);
         encryptedPlaintext = JSON.stringify(base);
       }
     }
 
     if (encryptedPlaintext.length > MAX_ENCRYPTED_PAYLOAD_CHARS) {
-      console.error("[Send] payload too large after compression");
-      return null;
+      throw new Error("Файл слишком большой для отправки сообщением. Нужно вложение, а не inline.");
     }
 
     const tempExpiresAt = ttl ? new Date(Date.now() + ttl * 1000).toISOString() : null;
@@ -407,10 +399,11 @@ export function useMessages(myId) {
       _text: parsedPayload.text,
       _img: parsedPayload.img,
       _voice: parsedPayload.voice,
+      _videoNote: parsedPayload.videoNote,
       _payload: parsedPayload.payload,
       _attachment: parsedPayload.payload?.attachment || null,
       _ttl: ttl || null,
-      _replyTo: replyTo || null,
+      _replyTo: compactReplyTo(replyTo),
       expiresAt: tempExpiresAt,
       _time: getTime(),
       content: encryptedPlaintext,
@@ -455,7 +448,7 @@ export function useMessages(myId) {
         ...prev,
         [chatId]: (prev[chatId] || []).filter(m => m.id !== clientMessageId),
       }));
-      return null;
+      throw (e instanceof Error ? e : new Error("Сообщение не отправилось"));
     }
   }, [myId]);
 
@@ -655,26 +648,16 @@ async function decryptMsg(msg, myId, fallbackChatId) {
 
   let resolvedImg = parsed.img;
   let resolvedVoice = parsed.voice;
+  let resolvedVideoNote = parsed.videoNote;
   let resolvedAttachment = parsed.attachment || null;
 
   if (resolvedAttachment?.attachmentId && window.e2ee?.decryptFile) {
     try {
-      const encryptedBuf = await api.downloadAttachment(resolvedAttachment.attachmentId);
-      const decryptedBuf = await window.e2ee.decryptFile(encryptedBuf, resolvedAttachment.fileKey);
-      const blob = new Blob([decryptedBuf], { type: resolvedAttachment.mimeType || "application/octet-stream" });
-      const objectUrl = URL.createObjectURL(blob);
-
-      if (parsed.payload?.type === "image") {
-        resolvedImg = objectUrl;
-      } else if (parsed.payload?.type === "voice") {
-        resolvedVoice = {
-          dataUrl: objectUrl,
-          durationMs: resolvedAttachment.durationMs || 0,
-          mime: resolvedAttachment.mimeType || "audio/webm",
-        };
-      } else {
-        resolvedAttachment = { ...resolvedAttachment, objectUrl, blob };
-      }
+      const hydrated = await hydrateAttachment(resolvedAttachment, parsed.payload?.type);
+      resolvedImg = hydrated.img || resolvedImg;
+      resolvedVoice = hydrated.voice || resolvedVoice;
+      resolvedVideoNote = hydrated.videoNote || resolvedVideoNote;
+      resolvedAttachment = hydrated.attachment;
     } catch (e) {
       console.warn("[Timeline] attachment decrypt:", e.message);
     }
@@ -699,6 +682,7 @@ async function decryptMsg(msg, myId, fallbackChatId) {
     _text: parsed.text,
     _img: resolvedImg,
     _voice: resolvedVoice,
+    _videoNote: resolvedVideoNote,
     _payload: parsed.payload,
     _attachment: resolvedAttachment,
     _ttl: parsed.ttl || null,
@@ -720,6 +704,7 @@ function mergeIncomingMessage(existing, incoming) {
       _text: existing._text,
       _img: existing._img,
       _voice: existing._voice,
+      _videoNote: existing._videoNote,
       _payload: existing._payload,
       _attachment: existing._attachment,
       _ttl: existing._ttl,
@@ -737,7 +722,7 @@ function isEncryptedPlaceholder(msg) {
 
 function hasRenderablePlaintext(msg) {
   if (!msg) return false;
-  if (msg._img || msg._voice || msg._attachment) return true;
+  if (msg._img || msg._voice || msg._videoNote || msg._attachment) return true;
   return Boolean(msg._text && msg._text !== "[encrypted]");
 }
 
@@ -777,7 +762,7 @@ function adjustReactionSummary(summary, emoji, delta) {
 function parseMessagePayload(raw) {
   const fallbackText = String(raw || "");
   if (!fallbackText || fallbackText === "[encrypted]") {
-    return { text: fallbackText, img: null, voice: null, payload: null, attachment: null, replyTo: null };
+    return { text: fallbackText, img: null, voice: null, videoNote: null, payload: null, attachment: null, replyTo: null };
   }
   try {
     const payload = JSON.parse(fallbackText);
@@ -788,6 +773,7 @@ function parseMessagePayload(raw) {
         text: String(payload.text || ""),
         img: image.dataUrl || payload.dataUrl || null,
         voice: null,
+        videoNote: null,
         payload,
         attachment,
         ttl: payload.ttl || null,
@@ -797,10 +783,33 @@ function parseMessagePayload(raw) {
     if (payload?.v === 1 && payload?.type === "voice") {
       const voice = payload.voice || {};
       const attachment = payload.attachment || null;
+      const transcript = String(payload.text || voice.transcript || attachment?.transcript || "");
+      return {
+        text: transcript,
+        img: null,
+        voice: voice.dataUrl ? { ...voice, transcript } : null,
+        videoNote: null,
+        payload,
+        attachment,
+        ttl: payload.ttl || null,
+        replyTo: payload.replyTo || null,
+      };
+    }
+    if (payload?.v === 1 && payload?.type === "video_note") {
+      const attachment = payload.attachment || null;
+      const note = payload.videoNote || {};
+      const src = isInlineDataSrc(note.src) ? note.src : null;
       return {
         text: String(payload.text || ""),
         img: null,
-        voice: voice.dataUrl ? voice : null,
+        voice: null,
+        videoNote: src
+          ? {
+              src,
+              durationMs: note.durationMs || attachment?.durationMs || 0,
+              mime: playbackMime(note.mime, attachment?.mimeType || "video/webm"),
+            }
+          : null,
         payload,
         attachment,
         ttl: payload.ttl || null,
@@ -813,6 +822,7 @@ function parseMessagePayload(raw) {
         text: String(payload.text || ""),
         img: null,
         voice: null,
+        videoNote: null,
         payload,
         attachment,
         ttl: payload.ttl || null,
@@ -824,6 +834,7 @@ function parseMessagePayload(raw) {
         text: String(payload.text || fallbackText),
         img: null,
         voice: null,
+        videoNote: null,
         payload,
         attachment: null,
         ttl: payload.ttl || null,
@@ -833,16 +844,20 @@ function parseMessagePayload(raw) {
   } catch (_) {
     // regular text message
   }
-  return { text: fallbackText, img: null, voice: null, payload: null, attachment: null, replyTo: null };
+  return { text: fallbackText, img: null, voice: null, videoNote: null, payload: null, attachment: null, replyTo: null };
 }
 
 function messagePreview(parsed) {
+  if (parsed?.payload?.type === "video_note") return parsed.text ? `🎥 ${parsed.text}` : "Video message";
   if (parsed?.attachment?.attachmentId && parsed?.payload?.type === "file") {
     const name = parsed.attachment.fileName || "File";
     return parsed.text ? `📎 ${parsed.text}` : `📎 ${name}`;
   }
   if (parsed?.img) return parsed.text ? `📷 ${parsed.text}` : "📷 Photo";
-  if (parsed?.voice) return parsed.text ? `Voice: ${parsed.text}` : "Voice message";
+  if (parsed?.payload?.type === "voice" || parsed?.voice) {
+    const caption = parsed.voice?.transcript || parsed.text;
+    return caption ? `Voice: ${caption}` : "Voice message";
+  }
   return parsed?.text || "";
 }
 
@@ -965,6 +980,7 @@ async function prepareVoiceFile(input) {
     name: input.name || "voice-message.webm",
     size: input.size || input.blob?.size || input.file?.size || Math.round((String(dataUrl).length * 3) / 4),
     durationMs: Math.max(0, Math.round(Number(input.durationMs || 0))),
+    transcript: String(input.transcript || ""),
   };
 }
 
@@ -978,11 +994,15 @@ function blobToDataUrl(blob) {
   });
 }
 
-function estimateBase64Bytes(dataUrl) {
-  if (!dataUrl) return 0;
-  const commaIdx = dataUrl.indexOf(",");
-  const base64Part = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
-  return Math.round((base64Part.length * 3) / 4);
+function readBlobAsArrayBuffer(blob) {
+  if (!blob) return Promise.reject(new Error("Blob is missing"));
+  if (typeof blob.arrayBuffer === "function") return blob.arrayBuffer();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error || new Error("Cannot read blob"));
+    reader.readAsArrayBuffer(blob);
+  });
 }
 
 function dataUrlToArrayBuffer(dataUrl) {
@@ -995,14 +1015,93 @@ function dataUrlToArrayBuffer(dataUrl) {
 }
 
 async function encryptAndUploadFile(file, chatId) {
-  const buf = await file.arrayBuffer();
-  const { encrypted, fileKey } = await window.e2ee.encryptFile(buf);
-  const uploadResult = await api.uploadAttachment(encrypted, chatId);
-  return {
-    attachmentId: uploadResult.id || uploadResult.attachmentId,
-    fileKey,
+  const buf = await readBlobAsArrayBuffer(file);
+  return encryptAndUploadBuffer(buf, {
     fileName: file.name || "file",
     mimeType: file.type || "application/octet-stream",
-    size: file.size || 0,
+  }, chatId);
+}
+
+async function encryptAndUploadBuffer(buf, meta, chatId) {
+  if (!window.e2ee?.encryptFile) throw new Error("Нет клиентского шифрования файла");
+  const { encrypted, fileKey } = await window.e2ee.encryptFile(buf);
+  const uploadResult = await api.uploadAttachment(encrypted, chatId);
+  const attachmentId = uploadResult?.id || uploadResult?.attachmentId;
+  if (!attachmentId) throw new Error("Сервер не принял файл");
+  return {
+    attachmentId,
+    fileKey,
+    fileName: meta.fileName || "file",
+    mimeType: meta.mimeType || "application/octet-stream",
+    size: buf.byteLength || meta.size || 0,
+    durationMs: meta.durationMs || 0,
+    width: meta.width,
+    height: meta.height,
+    transcript: meta.transcript || "",
   };
+}
+
+function compactReplyTo(replyTo) {
+  if (!replyTo) return null;
+  return {
+    id: replyTo.id ?? replyTo.messageId ?? null,
+    _text: String(replyTo._text || replyTo.content || "").slice(0, 500),
+    _img: Boolean(replyTo._img),
+    _voice: Boolean(replyTo._voice),
+    _videoNote: Boolean(replyTo._videoNote),
+  };
+}
+
+function isInlineDataSrc(value) {
+  return String(value || "").startsWith("data:");
+}
+
+function playbackMime(mime, fallback = "application/octet-stream") {
+  const raw = String(mime || fallback || "").split(";")[0].trim();
+  return raw || fallback;
+}
+
+function needsAttachmentHydration(msg) {
+  if (!msg?._attachment?.attachmentId || !window.e2ee?.decryptFile) return false;
+  if (msg._attachment.objectUrl) return false;
+  const type = msg._payload?.type;
+  if (type === "image" && isInlineDataSrc(msg._img)) return false;
+  if (type === "voice" && isInlineDataSrc(msg._voice?.dataUrl)) return false;
+  if (type === "video_note" && isInlineDataSrc(msg._videoNote?.src)) return false;
+  return true;
+}
+
+async function hydrateAttachment(attachment, payloadType) {
+  const encryptedBuf = await api.downloadAttachment(attachment.attachmentId);
+  const decryptedBuf = await window.e2ee.decryptFile(encryptedBuf, attachment.fileKey);
+  const mime = playbackMime(attachment.mimeType, payloadType === "video_note" ? "video/webm" : "application/octet-stream");
+  const blob = new Blob([decryptedBuf], { type: mime });
+  const objectUrl = URL.createObjectURL(blob);
+  const next = { ...attachment, mimeType: mime, objectUrl, blob };
+  const type = payloadType || "";
+  if (type === "image" || mime.startsWith("image/")) {
+    return { attachment: next, img: objectUrl, voice: null, videoNote: null };
+  }
+  if (type === "voice" || mime.startsWith("audio/")) {
+    return {
+      attachment: next,
+      img: null,
+      voice: {
+        dataUrl: objectUrl,
+        durationMs: attachment.durationMs || 0,
+        mime: mime || "audio/webm",
+        transcript: attachment.transcript || "",
+      },
+      videoNote: null,
+    };
+  }
+  if (type === "video_note" || type === "video" || mime.startsWith("video/")) {
+    return {
+      attachment: next,
+      img: null,
+      voice: null,
+      videoNote: { src: objectUrl, durationMs: attachment.durationMs || 0, mime: mime || "video/webm" },
+    };
+  }
+  return { attachment: next, img: null, voice: null, videoNote: null };
 }

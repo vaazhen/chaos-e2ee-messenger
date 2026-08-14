@@ -143,7 +143,7 @@ public class OutboxService implements EventPublisher {
         TransactionUtils.afterCommit(() -> {
             OutboxPublisher publisher = outboxPublisher.getIfAvailable();
             if (publisher != null && eventPk != null) {
-                publisher.dispatch(eventPk);
+                publisher.dispatchAsync(eventPk);
             }
         });
         log.debug("Outbox event written eventId={} aggregateType={} aggregateId={} eventType={}",

@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
     markDelivered: vi.fn(),
     toggleReaction: vi.fn(),
     deleteMsg: vi.fn(),
+    uploadAttachment: vi.fn(),
+    downloadAttachment: vi.fn(),
   },
   call: vi.fn(),
   getToken: vi.fn(() => "jwt-token"),
@@ -458,6 +460,178 @@ describe("useMessages critical flow", () => {
     });
   });
 
+  it("sendMessage uploads encrypted voice and keeps only attachment metadata in the envelope", async () => {
+    const { useMessages } = await import("../hooks/useMessages");
+
+    window.e2ee = {
+      buildFanoutRequest: vi.fn(async () => ({
+        chatId: 100,
+        senderDeviceId: "device-a",
+        envelopes: [{ targetDeviceId: "device-b", ciphertext: "cipher" }],
+      })),
+      encryptFile: vi.fn(async (buf) => ({ encrypted: buf, fileKey: "file-key" })),
+    };
+
+    mocks.api.uploadAttachment.mockResolvedValueOnce({ id: "att-9" });
+    mocks.call.mockResolvedValueOnce({
+      messageId: 802,
+      status: "SENT",
+      createdAt: "2026-04-28T10:00:00.000Z",
+    });
+
+    const { result } = renderHook(() => useMessages(1));
+    const blob = new Blob([new Uint8Array([1, 2, 3, 4])], { type: "audio/webm" });
+
+    await act(async () => {
+      await result.current.sendMessage(100, {
+        voiceFile: {
+          blob,
+          mime: "audio/webm",
+          durationMs: 1500,
+          name: "voice-message.webm",
+          transcript: "hello there",
+          previewUrl: "blob:voice-preview",
+        },
+      });
+    });
+
+    expect(window.e2ee.encryptFile).toHaveBeenCalled();
+    expect(mocks.api.uploadAttachment).toHaveBeenCalled();
+    const plaintext = JSON.parse(window.e2ee.buildFanoutRequest.mock.calls[0][2]);
+    expect(plaintext).toMatchObject({
+      v: 1,
+      type: "voice",
+      text: "hello there",
+      attachment: {
+        attachmentId: "att-9",
+        fileKey: "file-key",
+        transcript: "hello there",
+      },
+    });
+    expect(plaintext.voice).toBeUndefined();
+    expect(result.current.msgs[100][0]._voice.transcript).toBe("hello there");
+  });
+
+  it("sendMessage rejects oversized inline media instead of posting it", async () => {
+    const { useMessages } = await import("../hooks/useMessages");
+
+    window.e2ee = {
+      buildFanoutRequest: vi.fn(async () => ({
+        chatId: 100,
+        senderDeviceId: "device-a",
+        envelopes: [],
+      })),
+    };
+
+    const { result } = renderHook(() => useMessages(1));
+
+    await act(async () => {
+      await expect(result.current.sendMessage(100, {
+        voiceFile: {
+          dataUrl: `data:audio/webm;base64,${"a".repeat(200_000)}`,
+          mime: "audio/webm",
+          durationMs: 1500,
+          name: "voice-message.webm",
+        },
+      })).rejects.toThrow(/шифрования|большой/i);
+    });
+
+    expect(window.e2ee.buildFanoutRequest).not.toHaveBeenCalled();
+    expect(mocks.call).not.toHaveBeenCalled();
+  });
+
+  it("sendMessage uploads encrypted video notes and keeps only attachment metadata in the envelope", async () => {
+    const { useMessages } = await import("../hooks/useMessages");
+
+    window.e2ee = {
+      buildFanoutRequest: vi.fn(async () => ({
+        chatId: 100,
+        senderDeviceId: "device-a",
+        envelopes: [{ targetDeviceId: "device-b", ciphertext: "cipher" }],
+      })),
+      encryptFile: vi.fn(async (buf) => ({ encrypted: buf, fileKey: "file-key" })),
+    };
+
+    mocks.api.uploadAttachment.mockResolvedValueOnce({ attachmentId: "att-circle" });
+    mocks.call.mockResolvedValueOnce({
+      messageId: 803,
+      status: "SENT",
+      createdAt: "2026-04-28T10:00:00.000Z",
+    });
+
+    const { result } = renderHook(() => useMessages(1));
+    const blob = new Blob([new Uint8Array([9, 8, 7])], { type: "video/webm" });
+
+    await act(async () => {
+      await result.current.sendMessage(100, {
+        videoNoteFile: {
+          blob,
+          mime: "video/webm;codecs=vp8,opus",
+          durationMs: 2400,
+          previewUrl: "blob:video-note",
+          name: "video-note.webm",
+        },
+      });
+    });
+
+    expect(window.e2ee.encryptFile).toHaveBeenCalled();
+    expect(mocks.api.uploadAttachment).toHaveBeenCalled();
+    const plaintext = JSON.parse(window.e2ee.buildFanoutRequest.mock.calls[0][2]);
+    expect(plaintext).toMatchObject({
+      v: 1,
+      type: "video_note",
+      attachment: {
+        attachmentId: "att-circle",
+        fileKey: "file-key",
+        mimeType: "video/webm",
+        durationMs: 2400,
+      },
+    });
+    expect(plaintext.videoNote).toBeUndefined();
+    expect(result.current.msgs[100][0]._videoNote.src).toBe("blob:video-note");
+  });
+
+  it("handleIncomingEvent hydrates a video note from the encrypted attachment", async () => {
+    const { useMessages } = await import("../hooks/useMessages");
+
+    window.e2ee = {
+      decryptEnvelope: vi.fn(async () => JSON.stringify({
+        v: 1,
+        type: "video_note",
+        text: "",
+        attachment: {
+          attachmentId: "att-circle",
+          fileKey: "file-key",
+          mimeType: "video/webm;codecs=vp8,opus",
+          durationMs: 2400,
+        },
+      })),
+      decryptFile: vi.fn(async () => new Uint8Array([1, 2, 3]).buffer),
+    };
+    mocks.api.downloadAttachment.mockResolvedValueOnce(new Uint8Array([9, 9, 9]).buffer);
+
+    const { result } = renderHook(() => useMessages(2));
+
+    await act(async () => {
+      await result.current.handleIncomingEvent({
+        type: "MESSAGE_CREATED",
+        messageId: 910,
+        chatId: 100,
+        senderId: 1,
+        senderDeviceId: "device-a",
+        createdAt: "2026-04-28T10:00:00.000Z",
+        status: "SENT",
+        envelope: { ciphertext: "cipher", nonce: "nonce" },
+      }, 100);
+    });
+
+    expect(mocks.api.downloadAttachment).toHaveBeenCalledWith("att-circle");
+    expect(window.e2ee.decryptFile).toHaveBeenCalled();
+    expect(result.current.msgs[100][0]._videoNote.src).toMatch(/^blob:/);
+    expect(result.current.msgs[100][0]._videoNote.mime).toBe("video/webm");
+    expect(result.current.msgs[100][0]._videoNote.durationMs).toBe(2400);
+  });
+
   it("sendMessage removes optimistic message when backend call fails", async () => {
     const { useMessages } = await import("../hooks/useMessages");
 
@@ -473,13 +647,10 @@ describe("useMessages critical flow", () => {
 
     const { result } = renderHook(() => useMessages(1));
 
-    let response;
-
     await act(async () => {
-      response = await result.current.sendMessage(100, "hello");
+      await expect(result.current.sendMessage(100, "hello")).rejects.toThrow("network down");
     });
 
-    expect(response).toBeNull();
     expect(result.current.msgs[100]).toEqual([]);
   });
 

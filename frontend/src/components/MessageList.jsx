@@ -34,6 +34,7 @@ export default function MessageList({
   unreadCount = 0,
   onPinChange,
   onReachedBottom,
+  onOpenMedia,
 }) {
   const endRef = useRef(null);
   const listRef = useRef(null);
@@ -158,11 +159,7 @@ export default function MessageList({
       <div className="msgs-shell">
         <div ref={listRef} className="msgs scroll">
           <div className="product-empty">
-            <div className="product-empty-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-            </svg>
-          </div>
+            <div className="product-empty-icon" aria-hidden="true" />
             <div className="product-empty-title">Нет сообщений</div>
             <div className="product-empty-sub">Создайте новую переписку.</div>
           </div>
@@ -202,7 +199,8 @@ export default function MessageList({
         const isActiveHit = activeMatchId && String(activeMatchId) === String(msg.id ?? msg.messageId);
         const shouldHighlightMessage = Boolean(searchQuery?.trim()) && Boolean(isActiveHit);
         const attachment = msg._attachment;
-        const isFileAttachment = attachment && !msg._img && !msg._voice && attachment.fileName;
+        const inlineVideo = String(attachment?.mimeType || "").startsWith("video/") && !msg._videoNote && msg._payload?.type !== "video_note";
+        const isFileAttachment = attachment && !msg._img && !msg._voice && !msg._videoNote && !inlineVideo && attachment.fileName;
 
         return (
           <MsgRow
@@ -227,6 +225,7 @@ export default function MessageList({
             onReact={onReact}
             isFileAttachment={isFileAttachment}
             attachment={attachment}
+            onOpenMedia={onOpenMedia}
           />
         );
       })}

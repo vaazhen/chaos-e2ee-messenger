@@ -8,6 +8,7 @@ import "../styles/screens/shell.css";
 import "../styles/screens/chat.css";
 import "../styles/screens/profile.css";
 import "../styles/screens/settings.css";
+import "../styles/screens/calls.css";
 import "../styles/responsive.css";
 import { webcrypto } from "node:crypto";
 import { TextEncoder, TextDecoder } from "node:util";

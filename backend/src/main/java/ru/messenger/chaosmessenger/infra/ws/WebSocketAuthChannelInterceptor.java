@@ -220,4 +220,8 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
     public String getUsernameBySessionId(String sessionId) {
         return sessionRegistry.username(sessionId);
     }
+
+    public String getDeviceIdBySessionId(String sessionId) {
+        return sessionRegistry.deviceId(sessionId);
+    }
 }

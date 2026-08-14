@@ -36,6 +36,32 @@ services:
       - chaos-network
 
 
+  coturn:
+    image: coturn/coturn:4.6.3
+    container_name: chaos-messenger-coturn
+    ports:
+      - "3478:3478"
+      - "3478:3478/udp"
+      - "49160-49200:49160-49200/udp"
+    command:
+      - -n
+      - --log-file=stdout
+      - --lt-cred-mech
+      - --fingerprint
+      - --no-tls
+      - --no-dtls
+      - --allow-loopback-peers
+      - --cli-password=dev-unused
+      - --realm=chaos.local
+      - --listening-ip=0.0.0.0
+      - --listening-port=3478
+      - --min-port=49160
+      - --max-port=49200
+      - --external-ip=127.0.0.1/0.0.0.0
+      - --user=chaos:chaos
+    networks:
+      - chaos-network
+
   redpanda:
     image: redpandadata/redpanda:v24.3.7
     container_name: chaos-messenger-redpanda

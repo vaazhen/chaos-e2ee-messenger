@@ -409,7 +409,6 @@
   line-height:1;
 }
 /* ── EMPTY STATE ── */
-.product-empty-icon svg{width:48px;height:48px;color:var(--text-soft);opacity:.5}
 .home-topbar-end{
   display:flex;
   align-items:center;
@@ -979,6 +978,7 @@
   border-radius:50%;
   border-bottom-left-radius:18px;
   margin-bottom:22px;
+  box-sizing:border-box;
 }
 .product-empty-title{
   font-size:28px;

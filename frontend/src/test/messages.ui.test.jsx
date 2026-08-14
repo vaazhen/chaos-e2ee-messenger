@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 beforeEach(() => {
   localStorage.clear();
@@ -356,13 +356,50 @@ describe("MessageInput — extended scenarios", () => {
 
     const sendBtn = document.querySelector(".send-btn");
     // By default (no text, canQuickRecord=true) → MicIcon title
-    expect(sendBtn.title).toBe("Hold to record");
+    expect(sendBtn.title).toBe("Нажми — видео, зажми — запись");
 
     // When recording state is toggled via internal state, button changes
     // We verify the render logic: recording ? <SendIcon /> : canQuickRecord ? <MicIcon /> : <SendIcon />
     // This is tested indirectly: with text present, button shows SendIcon via !canQuickRecord
     fireEvent.change(screen.getByPlaceholderText("Сообщение..."), { target: { value: "x" } });
     expect(sendBtn.title).toBe("Send");
+  });
+
+  it("switches empty composer between voice and video note", async () => {
+    const MI = (await import("../components/MessageInput")).default;
+    render(<MI onSend={vi.fn()} />);
+
+    const sendBtn = document.querySelector(".send-btn");
+    expect(sendBtn.title).toBe("Нажми — видео, зажми — запись");
+    fireEvent.click(sendBtn);
+    expect(sendBtn.title).toBe("Нажми — голос, зажми — запись");
+    fireEvent.click(sendBtn);
+    expect(sendBtn.title).toBe("Нажми — видео, зажми — запись");
+  });
+
+  it("opens a separate send window for a photo and sends with caption", async () => {
+    const MI = (await import("../components/MessageInput")).default;
+    const onSend = vi.fn().mockResolvedValue(undefined);
+    render(<MI onSend={onSend} />);
+
+    fireEvent.click(screen.getByTitle("Attach"));
+    const input = document.querySelector('input[accept="image/*,video/*"]');
+    const file = new File(["abc"], "shot.jpg", { type: "image/jpeg" });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    expect(await screen.findByText("1 медиа")).toBeInTheDocument();
+    expect(document.querySelector(".attachment-preview-wrap")).toBeNull();
+    expect(document.querySelector(".input-bar")).toBeNull();
+
+    fireEvent.change(screen.getByPlaceholderText("Добавить подпись..."), { target: { value: "кот" } });
+    fireEvent.click(screen.getByLabelText("Отправить"));
+
+    await waitFor(() => {
+      expect(onSend).toHaveBeenCalledWith(expect.objectContaining({
+        text: "кот",
+        imgFile: expect.objectContaining({ file }),
+      }));
+    });
   });
 });
 
