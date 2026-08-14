@@ -4,7 +4,10 @@ COPY pom.xml ./
 COPY src ./src
 RUN mvn -B --no-transfer-progress -Dcheckstyle.skip=true verify
 
-FROM eclipse-temurin:17-jre
+# Pin Ubuntu 24.04 LTS. The floating 17-jre tag tracks the newest Ubuntu and currently
+# ships unused Canonical Pebble (Go HIGH CVEs). Official Temurin images recommend an
+# explicit suite tag when the image installs extra packages.
+FROM eclipse-temurin:17-jre-noble
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends curl && \
     rm -rf /var/lib/apt/lists/* && \
     addgroup --system --gid 1001 chaos && \
