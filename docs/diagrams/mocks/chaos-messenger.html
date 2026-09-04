@@ -110,8 +110,23 @@
     .dots i:nth-child(2) { animation-delay: .15s; }
     .dots i:nth-child(3) { animation-delay: .3s; }
     @keyframes blink { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
-    .input-bar { position: absolute; left: 0; right: 0; bottom: 0; padding: 10px 14px 16px; display: flex; }
-    .inp { flex: 1; min-height: 52px; border-radius: 999px; background: rgba(255,255,255,.86); border: 1px solid rgba(255,255,255,.92); box-shadow: 0 8px 28px rgba(0,0,0,.08); display: flex; align-items: center; padding: 0 16px; color: var(--text-muted); font-size: 16px; }
+    .input-bar { position: absolute; left: 0; right: 0; bottom: 0; padding: 10px 14px 16px; display: flex; align-items: flex-end; gap: 10px; }
+    .inp-area {
+      flex: 1; min-height: 52px; border-radius: 999px;
+      background: rgba(255,255,255,.86); border: 1px solid rgba(255,255,255,.92);
+      box-shadow: 0 8px 28px rgba(0,0,0,.08);
+      display: flex; align-items: center; gap: 4px; padding: 8px 8px 8px 12px;
+    }
+    .inp-icon { width: 34px; height: 34px; border-radius: 50%; color: var(--text-muted); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .inp-icon svg { width: 21px; height: 21px; }
+    .inp-text { flex: 1; font-size: 16px; color: var(--text); padding: 0 4px; }
+    .send-btn {
+      width: 48px; height: 48px; border: none; border-radius: 50%;
+      background: #111; color: #fff; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 8px 20px rgba(20,20,20,.12);
+    }
+    .send-btn svg { width: 22px; height: 22px; }
     .overlay { position: absolute; inset: 0; background: rgba(11,11,15,.42); display: none; align-items: center; justify-content: center; z-index: 20; padding: 16px; }
     body.profile .overlay, body.safety .overlay { display: flex; }
     body.profile .safety-card, body.safety .profile-card { display: none; }
@@ -239,7 +254,23 @@
               Mira is typing
             </div>
           </div>
-          <div class="input-bar"><div class="inp">Message</div></div>
+          <div class="input-bar">
+            <div class="inp-area">
+              <span class="inp-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+              </span>
+              <div class="inp-text">leaving now</div>
+              <span class="inp-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5c.8 1.2 2 2 3.5 2s2.7-.8 3.5-2"/><circle cx="9" cy="10" r="0.8" fill="currentColor" stroke="none"/><circle cx="15" cy="10" r="0.8" fill="currentColor" stroke="none"/></svg>
+              </span>
+              <span class="inp-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M10 2h4"/></svg>
+              </span>
+            </div>
+            <button class="send-btn" type="button" aria-label="Send">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12h14"/><path d="M13 6.5 18.5 12 13 17.5"/></svg>
+            </button>
+          </div>
           <div class="overlay">
             <div class="profile-card">
               <button class="up-close" type="button">×</button>
