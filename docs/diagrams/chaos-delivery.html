@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Chaos · durable delivery</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root { --color-paper:#f3f3f0; --color-ink:#141414; --color-muted:#5c5c5a; --color-accent:#3a76f0; --font-sans:'IBM Plex Sans',sans-serif; --font-serif:'Instrument Serif',serif; --font-mono:'Geist Mono',monospace; }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { font-family:var(--font-sans); background:var(--color-paper); color:var(--color-ink); padding:3rem 2rem; }
+    .frame { max-width:1320px; margin:0 auto; }
+    .eyebrow { font-family:var(--font-mono); font-size:.66rem; letter-spacing:.18em; text-transform:uppercase; color:var(--color-muted); margin-bottom:.5rem; }
+    h1 { font-family:var(--font-serif); font-size:clamp(1.5rem,2.4vw + .75rem,2rem); font-weight:400; margin-bottom:1.5rem; }
+    svg { width:100%; min-width:900px; display:block; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Flowchart · Durable delivery</p>
+    <h1>Realtime is fast. The log is correct.</h1>
+    <svg viewBox="0 0 1280 520" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="chaos-delivery-title chaos-delivery-desc">
+      <title id="chaos-delivery-title">Chaos durable delivery path</title>
+      <desc id="chaos-delivery-desc">Send commits message and outbox in one transaction, Kafka publishes the device event log, then STOMP notify and cursor sync both decrypt locally and advance the cursor.</desc>
+      <defs>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#5c5c5a"/></marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#3a76f0"/></marker>
+      </defs>
+      <rect width="100%" height="100%" fill="#f3f3f0"/>
+
+      <line x1="136" y1="200" x2="184" y2="200" stroke="#5c5c5a" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <line x1="344" y1="200" x2="392" y2="200" stroke="#5c5c5a" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <line x1="552" y1="200" x2="600" y2="200" stroke="#3a76f0" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <path d="M 760,232 V 280 Q 760,288 768,288 H 872 Q 880,288 880,296 V 320" fill="none" stroke="#5c5c5a" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <path d="M 680,232 V 400 Q 680,408 688,408 H 872 Q 880,408 880,400 V 384" fill="none" stroke="#5c5c5a" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+      <path d="M 1040,344 H 1052 Q 1060,344 1060,352 V 360 Q 1060,368 1068,368 H 1088" fill="none" stroke="#5c5c5a" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <path d="M 1040,408 H 1052 Q 1060,408 1060,400 V 368" fill="none" stroke="#5c5c5a" stroke-width="1.2"/>
+      <circle cx="1060" cy="368" r="4" fill="#141414"/>
+
+      <rect x="232" y="180" width="44" height="12" rx="2" fill="#f3f3f0"/>
+      <text x="254" y="189" fill="#5c5c5a" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">COMMIT</text>
+      <rect x="436" y="180" width="52" height="12" rx="2" fill="#f3f3f0"/>
+      <text x="462" y="189" fill="#5c5c5a" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">OUTBOX</text>
+      <rect x="548" y="180" width="52" height="12" rx="2" fill="#f3f3f0"/>
+      <text x="574" y="189" fill="#3a76f0" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">PUBLISH</text>
+      <rect x="784" y="268" width="40" height="12" rx="2" fill="#f3f3f0"/>
+      <text x="804" y="277" fill="#5c5c5a" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">FAST</text>
+      <rect x="784" y="388" width="40" height="12" rx="2" fill="#f3f3f0"/>
+      <text x="804" y="397" fill="#5c5c5a" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">SYNC</text>
+
+      <rect x="40" y="176" width="96" height="48" rx="20" fill="#ffffff" stroke="#141414" stroke-width="1"/>
+      <text x="88" y="204" fill="#141414" font-size="12" font-weight="600" font-family="'IBM Plex Sans', sans-serif" text-anchor="middle">Send</text>
+
+      <rect x="184" y="168" width="160" height="64" rx="6" fill="#ffffff" stroke="#141414" stroke-width="1"/>
+      <text x="264" y="196" fill="#141414" font-size="12" font-weight="600" font-family="'IBM Plex Sans', sans-serif" text-anchor="middle">One DB transaction</text>
+      <text x="264" y="212" fill="#5c5c5a" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">messages · envelopes</text>
+
+      <rect x="392" y="168" width="160" height="64" rx="6" fill="rgba(20,20,20,0.05)" stroke="#5c5c5a" stroke-width="1"/>
+      <text x="472" y="196" fill="#141414" font-size="12" font-weight="600" font-family="'IBM Plex Sans', sans-serif" text-anchor="middle">Outbox</text>
+      <text x="472" y="212" fill="#5c5c5a" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">retry if broker down</text>
+
+      <rect x="600" y="168" width="160" height="64" rx="6" fill="rgba(58,118,240,0.12)" stroke="#3a76f0" stroke-width="1"/>
+      <text x="680" y="196" fill="#141414" font-size="12" font-weight="600" font-family="'IBM Plex Sans', sans-serif" text-anchor="middle">Event log</text>
+      <text x="680" y="212" fill="#5c5c5a" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">Kafka · eventId</text>
+
+      <rect x="880" y="320" width="160" height="48" rx="6" fill="#ffffff" stroke="#141414" stroke-width="1"/>
+      <text x="960" y="348" fill="#141414" font-size="12" font-weight="600" font-family="'IBM Plex Sans', sans-serif" text-anchor="middle">STOMP notify</text>
+
+      <rect x="880" y="384" width="160" height="48" rx="6" fill="#ffffff" stroke="#141414" stroke-width="1" stroke-dasharray="4,3"/>
+      <text x="960" y="404" fill="#141414" font-size="12" font-weight="600" font-family="'IBM Plex Sans', sans-serif" text-anchor="middle">GET /realtime/sync</text>
+      <text x="960" y="420" fill="#5c5c5a" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">after cursor</text>
+
+      <path d="M 1040,344 H 1048"/>
+      <rect x="1088" y="328" width="152" height="48" rx="20" fill="#ffffff" stroke="#141414" stroke-width="1"/>
+      <text x="1164" y="348" fill="#141414" font-size="12" font-weight="600" font-family="'IBM Plex Sans', sans-serif" text-anchor="middle">Decrypt · cursor</text>
+      <text x="1164" y="364" fill="#5c5c5a" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">drop duplicate ids</text>
+
+      <line x1="40" y1="468" x2="1240" y2="468" stroke="rgba(20,20,20,0.10)" stroke-width="0.8"/>
+      <text x="40" y="492" fill="#5c5c5a" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">LEGEND</text>
+      <rect x="40" y="500" width="14" height="10" rx="2" fill="rgba(58,118,240,0.12)" stroke="#3a76f0"/>
+      <text x="60" y="508" fill="#5c5c5a" font-size="8" font-family="'IBM Plex Sans', sans-serif">Correctness path</text>
+      <line x1="196" y1="504" x2="224" y2="504" stroke="#5c5c5a" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+      <text x="232" y="508" fill="#5c5c5a" font-size="8" font-family="'IBM Plex Sans', sans-serif">Reconnect / sync</text>
+    </svg>
+  </div>
+</body>
+</html>

@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 1280 640" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="chaos-message-sequence-title chaos-message-sequence-desc">
+      <title id="chaos-message-sequence-title">Chaos message path from Alice to Bob</title>
+      <desc id="chaos-message-sequence-desc">Sequence of fetching pre-key bundles, encrypting on Alice’s device, writing message and outbox in one transaction, publishing through Kafka, and decrypting on Bob’s device.</desc>
+      <defs>
+        <style>@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=Instrument+Serif:ital@0;1&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap');</style>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#5c5c5a"/></marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#3a76f0"/></marker>
+        <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#1e4a9a"/></marker>
+        <marker id="arrow-open" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polyline points="0 0, 8 3, 0 6" fill="none" stroke="#5c5c5a" stroke-width="1.2"/></marker>
+      </defs>
+      <rect width="100%" height="100%" fill="#f3f3f0"/>
+
+      <line x1="128" y1="136" x2="128" y2="600" stroke="rgba(20,20,20,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+      <line x1="384" y1="136" x2="384" y2="600" stroke="rgba(20,20,20,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+      <line x1="640" y1="136" x2="640" y2="600" stroke="rgba(20,20,20,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+      <line x1="896" y1="136" x2="896" y2="600" stroke="rgba(20,20,20,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+      <line x1="1152" y1="136" x2="1152" y2="600" stroke="rgba(20,20,20,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+
+      <rect x="124" y="176" width="8" height="160" fill="rgba(20,20,20,0.06)" stroke="#5c5c5a" stroke-width="0.8"/>
+      <rect x="380" y="176" width="8" height="216" fill="rgba(20,20,20,0.06)" stroke="#5c5c5a" stroke-width="0.8"/>
+      <rect x="636" y="384" width="8" height="64" fill="rgba(20,20,20,0.06)" stroke="#5c5c5a" stroke-width="0.8"/>
+      <rect x="892" y="440" width="8" height="64" fill="rgba(20,20,20,0.06)" stroke="#5c5c5a" stroke-width="0.8"/>
+      <rect x="1148" y="496" width="8" height="64" fill="rgba(20,20,20,0.06)" stroke="#5c5c5a" stroke-width="0.8"/>
+
+      <line x1="132" y1="176" x2="380" y2="176" stroke="#1e4a9a" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+      <line x1="380" y1="224" x2="136" y2="224" stroke="#5c5c5a" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+      <path d="M 132,272 H 176 V 304 H 132" fill="none" stroke="#5c5c5a" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <line x1="132" y1="336" x2="380" y2="336" stroke="#3a76f0" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <line x1="388" y1="384" x2="636" y2="384" stroke="#5c5c5a" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <line x1="644" y1="440" x2="892" y2="440" stroke="#5c5c5a" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+      <line x1="900" y1="496" x2="1148" y2="496" stroke="#5c5c5a" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#arrow-open)"/>
+      <path d="M 1156,552 H 1200 V 584 H 1156" fill="none" stroke="#5c5c5a" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+      <rect x="196" y="156" width="80" height="12" rx="2" fill="#f3f3f0"/>
+      <text x="236" y="165" fill="#1e4a9a" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">GET BUNDLES</text>
+      <rect x="196" y="204" width="88" height="12" rx="2" fill="#f3f3f0"/>
+      <text x="240" y="213" fill="#5c5c5a" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">PREKEY BUNDLE</text>
+      <rect x="184" y="280" width="88" height="12" rx="2" fill="#f3f3f0"/>
+      <text x="228" y="289" fill="#5c5c5a" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">VERIFY · ENCRYPT</text>
+      <rect x="196" y="316" width="72" height="12" rx="2" fill="#f3f3f0"/>
+      <text x="232" y="325" fill="#3a76f0" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">CIPHERTEXT</text>
+      <rect x="468" y="364" width="48" height="12" rx="2" fill="#f3f3f0"/>
+      <text x="492" y="373" fill="#5c5c5a" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">ONE TX</text>
+      <rect x="716" y="420" width="84" height="12" rx="2" fill="#f3f3f0"/>
+      <text x="758" y="429" fill="#5c5c5a" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">AFTER COMMIT</text>
+      <rect x="972" y="476" width="80" height="12" rx="2" fill="#f3f3f0"/>
+      <text x="1012" y="485" fill="#5c5c5a" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">EVENT · STOMP</text>
+      <rect x="1208" y="560" width="64" height="12" rx="2" fill="#f3f3f0"/>
+      <text x="1240" y="569" fill="#5c5c5a" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">DECRYPT</text>
+
+      <rect x="48" y="72" width="160" height="56" rx="6" fill="#f3f3f0"/>
+      <rect x="48" y="72" width="160" height="56" rx="6" fill="rgba(58,118,240,0.12)" stroke="#3a76f0" stroke-width="1"/>
+      <text x="128" y="96" fill="#141414" font-size="12" font-weight="600" font-family="'IBM Plex Sans', sans-serif" text-anchor="middle">Alice</text>
+      <text x="128" y="112" fill="#5c5c5a" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">device · WebCrypto</text>
+
+      <rect x="304" y="72" width="160" height="56" rx="6" fill="#f3f3f0"/>
+      <rect x="304" y="72" width="160" height="56" rx="6" fill="#ffffff" stroke="#141414" stroke-width="1"/>
+      <text x="384" y="96" fill="#141414" font-size="12" font-weight="600" font-family="'IBM Plex Sans', sans-serif" text-anchor="middle">Chaos API</text>
+      <text x="384" y="112" fill="#5c5c5a" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">Spring · STOMP</text>
+
+      <rect x="560" y="72" width="160" height="56" rx="6" fill="#f3f3f0"/>
+      <rect x="560" y="72" width="160" height="56" rx="6" fill="rgba(20,20,20,0.05)" stroke="#5c5c5a" stroke-width="1"/>
+      <text x="640" y="96" fill="#141414" font-size="12" font-weight="600" font-family="'IBM Plex Sans', sans-serif" text-anchor="middle">PostgreSQL</text>
+      <text x="640" y="112" fill="#5c5c5a" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">msg + outbox</text>
+
+      <rect x="816" y="72" width="160" height="56" rx="6" fill="#f3f3f0"/>
+      <rect x="816" y="72" width="160" height="56" rx="6" fill="rgba(20,20,20,0.05)" stroke="#5c5c5a" stroke-width="1"/>
+      <text x="896" y="96" fill="#141414" font-size="12" font-weight="600" font-family="'IBM Plex Sans', sans-serif" text-anchor="middle">Kafka</text>
+      <text x="896" y="112" fill="#5c5c5a" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">device event log</text>
+
+      <rect x="1072" y="72" width="160" height="56" rx="6" fill="#f3f3f0"/>
+      <rect x="1072" y="72" width="160" height="56" rx="6" fill="rgba(92,92,90,0.10)" stroke="#8a8a84" stroke-width="1"/>
+      <text x="1152" y="96" fill="#141414" font-size="12" font-weight="600" font-family="'IBM Plex Sans', sans-serif" text-anchor="middle">Bob</text>
+      <text x="1152" y="112" fill="#5c5c5a" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">device · cursor</text>
+    </svg>

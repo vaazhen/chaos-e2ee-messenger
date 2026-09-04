@@ -32,6 +32,20 @@
 
 Протокол свой: X3DH-inspired handshake и Double Ratchet-style на WebCrypto. Это **не** Signal и не совместимая копия Signal Protocol. Независимого аудита **нет**. Относись как к серьёзному инженерному продукту, не как к сейфу для государственной тайны.
 
+<p align="center">
+  <img src="docs/assets/readme/chaos-chat.png" width="920" alt="Chaos: чат с Mira, она онлайн и печатает, в треде голосовое">
+</p>
+
+<p align="center">
+  <img src="docs/assets/readme/chaos-profile.png" width="448" alt="Профиль: фото, @handle, online, bio, Mute Search Verify">
+  &nbsp;&nbsp;
+  <img src="docs/assets/readme/chaos-safety.png" width="448" alt="Проверка шифрования: Safety Number и отпечаток устройства">
+</p>
+
+<p align="center">
+  <img src="docs/assets/readme/chaos-auth.png" width="360" alt="Вход по телефону. Ключи остаются на устройстве.">
+</p>
+
 ---
 
 ## Зачем Chaos
@@ -77,43 +91,21 @@
 
 У каждого устройства своя identity. Отправка шифруется **отдельно на каждое устройство получателя**, включая твои другие устройства. Сервер маршрутизирует ciphertext. Ключ AES-GCM он не видит.
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant A as Устройство Alice
-    participant API as Chaos API
-    participant DB as PostgreSQL
-    participant K as Kafka
-    participant B as Устройство Bob
+<p align="center">
+  <img src="docs/diagrams/chaos-architecture.png" width="920" alt="Архитектура: устройство шифрует, Caddy и API ведут ciphertext, plaintext и in-process notify закрыты">
+</p>
 
-    A->>API: Pre-key bundles устройств Bob
-    API-->>A: Public identity, signed pre-key, one-time pre-key
-    Note over A: Проверка подписи · X3DH-inspired session · Double Ratchet
-    A->>A: AES-256-GCM envelope на устройство, versioned AAD
-    A->>API: Ciphertext envelopes
-    API->>DB: Message + envelopes + outbox (одна транзакция)
-    DB-->>K: Публикация после commit
-    K-->>B: Durable event устройства, затем STOMP
-    B->>B: Проверка identity · ratchet · decrypt · локальное хранение
-```
+<p align="center">
+  <img src="docs/diagrams/chaos-message-sequence.png" width="920" alt="Последовательность: pre-key bundles, шифрование у Alice, одна транзакция, событие Kafka, расшифровка у Bob">
+</p>
 
 AAD привязывает ciphertext к типу протокола, chat id, индексу, previous chain length и ratchet public key. Подменил заголовок — AES-GCM не откроется.
 
 Realtime — быстрый канал. Правильность — журнал событий устройства: после reconnect клиент запрашивает всё после cursor и отбрасывает повторные `eventId`. Если Kafka лежит, строки outbox остаются и ретраятся. In-process fallback «просто опубликовать» нет.
 
-```mermaid
-flowchart LR
-    SEND[Отправка] --> TX[Одна транзакция БД]
-    TX --> MSG[(Messages + envelopes)]
-    TX --> OUT[(Outbox)]
-    OUT --> K[Kafka]
-    K --> LOG[(Журнал устройства)]
-    LOG --> WS[STOMP notify]
-    LOG --> SYNC["GET /api/realtime/sync"]
-    WS --> APPLY[Расшифровка на клиенте]
-    SYNC --> APPLY
-    APPLY --> CURSOR[Сдвиг cursor]
-```
+<p align="center">
+  <img src="docs/diagrams/chaos-delivery.png" width="920" alt="Доставка: одна транзакция, outbox, журнал Kafka, затем STOMP и GET /realtime/sync, расшифровка и отброс дублей">
+</p>
 
 Typing и presence эфемерны. В outbox они не попадают.
 
@@ -143,14 +135,9 @@ Chaos не прячет метаданные. Состав чатов, числ�
 
 Новое устройство — unverified. Safety Number / QR переводит в verified. Если identity key потом сменится, клиент не делает вид, что всё в порядке: состояние `KEY_CHANGED`, пока пользователь не подтвердит или не заблокирует.
 
-```mermaid
-stateDiagram-v2
-    [*] --> UNVERIFIED: новое удалённое устройство
-    UNVERIFIED --> VERIFIED: Safety Number / QR
-    VERIFIED --> KEY_CHANGED: сменился identity key
-    KEY_CHANGED --> VERIFIED: явная повторная проверка
-    KEY_CHANGED --> BLOCKED: пользователь отклонил
-```
+<p align="center">
+  <img src="docs/diagrams/chaos-device-trust.png" width="920" alt="Доверие к устройству: UNVERIFIED, VERIFIED, KEY_CHANGED, BLOCKED">
+</p>
 
 Регистрация устройства — короткоживущий одноразовый token, который потребляется через `GETDEL`. Это не криптографическая identity. Key bundle генерирует клиент.
 
