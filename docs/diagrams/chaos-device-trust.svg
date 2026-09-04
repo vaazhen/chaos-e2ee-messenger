@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 1280 480" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="chaos-device-trust-title chaos-device-trust-desc">
+      <title id="chaos-device-trust-title">Chaos remote-device trust states</title>
+      <desc id="chaos-device-trust-desc">A new remote device starts unverified, becomes verified after Safety Number or QR, enters KEY_CHANGED if the identity key rotates, then is re-verified or blocked.</desc>
+      <defs>
+        <style>@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=Instrument+Serif:ital@0;1&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap');</style>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#5c5c5a"/></marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#3a76f0"/></marker>
+      </defs>
+      <rect width="100%" height="100%" fill="#f3f3f0"/>
+
+      <line x1="68" y1="168" x2="120" y2="168" stroke="#5c5c5a" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <line x1="320" y1="168" x2="376" y2="168" stroke="#3a76f0" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <line x1="576" y1="168" x2="632" y2="168" stroke="#5c5c5a" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <line x1="732" y1="208" x2="732" y2="280" stroke="#5c5c5a" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <path d="M 680,128 C 680,72 460,72 460,128" fill="none" stroke="#5c5c5a" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+      <line x1="832" y1="320" x2="900" y2="320" stroke="#5c5c5a" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+      <rect x="168" y="148" width="80" height="12" rx="2" fill="#f3f3f0"/>
+      <text x="208" y="157" fill="#5c5c5a" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">NEW DEVICE</text>
+      <rect x="392" y="148" width="72" height="12" rx="2" fill="#f3f3f0"/>
+      <text x="428" y="157" fill="#3a76f0" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">SAFETY QR</text>
+      <rect x="588" y="148" width="72" height="12" rx="2" fill="#f3f3f0"/>
+      <text x="624" y="157" fill="#5c5c5a" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">KEY ROTATED</text>
+      <rect x="508" y="68" width="64" height="12" rx="2" fill="#f3f3f0"/>
+      <text x="540" y="77" fill="#5c5c5a" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">RE-VERIFY</text>
+      <rect x="744" y="236" width="48" height="12" rx="2" fill="#f3f3f0"/>
+      <text x="768" y="245" fill="#5c5c5a" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">REJECT</text>
+
+      <circle cx="60" cy="168" r="6" fill="#141414"/>
+
+      <rect x="120" y="128" width="200" height="80" rx="8" fill="#ffffff" stroke="#141414" stroke-width="1"/>
+      <text x="220" y="164" fill="#141414" font-size="16" font-weight="600" font-family="'IBM Plex Sans', sans-serif" text-anchor="middle">UNVERIFIED</text>
+      <text x="220" y="184" fill="#5c5c5a" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">new remote device</text>
+
+      <rect x="376" y="128" width="200" height="80" rx="8" fill="#ffffff" stroke="#141414" stroke-width="1"/>
+      <text x="476" y="164" fill="#141414" font-size="16" font-weight="600" font-family="'IBM Plex Sans', sans-serif" text-anchor="middle">VERIFIED</text>
+      <text x="476" y="184" fill="#5c5c5a" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">Safety Number / QR</text>
+
+      <rect x="632" y="128" width="200" height="80" rx="8" fill="rgba(58,118,240,0.12)" stroke="#3a76f0" stroke-width="1"/>
+      <text x="732" y="164" fill="#141414" font-size="16" font-weight="600" font-family="'IBM Plex Sans', sans-serif" text-anchor="middle">KEY_CHANGED</text>
+      <text x="732" y="184" fill="#5c5c5a" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">do not shrug</text>
+
+      <rect x="632" y="280" width="200" height="80" rx="8" fill="rgba(20,20,20,0.05)" stroke="#5c5c5a" stroke-width="1"/>
+      <text x="732" y="316" fill="#141414" font-size="16" font-weight="600" font-family="'IBM Plex Sans', sans-serif" text-anchor="middle">BLOCKED</text>
+      <text x="732" y="336" fill="#5c5c5a" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">user rejects the key</text>
+
+      <circle cx="916" cy="320" r="8" fill="none" stroke="#141414" stroke-width="1"/>
+      <circle cx="916" cy="320" r="5" fill="#141414"/>
+
+      <line x1="40" y1="400" x2="1240" y2="400" stroke="rgba(20,20,20,0.10)" stroke-width="0.8"/>
+      <text x="40" y="424" fill="#5c5c5a" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">LEGEND</text>
+      <rect x="40" y="436" width="14" height="10" rx="2" fill="rgba(58,118,240,0.12)" stroke="#3a76f0"/>
+      <text x="60" y="444" fill="#5c5c5a" font-size="8" font-family="'IBM Plex Sans', sans-serif">Must notice</text>
+      <line x1="176" y1="440" x2="204" y2="440" stroke="#5c5c5a" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+      <text x="212" y="444" fill="#5c5c5a" font-size="8" font-family="'IBM Plex Sans', sans-serif">Re-verify</text>
+    </svg>

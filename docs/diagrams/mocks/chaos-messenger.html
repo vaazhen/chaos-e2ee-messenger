@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chaos · messenger mock</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg0: #f3f3f0; --bg1: #ffffff; --bg2: #ebebe6; --bg3: #e2e2dc;
+      --text: #141414; --text-muted: rgba(20,20,20,.56); --text-soft: rgba(20,20,20,.38);
+      --ink: #141414; --ink-fg: #f6f6f3; --accent: #3a76f0; --accent-muted: rgba(58,118,240,.12);
+      --bubble-in: #e9e9e4; --bubble-out: #171717; --bubble-out-text: #f6f6f3;
+      --success: #1aa05d; --notify: #ff3b5c; --bdr: rgba(20,20,20,.08); --bdr2: rgba(20,20,20,.14);
+      --radius-md: 14px; --radius-lg: 20px;
+      --font: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+      --title-tracking: -0.045em;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      font-family: var(--font);
+      background: #d8d8d2;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    .stage { width: 1280px; padding: 36px 40px; }
+    .window {
+      background: var(--bg0);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 28px 80px rgba(20,20,20,.18);
+      border: 1px solid rgba(20,20,20,.08);
+    }
+    .chrome {
+      height: 40px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 14px;
+      background: #ecece8;
+      border-bottom: 1px solid var(--bdr);
+    }
+    .dot { width: 10px; height: 10px; border-radius: 50%; }
+    .dot.r { background: #e5484d; } .dot.y { background: #d99c1a; } .dot.g { background: #1aa05d; }
+    .chrome-title { flex: 1; text-align: center; font-size: 12px; font-weight: 600; color: var(--text-muted); }
+    .app { display: grid; grid-template-columns: 400px 1fr; height: 760px; }
+    .home { background: var(--bg0); border-right: 1px solid var(--bdr); display: flex; flex-direction: column; min-width: 0; }
+    .topbar { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px 10px; }
+    .brand-mark {
+      width: 44px; height: 44px; border-radius: 12px; background: var(--ink); color: var(--ink-fg);
+      display: inline-flex; align-items: center; justify-content: center;
+      font-weight: 600; font-size: 18px; letter-spacing: -.08em;
+    }
+    .round-action { width: 44px; height: 44px; border-radius: 12px; background: var(--bg1); border: 1px solid var(--bdr2); display: flex; align-items: center; justify-content: center; color: var(--text); }
+    .screen-title {
+      font-size: 18px; font-weight: 600; letter-spacing: var(--title-tracking);
+      background: rgba(255,255,255,.78); border: 1px solid rgba(255,255,255,.92);
+      border-radius: 999px; padding: 8px 24px; box-shadow: 0 8px 28px rgba(0,0,0,.08);
+    }
+    .search { margin: 4px 16px 12px; height: 40px; border-radius: 999px; background: var(--bg1); border: 1px solid var(--bdr); display: flex; align-items: center; padding: 0 14px; color: var(--text-soft); font-size: 15px; }
+    .filters { display: flex; gap: 8px; padding: 0 16px 12px; }
+    .pill { border: none; background: var(--bg2); color: var(--text-muted); font: 600 13px var(--font); padding: 7px 14px; border-radius: 999px; }
+    .pill.on { background: var(--accent-muted); color: var(--accent); }
+    .list { padding: 0 8px; display: flex; flex-direction: column; gap: 2px; }
+    .conv { display: flex; align-items: center; gap: 14px; padding: 10px 12px; border-radius: var(--radius-md); }
+    .conv.active { background: var(--bg2); }
+    .av-wrap { position: relative; flex-shrink: 0; }
+    .av {
+      width: 50px; height: 50px; border-radius: 50%; overflow: hidden;
+      background: var(--bg3); display: block;
+    }
+    .av img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .av.saved { display: flex; align-items: center; justify-content: center; background: var(--bg2); color: #343a42; border: 1px solid var(--bdr2); }
+    .online { position: absolute; right: -1px; bottom: -1px; width: 13px; height: 13px; border-radius: 50%; background: var(--success); border: 2px solid var(--bg0); }
+    .main { flex: 1; min-width: 0; }
+    .line { display: flex; align-items: center; gap: 8px; }
+    .name { font-size: 16px; font-weight: 600; letter-spacing: -.02em; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .time { font-size: 12px; color: var(--text-soft); }
+    .preview { font-size: 14px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 3px; flex: 1; }
+    .conv.unread .preview { color: var(--text); opacity: .85; }
+    .badge { min-width: 16px; height: 16px; border-radius: 999px; background: var(--notify); color: #fff; font-size: 9px; font-weight: 600; display: flex; align-items: center; justify-content: center; padding: 0 5px; }
+    .chat { position: relative; display: flex; flex-direction: column; background: var(--bg0); min-width: 0; }
+    .head { display: flex; align-items: center; gap: 10px; min-height: 64px; padding: 8px 16px; border-bottom: 1px solid var(--bdr); }
+    .head .av { width: 36px; height: 36px; }
+    .head b { font-size: 16px; letter-spacing: var(--title-tracking); display: block; }
+    .head small { font-size: 12px; color: var(--success); }
+    .head-right { margin-left: auto; display: flex; gap: 4px; }
+    .mini { width: 36px; height: 36px; border: none; border-radius: 10px; background: transparent; color: var(--text-muted); display: flex; align-items: center; justify-content: center; }
+    .msgs { flex: 1; padding: 20px 24px 108px; display: flex; flex-direction: column; }
+    .date { align-self: center; font-size: 12px; color: var(--text-muted); margin: 8px 0 16px; }
+    .row { display: flex; margin-bottom: 2px; }
+    .row.out { flex-direction: row-reverse; }
+    .row.gap { margin-top: 10px; }
+    .bubble { max-width: 68%; padding: 8px 13px; border-radius: 18px; font-size: 15px; line-height: 1.45; }
+    .bubble.in { background: var(--bubble-in); border-bottom-left-radius: 6px; }
+    .bubble.out { background: var(--bubble-out); color: var(--bubble-out-text); border-bottom-right-radius: 6px; }
+    .meta { float: right; margin: 3px 0 0 10px; font-size: 11px; opacity: .64; }
+    .voice { display: flex; align-items: center; gap: 10px; min-width: 220px; }
+    .play { width: 32px; height: 32px; border-radius: 50%; background: var(--ink); color: var(--ink-fg); display: flex; align-items: center; justify-content: center; }
+    .wave { display: flex; align-items: center; gap: 2px; height: 22px; }
+    .wave i { width: 3px; border-radius: 99px; background: currentColor; opacity: .7; }
+    .typing { display: flex; align-items: center; gap: 8px; margin-top: 14px; color: var(--text-muted); font-size: 13px; }
+    .typing .av { width: 22px; height: 22px; }
+    .dots { display: flex; gap: 3px; }
+    .dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--text-soft); animation: blink 1.2s infinite; }
+    .dots i:nth-child(2) { animation-delay: .15s; }
+    .dots i:nth-child(3) { animation-delay: .3s; }
+    @keyframes blink { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
+    .input-bar { position: absolute; left: 0; right: 0; bottom: 0; padding: 10px 14px 16px; display: flex; }
+    .inp { flex: 1; min-height: 52px; border-radius: 999px; background: rgba(255,255,255,.86); border: 1px solid rgba(255,255,255,.92); box-shadow: 0 8px 28px rgba(0,0,0,.08); display: flex; align-items: center; padding: 0 16px; color: var(--text-muted); font-size: 16px; }
+    .overlay { position: absolute; inset: 0; background: rgba(11,11,15,.42); display: none; align-items: center; justify-content: center; z-index: 20; padding: 16px; }
+    body.profile .overlay, body.safety .overlay { display: flex; }
+    body.profile .safety-card, body.safety .profile-card { display: none; }
+    .profile-card {
+      width: 400px; max-height: 680px;
+      background: var(--bg0); border: 1px solid var(--bdr); border-radius: var(--radius-lg);
+      box-shadow: 0 18px 48px rgba(20,20,20,.12); overflow: hidden; position: relative;
+    }
+    .up-close { position: absolute; top: 12px; right: 12px; width: 36px; height: 36px; border: none; border-radius: 10px; background: transparent; color: var(--text); font-size: 22px; }
+    .up-hero { display: flex; flex-direction: column; align-items: center; padding: 44px 24px 18px; text-align: center; }
+    .up-hero .av { width: 112px; height: 112px; }
+    .up-hero .online { width: 16px; height: 16px; border-width: 3px; right: 4px; bottom: 4px; }
+    .up-name { margin-top: 14px; font-size: 26px; font-weight: 600; letter-spacing: var(--title-tracking); }
+    .up-user { font-size: 15px; color: var(--text-muted); margin-top: 2px; }
+    .up-status { font-size: 13px; color: var(--success); font-weight: 600; margin-top: 4px; }
+    .up-bio { margin-top: 12px; font-size: 14px; line-height: 1.45; color: var(--text-muted); max-width: 22em; }
+    .up-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 4px 16px 16px; }
+    .up-action {
+      min-height: 72px; border: 1px solid var(--bdr); border-radius: 14px; background: var(--bg1);
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+      color: var(--text); font-size: 12px; font-weight: 600;
+    }
+    .up-action svg { width: 22px; height: 22px; }
+    .up-info { margin: 0 16px 16px; background: var(--bg1); border-radius: 14px; overflow: hidden; }
+    .up-row { min-height: 52px; display: flex; align-items: center; padding: 10px 14px; font-size: 16px; }
+    .up-row + .up-row { border-top: 1px solid var(--bdr); }
+    .up-row span { margin-left: auto; font-size: 15px; color: var(--text-muted); }
+    .safety-card { width: 400px; background: var(--bg1); border: 1px solid var(--bdr); border-radius: var(--radius-lg); box-shadow: 0 18px 48px rgba(20,20,20,.12); overflow: hidden; }
+    .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px; border-bottom: 1px solid var(--bdr); font-size: 17px; font-weight: 600; }
+    .modal-body { padding: 16px; }
+    .trust { font-size: 13px; font-weight: 600; color: var(--success); }
+    .lab { font-size: 13px; font-weight: 600; color: var(--text-muted); margin: 12px 0 6px; }
+    .val { background: var(--bg2); border-radius: 10px; padding: 10px 12px; font-family: ui-monospace, monospace; font-size: 14px; letter-spacing: .08em; }
+    .note { margin-top: 14px; font-size: 13px; color: var(--text-muted); line-height: 1.4; padding: 12px; background: var(--bg2); border-radius: 10px; }
+    .actions { display: flex; gap: 10px; padding: 8px 16px 16px; }
+    .btn { flex: 1; height: 44px; border: none; border-radius: 12px; font: 600 14px var(--font); }
+    .btn.sec { background: var(--bg2); } .btn.pri { background: var(--ink); color: var(--ink-fg); }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <div class="window">
+      <div class="chrome">
+        <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+        <div class="chrome-title">Chaos</div>
+      </div>
+      <div class="app">
+        <aside class="home">
+          <div class="topbar">
+            <span class="brand-mark">C</span>
+            <div class="screen-title">Chats</div>
+            <span class="round-action" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+            </span>
+          </div>
+          <div class="search">Search</div>
+          <div class="filters">
+            <span class="pill on">All</span>
+            <span class="pill">Direct</span>
+            <span class="pill">Groups</span>
+            <span class="pill">Unread</span>
+          </div>
+          <div class="list">
+            <div class="conv active">
+              <div class="av-wrap"><span class="av"><img src="avatars/ava-mira.png" alt=""></span><span class="online"></span></div>
+              <div class="main">
+                <div class="line"><div class="name">Mira Chen</div><div class="time">14:21</div></div>
+                <div class="preview">coming</div>
+              </div>
+            </div>
+            <div class="conv unread">
+              <div class="av-wrap"><span class="av"><img src="avatars/ava-studio.png" alt=""></span></div>
+              <div class="main">
+                <div class="line"><div class="name">Studio</div><div class="time">13:04</div></div>
+                <div class="line"><div class="preview">Alex: can someone lock up</div><span class="badge">2</span></div>
+              </div>
+            </div>
+            <div class="conv">
+              <div class="av-wrap"><span class="av saved"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3.4l2.7 5.5 6.1.9-4.4 4.3 1 6.1L12 17.3l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3.4z"/></svg></span></div>
+              <div class="main">
+                <div class="line"><div class="name">Saved Messages</div><div class="time">Mon</div></div>
+                <div class="preview">packing list</div>
+              </div>
+            </div>
+            <div class="conv">
+              <div class="av-wrap"><span class="av"><img src="avatars/ava-piotr.png" alt=""></span></div>
+              <div class="main">
+                <div class="line"><div class="name">Piotr Kowal</div><div class="time">Sun</div></div>
+                <div class="preview">tomorrow 11, same place</div>
+              </div>
+            </div>
+            <div class="conv">
+              <div class="av-wrap"><span class="av"><img src="avatars/ava-nadia.png" alt=""></span><span class="online"></span></div>
+              <div class="main">
+                <div class="line"><div class="name">Nadia R.</div><div class="time">Fri</div></div>
+                <div class="preview">Voice message</div>
+              </div>
+            </div>
+          </div>
+        </aside>
+        <section class="chat">
+          <div class="head">
+            <div class="av-wrap"><span class="av"><img src="avatars/ava-mira.png" alt=""></span><span class="online"></span></div>
+            <div><b>Mira Chen</b><small>online</small></div>
+            <div class="head-right">
+              <span class="mini">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l7 3v6c0 5-3.2 8.4-7 9.5C8.2 20.4 5 17 5 12V6l7-3z"/></svg>
+              </span>
+              <span class="mini">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.3 1.8.6 2.6a2 2 0 0 1-.5 2.1L8 9.6a16 16 0 0 0 6.4 6.4l1.2-1.2a2 2 0 0 1 2.1-.4c.8.2 1.7.4 2.6.6A2 2 0 0 1 22 16.9z"/></svg>
+              </span>
+            </div>
+          </div>
+          <div class="msgs">
+            <div class="date">Today</div>
+            <div class="row gap"><div class="bubble in">you still at the studio?<span class="meta">14:02</span></div></div>
+            <div class="row out gap"><div class="bubble out">wrapping in twenty<span class="meta">14:03 ✓✓</span></div></div>
+            <div class="row gap"><div class="bubble in">i’ll wait downstairs<span class="meta">14:04</span></div></div>
+            <div class="row out gap"><div class="bubble out">side door. front is locked<span class="meta">14:05 ✓✓</span></div></div>
+            <div class="row gap"><div class="bubble in"><div class="voice"><span class="play"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span><span class="wave"><i style="height:6px"></i><i style="height:14px"></i><i style="height:9px"></i><i style="height:18px"></i><i style="height:11px"></i><i style="height:16px"></i><i style="height:7px"></i><i style="height:13px"></i></span><span class="meta">0:07</span></div></div></div>
+            <div class="row out gap"><div class="bubble out">coming<span class="meta">14:21 ✓✓</span></div></div>
+            <div class="typing">
+              <span class="av"><img src="avatars/ava-mira.png" alt=""></span>
+              <span class="dots"><i></i><i></i><i></i></span>
+              Mira is typing
+            </div>
+          </div>
+          <div class="input-bar"><div class="inp">Message</div></div>
+          <div class="overlay">
+            <div class="profile-card">
+              <button class="up-close" type="button">×</button>
+              <div class="up-hero">
+                <div class="av-wrap"><span class="av"><img src="avatars/ava-mira.png" alt=""></span><span class="online"></span></div>
+                <div class="up-name">Mira Chen</div>
+                <div class="up-user">@mira</div>
+                <div class="up-status">online</div>
+                <p class="up-bio">Warsaw most weeks. Don’t call after midnight unless the building is on fire.</p>
+              </div>
+              <div class="up-actions">
+                <div class="up-action">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 1 0-12 0v3.2c0 .5-.2 1-.6 1.4L4 17h5"/><path d="M9 17v1a3 3 0 0 0 6 0v-1"/></svg>
+                  Mute
+                </div>
+                <div class="up-action">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg>
+                  Search
+                </div>
+                <div class="up-action">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l7 3v6c0 5-3.2 8.4-7 9.5C8.2 20.4 5 17 5 12V6l7-3z"/></svg>
+                  Verify
+                </div>
+              </div>
+              <div class="up-info">
+                <div class="up-row">Name in chats <span>Mira</span></div>
+                <div class="up-row">Chat background <span>Clean</span></div>
+              </div>
+            </div>
+            <div class="safety-card">
+              <div class="modal-head">Verify encryption<span style="font-weight:400;color:var(--text-muted)">×</span></div>
+              <div class="modal-body">
+                <div class="trust">Device verified</div>
+                <div class="lab">Numeric fingerprint</div>
+                <div class="val">26194  84027  11583<br>60331  97240  44816</div>
+                <div class="lab">Hex</div>
+                <div class="val" style="font-size:12px;letter-spacing:.04em">7F2A · C91E · 04B3 · D6AA</div>
+                <div class="note">Compare the code by voice or in person. Verify only after the codes match exactly.</div>
+              </div>
+              <div class="actions"><button class="btn sec">Copy</button><button class="btn pri">Done</button></div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+  <script>
+    const scene = new URLSearchParams(location.search).get("scene");
+    if (scene === "profile" || scene === "safety") document.body.classList.add(scene);
+  </script>
+</body>
+</html>

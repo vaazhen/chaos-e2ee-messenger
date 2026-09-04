@@ -32,6 +32,20 @@ Most team messengers are great collaboration tools and weak confidentiality tool
 
 It uses an original X3DH-inspired handshake and Double Ratchet-style protocol on WebCrypto. It is **not** Signal, not a Signal Protocol clone, and has **not** been independently audited. Treat it as a serious engineering product, not as a finished high-risk vault.
 
+<p align="center">
+  <img src="docs/assets/readme/chaos-chat.png" width="920" alt="Chaos desktop: Mira is online, a voice note in the thread, she is typing">
+</p>
+
+<p align="center">
+  <img src="docs/assets/readme/chaos-profile.png" width="448" alt="User profile: photo, @handle, online, bio, Mute Search Verify">
+  &nbsp;&nbsp;
+  <img src="docs/assets/readme/chaos-safety.png" width="448" alt="Verify encryption: Safety Number and device fingerprint">
+</p>
+
+<p align="center">
+  <img src="docs/assets/readme/chaos-auth.png" width="360" alt="Sign in with phone. Keys stay on this device.">
+</p>
+
 ---
 
 ## Why Chaos
@@ -77,43 +91,21 @@ Calls are on in local development. Production stays off until TURN sits in front
 
 Each device has its own identity. A send encrypts **once per destination device**, including your other devices. The server routes ciphertext. It never sees the AES-GCM key.
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant A as Alice device
-    participant API as Chaos API
-    participant DB as PostgreSQL
-    participant K as Kafka
-    participant B as Bob device
+<p align="center">
+  <img src="docs/diagrams/chaos-architecture.png" width="920" alt="Architecture: device encrypts, Caddy and API route ciphertext, plaintext and in-process notify are blocked">
+</p>
 
-    A->>API: Fetch Bob's pre-key bundles
-    API-->>A: Public identity, signed pre-key, one-time pre-key
-    Note over A: Verify signature · X3DH-inspired session · Double Ratchet
-    A->>A: AES-256-GCM envelope per device, versioned AAD
-    A->>API: Ciphertext envelopes
-    API->>DB: Message + envelopes + outbox (one transaction)
-    DB-->>K: Publish after commit
-    K-->>B: Durable device event, then STOMP notify
-    B->>B: Verify identity · ratchet · decrypt · store locally
-```
+<p align="center">
+  <img src="docs/diagrams/chaos-message-sequence.png" width="920" alt="Sequence: fetch pre-key bundles, encrypt on Alice, one transaction, Kafka event, decrypt on Bob">
+</p>
 
 Authenticated associated data binds ciphertext to protocol type, chat id, message index, previous chain length and ratchet public key. Tamper with the header, AES-GCM fails.
 
 Realtime is the fast path. Correctness is the device event log: after reconnect the client asks for everything after its cursor and ignores duplicate `eventId`s. If Kafka is down, outbox rows stay pending and retry. There is no in-process “just publish it” fallback.
 
-```mermaid
-flowchart LR
-    SEND[Send] --> TX[One DB transaction]
-    TX --> MSG[(Messages + envelopes)]
-    TX --> OUT[(Outbox)]
-    OUT --> K[Kafka]
-    K --> LOG[(Device event log)]
-    LOG --> WS[STOMP notify]
-    LOG --> SYNC["GET /api/realtime/sync"]
-    WS --> APPLY[Decrypt locally]
-    SYNC --> APPLY
-    APPLY --> CURSOR[Advance cursor]
-```
+<p align="center">
+  <img src="docs/diagrams/chaos-delivery.png" width="920" alt="Durable delivery: one DB transaction, outbox, Kafka event log, then STOMP notify and GET /realtime/sync, decrypt and drop duplicate ids">
+</p>
 
 Typing and presence are ephemeral. They do not go through the outbox.
 
@@ -143,14 +135,9 @@ A compromised OS, a malicious browser extension, injected JavaScript on a truste
 
 A new device starts unverified. Safety Number / QR moves it to verified. If that identity key later changes, the client does not shrug — it enters `KEY_CHANGED` until the user re-verifies or blocks.
 
-```mermaid
-stateDiagram-v2
-    [*] --> UNVERIFIED: new remote device
-    UNVERIFIED --> VERIFIED: Safety Number / QR
-    VERIFIED --> KEY_CHANGED: identity key changes
-    KEY_CHANGED --> VERIFIED: explicit re-verify
-    KEY_CHANGED --> BLOCKED: user rejects
-```
+<p align="center">
+  <img src="docs/diagrams/chaos-device-trust.png" width="920" alt="Device trust: UNVERIFIED, VERIFIED, KEY_CHANGED, BLOCKED">
+</p>
 
 Device enrollment uses a short-lived one-time registration token, consumed with `GETDEL`. That token is not the cryptographic identity. The key bundle is generated on the client.
 
