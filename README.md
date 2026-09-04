@@ -37,13 +37,7 @@ It uses an original X3DH-inspired handshake and Double Ratchet-style protocol on
 </p>
 
 <p align="center">
-  <img src="docs/assets/readme/chaos-profile.png" width="448" alt="User profile: photo, @handle, online, bio, Mute Search Verify">
-  &nbsp;&nbsp;
-  <img src="docs/assets/readme/chaos-safety.png" width="448" alt="Verify encryption: Safety Number and device fingerprint">
-</p>
-
-<p align="center">
-  <img src="docs/assets/readme/chaos-auth.png" width="360" alt="Sign in with phone. Keys stay on this device.">
+  <img src="docs/assets/readme/chaos-surfaces.png" width="920" alt="Sign in, user profile, and Safety Number verification — the three surfaces a person opens">
 </p>
 
 ---

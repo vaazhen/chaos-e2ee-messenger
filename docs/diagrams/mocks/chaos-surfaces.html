@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chaos · product surfaces</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper: #f3f3f0;
+      --color-paper-2: #ebebe6;
+      --color-ink: #141414;
+      --color-muted: #5c5c5a;
+      --color-soft: #8a8a84;
+      --color-rule: rgba(20,20,20,0.12);
+      --color-accent: #3a76f0;
+      --color-accent-tint: rgba(58,118,240,0.12);
+      --success: #1aa05d;
+      --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+      --font-serif: "Instrument Serif", "Times New Roman", serif;
+      --font-mono: "Geist Mono", ui-monospace, Menlo, monospace;
+    }
+    html, body { background: var(--color-paper); color: var(--color-ink); font-family: var(--font-sans); }
+    body { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 32px; }
+    .board {
+      width: 1280px;
+      background: var(--color-paper);
+      padding: 36px 40px 32px;
+    }
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 10px;
+    }
+    h1 {
+      font-family: var(--font-serif);
+      font-size: 2rem;
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+      margin-bottom: 28px;
+    }
+    .cols {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 28px;
+      align-items: start;
+    }
+    .col { display: flex; flex-direction: column; min-width: 0; }
+    .idx {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--color-soft);
+      margin-bottom: 8px;
+    }
+    .idx b { color: var(--color-accent); font-weight: 600; }
+    .stage {
+      background: var(--color-paper-2);
+      border: 1px solid var(--color-rule);
+      border-radius: 20px;
+      padding: 22px 18px 20px;
+      min-height: 560px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+    }
+    .caption { margin-top: 14px; }
+    .caption strong {
+      display: block;
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin-bottom: 4px;
+    }
+    .caption p { font-size: 13px; line-height: 1.45; color: var(--color-muted); }
+
+    .card {
+      width: 340px;
+      background: #fff;
+      border: 1px solid var(--color-rule);
+      border-radius: 20px;
+      box-shadow: 0 10px 28px rgba(20,20,20,.06);
+    }
+    .auth { padding: 28px 24px 24px; text-align: center; }
+    .mark {
+      width: 56px; height: 56px; margin: 0 auto 14px;
+      background: var(--color-ink); color: #f6f6f3;
+      border-radius: 22%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 24px; font-weight: 600; letter-spacing: -.08em;
+    }
+    .kicker {
+      font-size: 11px; font-weight: 600; letter-spacing: .16em;
+      text-transform: uppercase; color: var(--color-muted);
+    }
+    .auth h2 { font-size: 30px; font-weight: 600; letter-spacing: -.045em; margin: 4px 0 8px; }
+    .auth .sub { font-size: 13px; color: var(--color-muted); line-height: 1.45; margin-bottom: 20px; }
+    .field { text-align: left; }
+    .field label { display: block; font-size: 11px; font-weight: 600; color: var(--color-muted); margin-bottom: 8px; }
+    .phone {
+      height: 48px; border-radius: 16px; background: var(--color-paper-2);
+      display: flex; align-items: center; padding: 0 14px; gap: 10px;
+      box-shadow: 0 0 0 3px var(--color-accent-tint);
+      font-size: 15px;
+    }
+    .btn {
+      width: 100%; height: 44px; margin-top: 16px; border: none; border-radius: 12px;
+      background: var(--color-ink); color: #f6f6f3; font: 600 14px var(--font-sans);
+    }
+    .foot { margin-top: 14px; font-size: 12px; color: var(--color-muted); }
+
+    .profile { background: var(--color-paper); overflow: hidden; position: relative; }
+    .up-close { position: absolute; top: 10px; right: 10px; width: 32px; height: 32px; color: var(--color-ink); font-size: 20px; display: flex; align-items: center; justify-content: center; }
+    .up-hero { display: flex; flex-direction: column; align-items: center; padding: 36px 20px 14px; text-align: center; }
+    .av-wrap { position: relative; }
+    .av { width: 96px; height: 96px; border-radius: 50%; overflow: hidden; display: block; background: var(--color-paper-2); }
+    .av img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .online { position: absolute; right: 4px; bottom: 4px; width: 14px; height: 14px; border-radius: 50%; background: var(--success); border: 3px solid var(--color-paper); }
+    .up-name { margin-top: 12px; font-size: 24px; font-weight: 600; letter-spacing: -.045em; }
+    .up-user { font-size: 14px; color: var(--color-muted); }
+    .up-status { font-size: 12px; color: var(--success); font-weight: 600; margin-top: 2px; }
+    .up-bio { margin-top: 10px; font-size: 13px; line-height: 1.4; color: var(--color-muted); max-width: 22em; }
+    .up-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 4px 14px 14px; }
+    .up-action {
+      min-height: 64px; border: 1px solid var(--color-rule); border-radius: 12px; background: #fff;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+      font-size: 11px; font-weight: 600;
+    }
+    .up-action svg { width: 20px; height: 20px; }
+    .up-info { margin: 0 14px 14px; background: #fff; border-radius: 12px; overflow: hidden; }
+    .up-row { min-height: 44px; display: flex; align-items: center; padding: 8px 12px; font-size: 14px; }
+    .up-row + .up-row { border-top: 1px solid var(--color-rule); }
+    .up-row span { margin-left: auto; font-size: 13px; color: var(--color-muted); }
+
+    .safety { overflow: hidden; }
+    .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--color-rule); font-size: 16px; font-weight: 600; }
+    .modal-head span { font-weight: 400; color: var(--color-muted); }
+    .modal-body { padding: 14px 16px 8px; }
+    .trust { font-size: 12px; font-weight: 600; color: var(--success); }
+    .lab { font-size: 12px; font-weight: 600; color: var(--color-muted); margin: 12px 0 6px; }
+    .val {
+      background: var(--color-paper-2); border-radius: 10px; padding: 10px 12px;
+      font-family: var(--font-mono); font-size: 13px; letter-spacing: .06em;
+    }
+    .note { margin-top: 12px; font-size: 12px; color: var(--color-muted); line-height: 1.4; padding: 10px; background: var(--color-paper-2); border-radius: 10px; }
+    .actions { display: flex; gap: 8px; padding: 8px 16px 16px; }
+    .btn2 { flex: 1; height: 42px; border: none; border-radius: 12px; font: 600 13px var(--font-sans); }
+    .btn2.sec { background: var(--color-paper-2); color: var(--color-ink); }
+    .btn2.pri { background: var(--color-ink); color: #f6f6f3; }
+  </style>
+</head>
+<body>
+  <div class="board">
+    <p class="eyebrow">Surfaces · Sign in · Profile · Verify</p>
+    <h1>The three rooms a person actually opens</h1>
+    <div class="cols">
+      <div class="col">
+        <div class="idx"><b>01</b> · Sign in</div>
+        <div class="stage">
+          <div class="card auth">
+            <div class="mark">C</div>
+            <p class="kicker">Self-hosted · E2EE</p>
+            <h2>Chaos</h2>
+            <p class="sub">Sign in with your phone. Keys stay on this device.</p>
+            <div class="field">
+              <label>Phone</label>
+              <div class="phone">🇷🇺 +7 &nbsp; 999 123 45 67</div>
+            </div>
+            <button class="btn" type="button">Continue</button>
+            <p class="foot">One-time code · then a device identity</p>
+          </div>
+        </div>
+        <div class="caption">
+          <strong>Phone in. Keys stay here.</strong>
+          <p>A one-time code enrolls this device. The identity key never leaves the machine.</p>
+        </div>
+      </div>
+      <div class="col">
+        <div class="idx"><b>02</b> · Profile</div>
+        <div class="stage">
+          <div class="card profile">
+            <div class="up-close">×</div>
+            <div class="up-hero">
+              <div class="av-wrap"><span class="av"><img src="avatars/ava-mira.png" alt=""></span><span class="online"></span></div>
+              <div class="up-name">Mira Chen</div>
+              <div class="up-user">@mira</div>
+              <div class="up-status">online</div>
+              <p class="up-bio">Warsaw most weeks. Don’t call after midnight unless the building is on fire.</p>
+            </div>
+            <div class="up-actions">
+              <div class="up-action">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 1 0-12 0v3.2c0 .5-.2 1-.6 1.4L4 17h5"/><path d="M9 17v1a3 3 0 0 0 6 0v-1"/></svg>
+                Mute
+              </div>
+              <div class="up-action">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg>
+                Search
+              </div>
+              <div class="up-action">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l7 3v6c0 5-3.2 8.4-7 9.5C8.2 20.4 5 17 5 12V6l7-3z"/></svg>
+                Verify
+              </div>
+            </div>
+            <div class="up-info">
+              <div class="up-row">Name in chats <span>Mira</span></div>
+              <div class="up-row">Chat background <span>Clean</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="caption">
+          <strong>Who you are talking to.</strong>
+          <p>Photo, handle, presence, bio. Mute, search, or open the Safety Number from here.</p>
+        </div>
+      </div>
+      <div class="col">
+        <div class="idx"><b>03</b> · Verify</div>
+        <div class="stage">
+          <div class="card safety">
+            <div class="modal-head">Verify encryption<span>×</span></div>
+            <div class="modal-body">
+              <div class="trust">Device verified</div>
+              <div class="lab">Numeric fingerprint</div>
+              <div class="val">26194&nbsp;&nbsp;84027&nbsp;&nbsp;11583<br>60331&nbsp;&nbsp;97240&nbsp;&nbsp;44816</div>
+              <div class="lab">Hex</div>
+              <div class="val" style="font-size:12px;letter-spacing:.04em">7F2A · C91E · 04B3 · D6AA</div>
+              <div class="note">Compare the code by voice or in person. Verify only after the codes match exactly.</div>
+            </div>
+            <div class="actions"><button class="btn2 sec" type="button">Copy</button><button class="btn2 pri" type="button">Done</button></div>
+          </div>
+        </div>
+        <div class="caption">
+          <strong>Safety Number, not a shrug.</strong>
+          <p>Match the fingerprint in person. A rotated identity key goes to KEY_CHANGED, not silent trust.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

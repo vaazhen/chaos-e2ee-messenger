@@ -37,13 +37,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/readme/chaos-profile.png" width="448" alt="Профиль: фото, @handle, online, bio, Mute Search Verify">
-  &nbsp;&nbsp;
-  <img src="docs/assets/readme/chaos-safety.png" width="448" alt="Проверка шифрования: Safety Number и отпечаток устройства">
-</p>
-
-<p align="center">
-  <img src="docs/assets/readme/chaos-auth.png" width="360" alt="Вход по телефону. Ключи остаются на устройстве.">
+  <img src="docs/assets/readme/chaos-surfaces.png" width="920" alt="Вход, профиль и Safety Number — три экрана, которые человек реально открывает">
 </p>
 
 ---
