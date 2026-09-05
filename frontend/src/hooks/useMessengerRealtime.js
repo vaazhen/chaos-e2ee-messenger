@@ -133,7 +133,11 @@ export function useMessengerRealtime({
       }
     },
 
-    onRequestsUpdate: () => {
+    onRequestsUpdate: (evt) => {
+      const reason = evt?.reason;
+      if (reason === "request_accepted" || reason === "request_declined") {
+        scheduleChatsRefresh();
+      }
       scheduleRequestsRefresh();
     },
 

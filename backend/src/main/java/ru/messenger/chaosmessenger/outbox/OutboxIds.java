@@ -2,6 +2,7 @@ package ru.messenger.chaosmessenger.outbox;
 
 import java.util.Locale;
 import java.util.Set;
+import java.util.UUID;
 
 public final class OutboxIds {
 
@@ -32,10 +33,17 @@ public final class OutboxIds {
     }
 
     public static String chatKey(Long chatId, String reason) {
+        return eventKey("chat", chatId, reason);
+    }
+
+    public static String eventKey(String aggregate, Long chatId, String reason) {
         String normalized = reason == null ? "CHAT" : reason.toUpperCase(Locale.ROOT);
+        String prefix = aggregate == null || aggregate.isBlank()
+                ? "chat"
+                : aggregate.toLowerCase(Locale.ROOT);
         if (ONE_SHOT_CHAT_REASONS.contains(normalized)) {
-            return key("chat", chatId, normalized);
+            return key(prefix, chatId, normalized);
         }
-        return key("chat", chatId, normalized, System.currentTimeMillis());
+        return key(prefix, chatId, normalized, UUID.randomUUID());
     }
 }

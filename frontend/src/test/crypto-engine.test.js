@@ -297,6 +297,11 @@ describe("Double Ratchet full protocol cycle", () => {
     await activateDevice(Alice, aliceSessions);
     await expect(window.e2ee.decryptEnvelope({ ...env2, senderDeviceId: Bob.deviceId }))
       .resolves.toBe("hello from bob");
+
+    const nrAfter = getSessions()[Bob.deviceId]?.Nr;
+    await expect(window.e2ee.decryptEnvelope({ ...env2, senderDeviceId: Bob.deviceId }))
+      .rejects.toThrow();
+    expect(getSessions()[Bob.deviceId]?.Nr).toBe(nrAfter);
   }, 30000);
 
   it("decrypts after the server strips client-only _chatId when the caller rebinds chat context", async () => {

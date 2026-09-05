@@ -7,6 +7,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -54,13 +56,10 @@ public class AttachmentController {
         if (!attachmentAccessService.canUpload(chatId, user.getId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied to chat attachments");
         }
-        // Uses getBytes() — acceptable for the configured max-file-size (20 MB default).
-        // For larger files or production at scale, replace with streaming InputStream
-        // and delegate to S3 multipart upload via AttachmentStorageService.
         String attachmentId = attachmentStorageService.upload(
                 user.getId(),
                 chatId,
-                file.getBytes(),
+                file.getInputStream(),
                 MediaType.APPLICATION_OCTET_STREAM_VALUE
         );
         return Map.of("attachmentId", attachmentId);
@@ -68,7 +67,7 @@ public class AttachmentController {
 
     @Operation(summary = "Download encrypted file")
     @GetMapping("/{attachmentId}")
-    public ResponseEntity<byte[]> download(@PathVariable String attachmentId, Authentication auth) throws IOException {
+    public ResponseEntity<Resource> download(@PathVariable String attachmentId, Authentication auth) throws IOException {
         EncryptedAttachment attachment = attachmentStorageService.findByAttachmentId(attachmentId);
 
         User currentUser = userIdentityService.require(auth.getName());
@@ -77,14 +76,12 @@ public class AttachmentController {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied to attachment");
         }
 
-        byte[] data = attachmentStorageService.download(attachmentId);
-
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         "attachment; filename=\"encrypted-" + attachmentId + ".bin\"")
                 .header(HttpHeaders.CACHE_CONTROL, "no-store, max-age=0")
                 .header("X-Content-Type-Options", "nosniff")
-                .body(data);
+                .body(new FileSystemResource(attachmentStorageService.payloadPath(attachmentId)));
     }
 }

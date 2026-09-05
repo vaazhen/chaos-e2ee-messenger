@@ -41,7 +41,7 @@ public class AuthPhoneController {
     @Operation(summary = "Check whether an account exists for the given phone number")
     @GetMapping("/exists")
     public AccountExistsResponse exists(@RequestParam("phone") String phone, HttpServletRequest request) {
-        credentialRateLimiter.checkIp(clientIp(request), "lookup");
+        credentialRateLimiter.checkLookup(clientIp(request));
         return authService.accountExists(phone);
     }
 
@@ -55,7 +55,7 @@ public class AuthPhoneController {
             @RequestParam("username") String username,
             HttpServletRequest request
     ) {
-        credentialRateLimiter.checkIp(clientIp(request), "lookup");
+        credentialRateLimiter.checkLookup(clientIp(request));
         return authService.usernameAvailable(username);
     }
 
@@ -71,14 +71,19 @@ public class AuthPhoneController {
 
     @Operation(summary = "Verify SMS code")
     @PostMapping("/verify-code")
-    public VerifyCodeResponse verifyCode(@Valid @RequestBody VerifyCodeRequest request, HttpServletResponse response) {
+    public VerifyCodeResponse verifyCode(
+            @Valid @RequestBody VerifyCodeRequest request,
+            HttpServletRequest httpRequest,
+            HttpServletResponse response
+    ) {
+        credentialRateLimiter.checkVerify(clientIp(httpRequest));
         VerifyCodeResponse auth = authService.verifyCode(request.phone(), request.code());
         refreshCookieService.write(response, auth.refreshToken());
         return withoutRefreshToken(auth);
     }
 
     public VerifyCodeResponse verifyCode(VerifyCodeRequest request) {
-        return verifyCode(request, null);
+        return verifyCode(request, null, null);
     }
 
     @Operation(summary = "Complete phone registration")

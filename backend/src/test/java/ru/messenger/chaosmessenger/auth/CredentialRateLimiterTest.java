@@ -49,6 +49,17 @@ class CredentialRateLimiterTest {
     }
 
     @Test
+    void lookupLimitIsTighterThanGenericIpLimit() {
+        RedisTemplate<String, String> redis = mock(RedisTemplate.class);
+        when(redis.execute(any(), anyList(), anyString())).thenReturn(21L);
+        CredentialRateLimiter limiter = new CredentialRateLimiter(redis);
+
+        assertThatThrownBy(() -> limiter.checkLookup("203.0.113.9"))
+                .isInstanceOf(RateLimitException.class)
+                .hasMessageContaining("lookup");
+    }
+
+    @Test
     void resetDeletesOnlyHashedRateKey() {
         RedisTemplate<String, String> redis = mock(RedisTemplate.class);
         CredentialRateLimiter limiter = new CredentialRateLimiter(redis);

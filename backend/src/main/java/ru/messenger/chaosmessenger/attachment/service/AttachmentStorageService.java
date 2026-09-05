@@ -13,6 +13,8 @@ import ru.messenger.chaosmessenger.attachment.domain.EncryptedAttachment;
 import ru.messenger.chaosmessenger.attachment.repository.EncryptedAttachmentRepository;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -56,14 +58,19 @@ public class AttachmentStorageService {
 
     @Transactional
     public String upload(Long uploaderId, Long chatId, byte[] encryptedData, String contentType) throws IOException {
-        if (uploaderId == null) {
-            throw new IllegalArgumentException("Uploader is required");
-        }
         if (encryptedData == null || encryptedData.length == 0) {
             throw new IllegalArgumentException("Encrypted attachment is empty");
         }
-        if (encryptedData.length > maxBytes) {
-            throw new IllegalArgumentException("Encrypted attachment exceeds the configured limit");
+        return upload(uploaderId, chatId, new java.io.ByteArrayInputStream(encryptedData), contentType);
+    }
+
+    @Transactional
+    public String upload(Long uploaderId, Long chatId, InputStream encryptedData, String contentType) throws IOException {
+        if (uploaderId == null) {
+            throw new IllegalArgumentException("Uploader is required");
+        }
+        if (encryptedData == null) {
+            throw new IllegalArgumentException("Encrypted attachment is empty");
         }
 
         String attachmentId = UUID.randomUUID().toString();
@@ -71,7 +78,10 @@ public class AttachmentStorageService {
         Path tempPath = Files.createTempFile(storageRoot, ".upload-", ".tmp");
         boolean moved = false;
         try {
-            Files.write(tempPath, encryptedData);
+            long written = copyCapped(encryptedData, tempPath);
+            if (written == 0) {
+                throw new IllegalArgumentException("Encrypted attachment is empty");
+            }
             moveAtomically(tempPath, finalPath);
             moved = true;
 
@@ -85,14 +95,14 @@ public class AttachmentStorageService {
                     attachmentId,
                     uploaderId,
                     chatId,
-                    (long) encryptedData.length,
+                    written,
                     contentType,
                     attachmentId
             );
 
             deleteFileIfTransactionRollsBack(finalPath);
             log.debug("Stored encrypted attachment {} ({} bytes) for user {}",
-                    attachmentId, encryptedData.length, uploaderId);
+                    attachmentId, written, uploaderId);
             return attachmentId;
         } catch (RuntimeException | IOException e) {
             if (moved) {
@@ -104,7 +114,7 @@ public class AttachmentStorageService {
         }
     }
 
-    public byte[] download(String attachmentId) throws IOException {
+    public Path payloadPath(String attachmentId) throws IOException {
         validateAttachmentId(attachmentId);
         attachmentRepository.findByAttachmentId(attachmentId)
                 .orElseThrow(() -> new IllegalArgumentException("Attachment not found"));
@@ -113,7 +123,27 @@ public class AttachmentStorageService {
         if (!Files.isRegularFile(filePath)) {
             throw new IllegalArgumentException("Attachment payload not found");
         }
-        return Files.readAllBytes(filePath);
+        return filePath;
+    }
+
+    public byte[] download(String attachmentId) throws IOException {
+        return Files.readAllBytes(payloadPath(attachmentId));
+    }
+
+    private long copyCapped(InputStream encryptedData, Path tempPath) throws IOException {
+        long written = 0;
+        try (OutputStream out = Files.newOutputStream(tempPath)) {
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = encryptedData.read(buffer)) >= 0) {
+                written += read;
+                if (written > maxBytes) {
+                    throw new IllegalArgumentException("Encrypted attachment exceeds the configured limit");
+                }
+                out.write(buffer, 0, read);
+            }
+        }
+        return written;
     }
 
     public EncryptedAttachment findByAttachmentId(String attachmentId) {

@@ -40,7 +40,8 @@ public class AuthService {
     @Transactional(readOnly = true)
     public AccountExistsResponse accountExists(String phone) {
         String normalized = normalizePhone(phone);
-        return new AccountExistsResponse(userRepository.existsByPhone(normalized), normalized);
+        boolean exists = userRepository.existsByPhone(normalized);
+        return new AccountExistsResponse(exists, "");
     }
 
     @Transactional(readOnly = true)

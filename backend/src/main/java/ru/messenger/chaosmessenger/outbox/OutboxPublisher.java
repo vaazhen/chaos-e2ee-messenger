@@ -122,7 +122,7 @@ public class OutboxPublisher {
         }
     }
 
-    private String partitionKey(OutboxEvent event) {
+    String partitionKey(OutboxEvent event) {
         if ("message".equalsIgnoreCase(event.getAggregateType())
                 || "chat".equalsIgnoreCase(event.getAggregateType())
                 || "request".equalsIgnoreCase(event.getAggregateType())) {

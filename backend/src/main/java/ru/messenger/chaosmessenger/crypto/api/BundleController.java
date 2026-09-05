@@ -11,6 +11,7 @@ import ru.messenger.chaosmessenger.crypto.device.CurrentDeviceService;
 import ru.messenger.chaosmessenger.crypto.dto.DeviceBundleDto;
 import ru.messenger.chaosmessenger.crypto.dto.PreKeyBundleResponse;
 import ru.messenger.chaosmessenger.crypto.dto.ResolvedChatDevicesResponse;
+import ru.messenger.chaosmessenger.auth.service.CredentialRateLimiter;
 import ru.messenger.chaosmessenger.crypto.prekey.PreKeyService;
 
 @RestController
@@ -20,6 +21,7 @@ public class BundleController {
 
     private final PreKeyService preKeyService;
     private final CurrentDeviceService currentDeviceService;
+    private final CredentialRateLimiter credentialRateLimiter;
 
     @GetMapping("/bundle/{username}")
     public PreKeyBundleResponse getBundle(@PathVariable String username, Authentication authentication) {
@@ -40,6 +42,7 @@ public class BundleController {
             Authentication authentication
     ) {
         currentDeviceService.requireCurrentDevice();
+        credentialRateLimiter.checkUserAction(authentication.getName(), "prekey");
         return preKeyService.reserveChatDeviceOneTimePreKey(authentication.getName(), chatId, targetDeviceId);
     }
 }

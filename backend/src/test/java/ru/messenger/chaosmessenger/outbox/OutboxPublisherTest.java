@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -83,6 +84,19 @@ class OutboxPublisherTest {
 
         verify(kafka).send(eq("chaos.message.events"), eq("10"), any(DomainEvent.class));
         verify(outboxService).markPublished(12L);
+    }
+
+    @Test
+    void partitionKeyKeepsAChatOnOnePartition() {
+        OutboxEvent first = event(1L, "message", "42", "MESSAGE_CREATED");
+        OutboxEvent second = event(2L, "message", "42", "MESSAGE_EDITED");
+        OutboxEvent otherChat = event(3L, "chat", "99", "CHAT_CREATED");
+
+        assertThat(publisher.partitionKey(first)).isEqualTo("42");
+        assertThat(publisher.partitionKey(second)).isEqualTo("42");
+        assertThat(publisher.partitionKey(otherChat)).isEqualTo("99");
+        assertThat(publisher.partitionKey(event(4L, "user", "7", "PROFILE_UPDATED")))
+                .isEqualTo("user:7");
     }
 
     @Test
