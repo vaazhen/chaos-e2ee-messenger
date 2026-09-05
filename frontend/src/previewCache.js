@@ -4,6 +4,8 @@ const PREVIEW_PREFIX = "cm_decrypted_preview";
 const INDEX_PREFIX = "cm_decrypted_preview_index";
 const MAX_INDEX_SIZE = 500;
 
+const memory = new Map();
+
 function normalize(value, fallback = "unknown") {
   return value === null || value === undefined || value === "" ? fallback : String(value);
 }
@@ -26,26 +28,25 @@ function indexKey({ userId, deviceId }) {
   ].join(":");
 }
 
-function readJson(key, fallback) {
+function scrubLegacyLocalStorage() {
   try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
-  } catch (_) {
-    return fallback;
-  }
+    const doomed = [];
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (key && (key.startsWith(PREVIEW_PREFIX) || key.startsWith(INDEX_PREFIX))) {
+        doomed.push(key);
+      }
+    }
+    doomed.forEach((key) => localStorage.removeItem(key));
+  } catch (_) { /* storage may be unavailable */ }
 }
 
-function writeJson(key, value) {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch (_) { /* ignore optional failure */ }
-}
+scrubLegacyLocalStorage();
 
 function rememberKey({ userId, deviceId }, key) {
-  const idxKey = indexKey({ userId, deviceId });
-  const current = readJson(idxKey, []);
-  const next = [key, ...current.filter(item => item !== key)].slice(0, MAX_INDEX_SIZE);
-  writeJson(idxKey, next);
+  const idx = indexKey({ userId, deviceId });
+  const current = memory.get(idx) || [];
+  memory.set(idx, [key, ...current.filter((item) => item !== key)].slice(0, MAX_INDEX_SIZE));
 }
 
 export function saveMessagePreview({ userId, deviceId = getOrCreateDeviceId(), chatId, messageId, preview, createdAt, isOut }) {
@@ -53,8 +54,9 @@ export function saveMessagePreview({ userId, deviceId = getOrCreateDeviceId(), c
   const cleanPreview = String(preview || "").trim();
   if (!cleanPreview || cleanPreview === "[encrypted]") return;
 
+  scrubLegacyLocalStorage();
   const key = previewKey({ userId, deviceId, chatId, messageId });
-  writeJson(key, {
+  memory.set(key, {
     preview: cleanPreview,
     createdAt: createdAt || null,
     isOut: Boolean(isOut),
@@ -65,17 +67,16 @@ export function saveMessagePreview({ userId, deviceId = getOrCreateDeviceId(), c
 
 export function loadMessagePreview({ userId, deviceId = getOrCreateDeviceId(), chatId, messageId }) {
   if (!chatId || !messageId) return null;
-  const value = readJson(previewKey({ userId, deviceId, chatId, messageId }), null);
+  const value = memory.get(previewKey({ userId, deviceId, chatId, messageId }));
   return value?.preview ? value : null;
 }
 
 export function clearPreviewCacheForUser(userId, deviceId = getOrCreateDeviceId()) {
-  const idxKey = indexKey({ userId, deviceId });
-  const keys = readJson(idxKey, []);
+  const idx = indexKey({ userId, deviceId });
+  const keys = memory.get(idx) || [];
   if (Array.isArray(keys)) {
-    keys.forEach(key => {
-      try { localStorage.removeItem(key); } catch (_) { /* ignore optional failure */ }
-    });
+    keys.forEach((key) => memory.delete(key));
   }
-  try { localStorage.removeItem(idxKey); } catch (_) { /* ignore optional failure */ }
+  memory.delete(idx);
+  scrubLegacyLocalStorage();
 }

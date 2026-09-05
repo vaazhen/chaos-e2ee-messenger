@@ -3,6 +3,7 @@ import Ava from "./Ava";
 import { ChevronDownIcon } from "./Icons";
 import { MsgRow } from "./MsgRow";
 import { getTime } from "../helpers";
+import { visibleMessageText } from "../messageModel";
 
 const chatScrollStore = new Map();
 const NEAR_BOTTOM_PX = 140;
@@ -192,7 +193,7 @@ export default function MessageList({
               : "standalone";
         const sender = resolveIncomingSender(activeChat, msg, isOut);
         const isEnter = isOut && idx === msgs.length - 1;
-        const text = msg._text ?? msg.content ?? "[encrypted]";
+        const text = visibleMessageText(msg);
         const time = msg._time ?? getTime(msg.createdAt);
         const reactions = msg.reactions || {};
         const myReactions = msg.myReactions || [];

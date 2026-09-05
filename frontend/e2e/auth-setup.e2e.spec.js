@@ -29,6 +29,7 @@ async function mockApi(page, state = {}) {
     }
 
     if (pathname === "/auth/login" && method === "POST") {
+      state.allowRefresh = true;
       return route.fulfill(json({
         status: "ok",
         exists: true,
@@ -68,6 +69,7 @@ async function mockApi(page, state = {}) {
     }
 
     if (pathname === "/auth/complete-setup" && method === "POST") {
+      state.allowRefresh = true;
       return route.fulfill(json({
         status: "ok",
         exists: true,
@@ -82,6 +84,9 @@ async function mockApi(page, state = {}) {
     }
 
     if (pathname === "/auth/refresh" && method === "POST") {
+      if (!state.allowRefresh && !state.forceDeviceRecovery) {
+        return route.fulfill(json({ message: "no session" }, 401));
+      }
       state.refreshCount = (state.refreshCount || 0) + 1;
 
       if (state.refreshCount === 1 && state.forceDeviceRecovery) {
@@ -134,6 +139,14 @@ async function mockApi(page, state = {}) {
       return route.fulfill(json([]));
     }
 
+    if (pathname === "/chats/requests") {
+      return route.fulfill(json([]));
+    }
+
+    if (pathname === "/realtime/sync" || pathname.startsWith("/crypto/devices/current/prekeys")) {
+      return route.fulfill(json({ events: [], nextAfter: 0, available: 80 }));
+    }
+
     return route.fulfill(json({
       message: `Unhandled mocked API route: ${method} ${pathname}`,
     }, 500));
@@ -151,7 +164,7 @@ test.describe("auth/setup browser flow", () => {
     await page.locator('input[type="password"]').fill("secret123");
     await page.getByRole("button", { name: /Sign in/i }).click();
 
-    await expect(page.getByText(/Чаты|Chats/i)).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Чаты|Chats/i })).toBeVisible();
 
     await expect.poll(async () => page.evaluate(() => sessionStorage.getItem("cm_token"))).toBeNull();
     await expect.poll(async () => page.evaluate(() => localStorage.getItem("cm_refresh_token"))).toBeNull();
@@ -192,7 +205,7 @@ test.describe("auth/setup browser flow", () => {
 
     await page.getByRole("button", { name: /Enter messenger/ }).click();
 
-    await expect(page.getByText(/Чаты|Chats/i)).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Чаты|Chats/i })).toBeVisible();
 
     await expect.poll(async () => page.evaluate(() => sessionStorage.getItem("cm_token"))).toBeNull();
     await expect.poll(async () => page.evaluate(() => localStorage.getItem("cm_refresh_token"))).toBeNull();
@@ -217,7 +230,7 @@ test.describe("auth/setup browser flow", () => {
 
     await page.goto("/");
 
-    await expect(page.getByText(/Чаты|Chats/i)).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Чаты|Chats/i })).toBeVisible();
 
     expect(state.refreshCount).toBeGreaterThanOrEqual(1);
     expect(state.deviceRegisterCount).toBeGreaterThanOrEqual(1);

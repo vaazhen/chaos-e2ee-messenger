@@ -47,6 +47,7 @@ const mockBundle = {
 
 beforeEach(() => {
   vi.resetModules();
+  mockCrypto.subtle.decrypt.mockClear();
   vi.stubGlobal('crypto', mockCrypto);
   vi.stubGlobal('btoa', vi.fn((s) => Buffer.from(s, 'binary').toString('base64')));
   vi.stubGlobal('atob', vi.fn((s) => Buffer.from(s, 'base64').toString('binary')));
@@ -92,6 +93,18 @@ describe('decryptBackup', () => {
     );
     expect(result).toEqual(expect.objectContaining({ version: 1, deviceId: 'test-device' }));
     expect(mockCrypto.subtle.decrypt).toHaveBeenCalled();
+  });
+
+  it("rejects a backup whose checksum does not match the payload", async () => {
+    const mod = await import("../backup");
+    await expect(mod.decryptBackup(
+      Buffer.from("encrypted").toString("base64"),
+      Buffer.from("salt123456789012345678901234567890").toString("base64"),
+      Buffer.from("iv1234567890").toString("base64"),
+      "test-passphrase",
+      "not-the-real-checksum",
+    )).rejects.toThrow("Backup checksum mismatch");
+    expect(mockCrypto.subtle.decrypt).not.toHaveBeenCalled();
   });
 });
 

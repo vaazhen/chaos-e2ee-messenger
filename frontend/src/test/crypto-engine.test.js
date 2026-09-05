@@ -9,7 +9,7 @@ function b64urlJson(value) {
 
 async function loadCryptoEngine() {
   vi.resetModules();
-  await import("../crypto-engine.ts");
+  return import("../crypto-engine.ts");
 }
 
 function bytesToB64(bytes) {
@@ -60,6 +60,14 @@ describe("crypto-engine frontend safety checks", () => {
     vi.stubGlobal("indexedDB", undefined);
   });
 
+  it("exports a module engine and leaves a pre-bound window adapter in place", async () => {
+    window.e2ee = { getOrCreateDeviceId: () => "stub-device" };
+    const { e2ee } = await loadCryptoEngine();
+    expect(window.e2ee.getOrCreateDeviceId()).toBe("stub-device");
+    expect(e2ee.buildFanoutRequest).toEqual(expect.any(Function));
+    expect(e2ee).not.toBe(window.e2ee);
+  });
+
   it("migrates legacy private state to secure storage and removes it from localStorage", async () => {
     const bundle = testBundle();
     const sessions = { "device:a:remote:b": { Ns: 1 } };
@@ -68,8 +76,9 @@ describe("crypto-engine frontend safety checks", () => {
     localStorage.setItem("cm_device_bundle_v2:alice", JSON.stringify(bundle));
     localStorage.setItem("cm_e2ee_sessions_v5:alice", JSON.stringify(sessions));
 
-    await loadCryptoEngine();
+    const { e2ee } = await loadCryptoEngine();
 
+    expect(e2ee).toBe(window.e2ee);
     expect(localStorage.getItem("cm_device_id")).toBe(bundle.deviceId);
     expect(window.e2ee.getLocalDeviceBundle()).toEqual(bundle);
     expect(window.e2ee.__exportSessionStateForTests()).toEqual(sessions);

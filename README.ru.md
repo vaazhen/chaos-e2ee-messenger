@@ -265,11 +265,13 @@ CI проверяет backend и frontend, гоняет CodeQL, публикуе
 
 ## Roadmap
 
-1. Добить strict TypeScript-миграцию crypto-движка  
+1. Crypto-движок — strict TypeScript-модуль; hex-векторы AAD v2 в [docs/protocol.md](docs/protocol.md)  
 2. Production object storage для ciphertext  
 3. Production TURN, устойчивый call state, групповые звонки  
 4. Внешний pentest и криптоаудит  
-5. Формальная спецификация протокола и тестовые векторы  
+5. Формальная спецификация протокола — черновик и закреплённые векторы в [docs/protocol.md](docs/protocol.md)  
+
+Не расти поверхность продукта (групповые звонки, новые транспорты), пока нет внешнего ревью.
 
 ---
 

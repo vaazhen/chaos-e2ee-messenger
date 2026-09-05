@@ -6,18 +6,63 @@ import {
     clearSecureStorageForTests,
     secureStorageBackend
 } from "./secure-storage.js";
-import type { AADContext } from "./types/protocol";
+import { buildEnvelopeAAD } from "./envelopeAad";
+import type {
+    AADContext,
+    CryptoApi,
+    CryptoEngine,
+    DecryptEnvelope,
+    DeviceBundle,
+    DhRatchetKeyPair,
+    EncryptedEnvelope,
+    PreKey,
+    RatchetSession,
+    RemoteIdentityTrust,
+    TargetDevice,
+    TrustState,
+    VerificationMethod
+} from "./types/protocol";
 
-type VerificationMethod = 'MANUAL' | 'SAFETY_NUMBER' | 'QR_CODE';
+type SessionMap = Record<string, RatchetSession>;
+type TrustMap = Record<string, RemoteIdentityTrust>;
 
-await (async function () {
+interface PrekeyPoolResponse {
+    available?: unknown;
+}
+
+interface ResolveChatDevicesResponse {
+    targetDevices?: TargetDevice[];
+}
+
+interface ReservePrekeyResponse {
+    signedPreKey?: PreKey | null;
+    oneTimePreKey?: PreKey | null;
+}
+
+function errorMessage(error: unknown): string {
+    if (error instanceof Error) return error.message;
+    return error == null ? '' : String(error);
+}
+
+function errorStatus(error: unknown): number {
+    if (error && typeof error === 'object' && 'status' in error) {
+        return Number((error as { status?: unknown }).status);
+    }
+    return Number.NaN;
+}
+
+function cryptoSource(bytes: Uint8Array): BufferSource {
+    return bytes as unknown as BufferSource;
+}
+
+async function createCryptoEngine(): Promise<CryptoEngine> {
     // ─── UUID helper — works in both secure (https/localhost) and non-secure (http+IP) contexts ───
-    function safeUUID() {
+    function safeUUID(): string {
         if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
             return crypto.randomUUID();
         }
         return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-            var r = crypto.getRandomValues(new Uint8Array(1))[0] % 16;
+            const r = (crypto.getRandomValues(new Uint8Array(1))[0] ?? 0) % 16;
             return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
         });
     }
@@ -44,22 +89,22 @@ await (async function () {
     const MAX_SKIP             = 2000;
     const MAX_STORED_SKIPPED_KEYS = 4000;
 
-    let registrationPromise = null;
-    let registrationPromiseUsername = null;
+    let registrationPromise: Promise<DeviceBundle> | null = null;
+    let registrationPromiseUsername: string | null = null;
 
     // ─── Base64 utilities ───────────────────────────────────────────────────────
 
-    function b64ToBytes(base64) {
+    function b64ToBytes(base64: string): Uint8Array {
         return Uint8Array.from(atob(normalizeB64(base64)), c => c.charCodeAt(0));
     }
 
-    function bytesToB64(bytes) {
+    function bytesToB64(bytes: Uint8Array): string {
         let binary = '';
         bytes.forEach(b => binary += String.fromCharCode(b));
         return btoa(binary);
     }
 
-    function normalizeB64(value) {
+    function normalizeB64(value: unknown): string {
         if (value == null) return '';
         let text = String(value).trim().replace(/-/g, '+').replace(/_/g, '/');
         const pad = text.length % 4;
@@ -67,13 +112,15 @@ await (async function () {
         return text;
     }
 
-    function ratchetPublicKeyString(value) {
+    function ratchetPublicKeyString(value: unknown): string {
         if (!value) return '';
-        if (typeof value === 'object' && value.publicKey) return String(value.publicKey);
+        if (typeof value === 'object' && value !== null && 'publicKey' in value && (value as { publicKey?: unknown }).publicKey) {
+            return String((value as { publicKey: unknown }).publicKey);
+        }
         return String(value);
     }
 
-    function publicKeysEqual(left, right) {
+    function publicKeysEqual(left: unknown, right: unknown): boolean {
         const a = ratchetPublicKeyString(left);
         const b = ratchetPublicKeyString(right);
         if (!a || !b) return false;
@@ -83,14 +130,14 @@ await (async function () {
             const bb = b64ToBytes(b);
             if (ba.length !== bb.length) return false;
             let diff = 0;
-            for (let i = 0; i < ba.length; i++) diff |= ba[i] ^ bb[i];
+            for (let i = 0; i < ba.length; i++) diff |= (ba[i] ?? 0) ^ (bb[i] ?? 0);
             return diff === 0;
         } catch {
             return false;
         }
     }
 
-    function toStandaloneAad(additionalData) {
+    function toStandaloneAad(additionalData: ArrayBuffer | Uint8Array | null | undefined): Uint8Array | null {
         if (!additionalData || additionalData.byteLength === 0) return null;
         const view = additionalData instanceof Uint8Array
             ? additionalData
@@ -98,7 +145,7 @@ await (async function () {
         return view.slice();
     }
 
-    function b64ToArrayBuffer(base64) {
+    function b64ToArrayBuffer(base64: string): Uint8Array {
         return b64ToBytes(base64);
     }
 
@@ -124,28 +171,28 @@ await (async function () {
         }
     }
 
-    async function exportRawPublicKey(publicKey) {
+    async function exportRawPublicKey(publicKey: CryptoKey): Promise<string> {
         assertWebCryptoAvailable();
         const raw = await crypto.subtle.exportKey('raw', publicKey);
         return bytesToB64(new Uint8Array(raw));
     }
 
-    async function exportPkcs8PrivateKey(privateKey) {
+    async function exportPkcs8PrivateKey(privateKey: CryptoKey): Promise<string> {
         assertWebCryptoAvailable();
         const pkcs8 = await crypto.subtle.exportKey('pkcs8', privateKey);
         return bytesToB64(new Uint8Array(pkcs8));
     }
 
-    async function importRawPublicKey(base64) {
+    async function importRawPublicKey(base64: string): Promise<CryptoKey> {
         assertWebCryptoAvailable();
         const raw = b64ToBytes(base64);
-        return crypto.subtle.importKey('raw', raw, { name: 'X25519' }, true, []);
+        return crypto.subtle.importKey('raw', cryptoSource(raw), { name: 'X25519' }, true, []);
     }
 
-    async function importPkcs8PrivateKey(base64) {
+    async function importPkcs8PrivateKey(base64: string): Promise<CryptoKey> {
         assertWebCryptoAvailable();
         const pkcs8 = b64ToBytes(base64);
-        return crypto.subtle.importKey('pkcs8', pkcs8, { name: 'X25519' }, true, ['deriveBits']);
+        return crypto.subtle.importKey('pkcs8', cryptoSource(pkcs8), { name: 'X25519' }, true, ['deriveBits']);
     }
 
     async function generateX25519KeyPair(): Promise<CryptoKeyPair> {
@@ -161,7 +208,7 @@ await (async function () {
         return generated;
     }
 
-    async function derive32(privateKey, publicKey) {
+    async function derive32(privateKey: CryptoKey, publicKey: CryptoKey): Promise<Uint8Array> {
         assertWebCryptoAvailable();
         const bits = await crypto.subtle.deriveBits({ name: 'X25519', public: publicKey }, privateKey, 256);
         return new Uint8Array(bits);
@@ -169,10 +216,10 @@ await (async function () {
 
     // ─── KDF functions ────────────────────────────────────────────────────────
 
-    async function deriveInitialRootAndChainKey(inputKeyMaterial) {
+    async function deriveInitialRootAndChainKey(inputKeyMaterial: Uint8Array): Promise<{ rootKey: Uint8Array; chainKey: Uint8Array }> {
         assertWebCryptoAvailable();
         const salt = new Uint8Array(32);
-        const baseKey = await crypto.subtle.importKey('raw', inputKeyMaterial, { name: 'HKDF' }, false, ['deriveBits']);
+        const baseKey = await crypto.subtle.importKey('raw', cryptoSource(inputKeyMaterial), { name: 'HKDF' }, false, ['deriveBits']);
         const bits = await crypto.subtle.deriveBits(
             { name: 'HKDF', hash: 'SHA-256', salt, info: new TextEncoder().encode('ChaosMessengerX3DH') },
             baseKey, 512
@@ -181,112 +228,79 @@ await (async function () {
         return { rootKey: arr.slice(0, 32), chainKey: arr.slice(32, 64) };
     }
 
-    async function kdfRK(rootKeyBytes, dhOutputBytes) {
+    async function kdfRK(rootKeyBytes: Uint8Array, dhOutputBytes: Uint8Array): Promise<{ rootKey: Uint8Array; chainKey: Uint8Array }> {
         assertWebCryptoAvailable();
-        const baseKey = await crypto.subtle.importKey('raw', dhOutputBytes, { name: 'HKDF' }, false, ['deriveBits']);
+        const baseKey = await crypto.subtle.importKey('raw', cryptoSource(dhOutputBytes), { name: 'HKDF' }, false, ['deriveBits']);
         const bits = await crypto.subtle.deriveBits(
-            { name: 'HKDF', hash: 'SHA-256', salt: rootKeyBytes, info: new TextEncoder().encode('ChaosDoubleRatchet') },
+            { name: 'HKDF', hash: 'SHA-256', salt: cryptoSource(rootKeyBytes), info: new TextEncoder().encode('ChaosDoubleRatchet') },
             baseKey, 512
         );
         const arr = new Uint8Array(bits);
         return { rootKey: arr.slice(0, 32), chainKey: arr.slice(32, 64) };
     }
 
-    async function ratchetStep(chainKeyBytes) {
+    async function ratchetStep(chainKeyBytes: Uint8Array): Promise<{ messageKeyRaw: Uint8Array; nextChainKey: Uint8Array }> {
         assertWebCryptoAvailable();
-        const key = await crypto.subtle.importKey('raw', chainKeyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+        const key = await crypto.subtle.importKey('raw', cryptoSource(chainKeyBytes), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
         const mkBits = new Uint8Array(await crypto.subtle.sign('HMAC', key, new Uint8Array([0x01])));
         const ckBits = new Uint8Array(await crypto.subtle.sign('HMAC', key, new Uint8Array([0x02])));
         return { messageKeyRaw: mkBits, nextChainKey: ckBits };
     }
 
-    async function importMessageKey(rawBytes) {
+    async function importMessageKey(rawBytes: Uint8Array): Promise<CryptoKey> {
         assertWebCryptoAvailable();
-        return crypto.subtle.importKey('raw', rawBytes, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+        return crypto.subtle.importKey('raw', cryptoSource(rawBytes), { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
     }
 
     // ─── AES-GCM encrypt / decrypt ───────────────────────────────────────────
 
-    async function aesEncryptWithKey(plainText, aesKey, additionalData = null) {
+    async function aesEncryptWithKey(plainText: string, aesKey: CryptoKey, additionalData: ArrayBuffer | Uint8Array | null = null) {
         assertWebCryptoAvailable();
         const nonce = crypto.getRandomValues(new Uint8Array(12));
         const encoded = new TextEncoder().encode(plainText);
-        const params: AesGcmParams = { name: 'AES-GCM', iv: nonce };
+        const params: AesGcmParams = { name: 'AES-GCM', iv: cryptoSource(nonce) };
         const aad = toStandaloneAad(additionalData);
-        if (aad) params.additionalData = aad;
+        if (aad) params.additionalData = cryptoSource(aad);
         const ct = await crypto.subtle.encrypt(params, aesKey, encoded);
         return { ciphertext: bytesToB64(new Uint8Array(ct)), nonce: bytesToB64(nonce) };
     }
 
-    async function aesDecryptWithKey(ciphertextB64, nonceB64, aesKey, additionalData = null) {
+    async function aesDecryptWithKey(ciphertextB64: string, nonceB64: string, aesKey: CryptoKey, additionalData: ArrayBuffer | Uint8Array | null = null): Promise<string> {
         assertWebCryptoAvailable();
         const ct    = b64ToBytes(ciphertextB64);
         const nonce = b64ToBytes(nonceB64);
-        const params: AesGcmParams = { name: 'AES-GCM', iv: nonce };
+        const params: AesGcmParams = { name: 'AES-GCM', iv: cryptoSource(nonce) };
         const aad = toStandaloneAad(additionalData);
-        if (aad) params.additionalData = aad;
-        const plain = await crypto.subtle.decrypt(params, aesKey, ct);
+        if (aad) params.additionalData = cryptoSource(aad);
+        const plain = await crypto.subtle.decrypt(params, aesKey, cryptoSource(ct));
         return new TextDecoder().decode(plain);
-    }
-
-    // ─── AAD (Additional Authenticated Data) builder for message envelopes ──────
-    // Binds ciphertext to protocol context: tampering any field breaks decryption.
-
-    const ENVELOPE_AAD_VERSION = 0x02;
-
-    function buildEnvelopeAAD({ messageType, chatId, messageIndex, previousChainLength, ratchetPublicKey }: AADContext): ArrayBuffer {
-        const mt = typeof messageType === 'string' ? messageType : '';
-        const typeCode = mt === 'PREKEY_WHISPER' ? 1 : mt === 'WHISPER' ? 2 : mt === 'SELF_WHISPER' ? 3 : 0;
-        const cid = BigInt(chatId != null ? chatId : 0);
-        const idx = (messageIndex != null) ? (messageIndex >>> 0) : 0;
-        const pcl = (previousChainLength != null) ? (previousChainLength >>> 0) : 0;
-
-        const buf = new ArrayBuffer(22);
-        const dv = new DataView(buf);
-        dv.setUint8(0, ENVELOPE_AAD_VERSION);
-        dv.setUint8(1, typeCode);
-        dv.setBigUint64(2, cid, false);
-        dv.setUint32(10, idx, false);
-        dv.setUint32(14, pcl, false);
-
-        if (ratchetPublicKey) {
-            const rpk = ratchetPublicKey + '';
-            const rpkLen = rpk.length;
-            const ext = new ArrayBuffer(buf.byteLength + 4 + rpkLen);
-            new Uint8Array(ext).set(new Uint8Array(buf), 0);
-            const edv = new DataView(ext);
-            edv.setUint32(buf.byteLength, rpkLen, false);
-            for (let i = 0; i < rpkLen; i++) edv.setUint8(buf.byteLength + 4 + i, rpk.charCodeAt(i));
-            return ext;
-        }
-        return buf;
     }
 
     // ─── Self-envelope encryption (for cross-device sync) ─────────────────────
 
-    async function deriveSelfEnvelopeKey(localBundle) {
+    async function deriveSelfEnvelopeKey(localBundle: DeviceBundle): Promise<CryptoKey> {
         assertWebCryptoAvailable();
         if (!localBundle?.identity?.privateKeyPkcs8) {
             throw new Error('Local private identity key is missing');
         }
         const raw = b64ToBytes(localBundle.identity.privateKeyPkcs8);
-        const seed = new Uint8Array(await crypto.subtle.digest('SHA-256', raw));
+        const seed = new Uint8Array(await crypto.subtle.digest('SHA-256', cryptoSource(raw)));
         const saltInput = new TextEncoder().encode(localBundle.deviceId || 'unknown-device');
         const salt = new Uint8Array(await crypto.subtle.digest('SHA-256', saltInput));
-        const hkdfKey = await crypto.subtle.importKey('raw', seed, { name: 'HKDF' }, false, ['deriveBits']);
+        const hkdfKey = await crypto.subtle.importKey('raw', cryptoSource(seed), { name: 'HKDF' }, false, ['deriveBits']);
         const bits = await crypto.subtle.deriveBits(
-            { name: 'HKDF', hash: 'SHA-256', salt, info: new TextEncoder().encode('ChaosMessengerSelf:v2') },
+            { name: 'HKDF', hash: 'SHA-256', salt: cryptoSource(salt), info: new TextEncoder().encode('ChaosMessengerSelf:v2') },
             hkdfKey, 256
         );
         return crypto.subtle.importKey('raw', bits, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
     }
 
-    async function encryptSelfEnvelope(localBundle, plainText) {
+    async function encryptSelfEnvelope(localBundle: DeviceBundle, plainText: string) {
         const key = await deriveSelfEnvelopeKey(localBundle);
         return aesEncryptWithKey(plainText, key);
     }
 
-    async function decryptSelfEnvelope(localBundle, envelope) {
+    async function decryptSelfEnvelope(localBundle: DeviceBundle, envelope: { ciphertext: string; nonce: string }): Promise<string> {
         const key = await deriveSelfEnvelopeKey(localBundle);
         return aesDecryptWithKey(envelope.ciphertext, envelope.nonce, key);
     }
@@ -299,10 +313,10 @@ await (async function () {
     const PREKEY_REPLENISH_THRESHOLD = 20;
     const PREKEY_TARGET_COUNT = 50;
 
-    let localDeviceBundle = null;
-    let sessionState = {};
-    let identityTrustState = {};
-    const inProcessLocks = new Map();
+    let localDeviceBundle: DeviceBundle | null = null;
+    let sessionState: SessionMap = {};
+    let identityTrustState: TrustMap = {};
+    const inProcessLocks = new Map<string, Promise<unknown>>();
 
     function getOrCreateDeviceId() {
         let id = localStorage.getItem(DEVICE_ID_KEY_PREFIX);
@@ -311,10 +325,10 @@ await (async function () {
     }
 
     function randomRegistrationId() {
-        const bytes = new Uint32Array(1); crypto.getRandomValues(bytes); return bytes[0] & 0x7fffffff;
+        const bytes = new Uint32Array(1); crypto.getRandomValues(bytes); return (bytes[0] ?? 0) & 0x7fffffff;
     }
 
-    function loadLegacyJson(key) {
+    function loadLegacyJson(key: string): unknown {
         try {
             const raw = localStorage.getItem(key);
             return raw ? JSON.parse(raw) : null;
@@ -329,16 +343,16 @@ await (async function () {
         const legacyBundle = loadLegacyJson(DEVICE_KEY_PREFIX);
         const legacySessions = loadLegacyJson(SESSION_KEY_PREFIX);
 
-        localDeviceBundle = await readSecureRecord(DEVICE_RECORD);
-        sessionState = (await readSecureRecord(SESSION_RECORD)) || {};
-        identityTrustState = (await readSecureRecord(TRUST_RECORD)) || {};
+        localDeviceBundle = (await readSecureRecord(DEVICE_RECORD) as DeviceBundle | null) || null;
+        sessionState = (await readSecureRecord(SESSION_RECORD) as SessionMap | null) || {};
+        identityTrustState = (await readSecureRecord(TRUST_RECORD) as TrustMap | null) || {};
 
         if (!localDeviceBundle && legacyBundle) {
-            localDeviceBundle = legacyBundle;
+            localDeviceBundle = legacyBundle as DeviceBundle;
             await writeSecureRecord(DEVICE_RECORD, legacyBundle);
         }
         if (Object.keys(sessionState).length === 0 && legacySessions) {
-            sessionState = legacySessions;
+            sessionState = legacySessions as SessionMap;
             await writeSecureRecord(SESSION_RECORD, legacySessions);
         }
 
@@ -348,25 +362,25 @@ await (async function () {
     }
 
     async function reloadSecureState() {
-        localDeviceBundle = (await readSecureRecord(DEVICE_RECORD)) || localDeviceBundle;
-        sessionState = (await readSecureRecord(SESSION_RECORD)) || {};
-        identityTrustState = (await readSecureRecord(TRUST_RECORD)) || {};
+        localDeviceBundle = (await readSecureRecord(DEVICE_RECORD) as DeviceBundle | null) || localDeviceBundle;
+        sessionState = (await readSecureRecord(SESSION_RECORD) as SessionMap | null) || {};
+        identityTrustState = (await readSecureRecord(TRUST_RECORD) as TrustMap | null) || {};
     }
 
     function getLocalDeviceBundle() {
         return localDeviceBundle ? structuredClone(localDeviceBundle) : null;
     }
 
-    async function saveLocalDeviceBundle(bundle) {
+    async function saveLocalDeviceBundle(bundle: DeviceBundle): Promise<void> {
         localDeviceBundle = structuredClone(bundle);
         await writeSecureRecord(DEVICE_RECORD, localDeviceBundle);
     }
 
-    function loadSessions() {
+    function loadSessions(): SessionMap {
         return structuredClone(sessionState || {});
     }
 
-    async function saveSessions(sessions) {
+    async function saveSessions(sessions: SessionMap): Promise<void> {
         sessionState = structuredClone(sessions || {});
         await writeSecureRecord(SESSION_RECORD, sessionState);
     }
@@ -388,7 +402,7 @@ await (async function () {
         log('[E2EE] Local device identity reset');
     }
 
-    async function importLocalDeviceBundle(bundle) {
+    async function importLocalDeviceBundle(bundle: DeviceBundle): Promise<string> {
         if (!bundle?.deviceId || !bundle?.identity?.publicKey || !bundle?.identity?.privateKeyPkcs8) {
             throw new Error('Backup does not contain a valid device identity');
         }
@@ -408,22 +422,22 @@ await (async function () {
         return bundle.deviceId;
     }
 
-    function sessionKey(localDeviceId, remoteDeviceId) {
+    function sessionKey(localDeviceId: string, remoteDeviceId: string): string {
         return `device:${localDeviceId}:remote:${remoteDeviceId}`;
     }
 
-    function getSession(localDeviceId, remoteDeviceId) {
+    function getSession(localDeviceId: string, remoteDeviceId: string): RatchetSession | null {
         const value = sessionState[sessionKey(localDeviceId, remoteDeviceId)];
         return value ? structuredClone(value) : null;
     }
 
-    async function storeSession(localDeviceId, remoteDeviceId, session) {
+    async function storeSession(localDeviceId: string, remoteDeviceId: string, session: RatchetSession): Promise<void> {
         const sessions = loadSessions();
         sessions[sessionKey(localDeviceId, remoteDeviceId)] = structuredClone(session);
         await saveSessions(sessions);
     }
 
-    async function commitRecipientBootstrap(localBundle, remoteDeviceId, session, consumedPreKeyId) {
+    async function commitRecipientBootstrap(localBundle: DeviceBundle, remoteDeviceId: string, session: RatchetSession, consumedPreKeyId: number | null | undefined): Promise<void> {
         const nextBundle = structuredClone(localBundle);
         if (consumedPreKeyId != null) {
             const before = nextBundle.oneTimePreKeys?.length || 0;
@@ -444,22 +458,22 @@ await (async function () {
         sessionState = nextSessions;
     }
 
-    async function withInProcessLock(name, operation) {
+    async function withInProcessLock<T>(name: string, operation: () => Promise<T>): Promise<T> {
         const previous = inProcessLocks.get(name) || Promise.resolve();
-        let release;
-        const gate = new Promise(resolve => { release = resolve; });
+        let release: (() => void) | undefined;
+        const gate = new Promise<void>(resolve => { release = resolve; });
         const tail = previous.then(() => gate);
         inProcessLocks.set(name, tail);
         await previous;
         try {
             return await operation();
         } finally {
-            release();
+            release?.();
             if (inProcessLocks.get(name) === tail) inProcessLocks.delete(name);
         }
     }
 
-    async function withCryptoStateLock(operation) {
+    async function withCryptoStateLock<T>(operation: () => Promise<T>): Promise<T> {
         const run = async () => {
             await reloadSecureState();
             return operation();
@@ -470,11 +484,11 @@ await (async function () {
         return withInProcessLock('ratchet-state', run);
     }
 
-    function trustKey(remoteDeviceId) {
+    function trustKey(remoteDeviceId: string): string {
         return `device:${remoteDeviceId}`;
     }
 
-    async function observeRemoteIdentity(remoteDeviceId, identityPublicKey) {
+    async function observeRemoteIdentity(remoteDeviceId: string, identityPublicKey: string): Promise<TrustState> {
         if (!remoteDeviceId || !identityPublicKey) return 'UNVERIFIED';
         const key = trustKey(remoteDeviceId);
         const current = identityTrustState[key];
@@ -518,9 +532,9 @@ await (async function () {
         await writeSecureRecord(TRUST_RECORD, identityTrustState);
     }
 
-    function getRemoteIdentityTrust(remoteDeviceId, identityPublicKey = null) {
+    function getRemoteIdentityTrust(remoteDeviceId: string, identityPublicKey: string | null = null): RemoteIdentityTrust {
         const current = identityTrustState[trustKey(remoteDeviceId)];
-        if (!current) return { trustState: 'UNVERIFIED', identityPublicKey };
+        if (!current) return { trustState: 'UNVERIFIED', identityPublicKey: identityPublicKey ?? '' };
         if (identityPublicKey && current.identityPublicKey !== identityPublicKey) {
             return { ...structuredClone(current), trustState: 'KEY_CHANGED', identityPublicKey };
         }
@@ -529,8 +543,8 @@ await (async function () {
 
     // ─── Device bundle generation and registration ───────────────────────────
 
-    async function generateOneTimePreKeys(count, startAt = 1000) {
-        const generated = [];
+    async function generateOneTimePreKeys(count: number, startAt = 1000): Promise<PreKey[]> {
+        const generated: PreKey[] = [];
         for (let i = 0; i < count; i++) {
             const kp = await generateX25519KeyPair();
             generated.push({
@@ -567,7 +581,7 @@ await (async function () {
         const signatureBuf = await crypto.subtle.sign(
             { name: 'ECDSA', hash: { name: 'SHA-256' } },
             signingKeyPair.privateKey,
-            signedPreKeyBytes
+            cryptoSource(signedPreKeyBytes)
         );
         const signedPreKeySignature = bytesToB64(new Uint8Array(signatureBuf));
 
@@ -585,11 +599,11 @@ await (async function () {
         };
     }
 
-    function log(...args) {
+    function log(...args: unknown[]): void {
         if (import.meta.env.DEV) console.warn('[ChaosMessenger]', ...args);
     }
 
-    async function registerBundleOnServer(api, bundle, isNewDevice = false) {
+    async function registerBundleOnServer(api: CryptoApi, bundle: DeviceBundle, isNewDevice = false): Promise<void> {
         const body = {
             deviceId: bundle.deviceId,
             deviceName: navigator.userAgent,
@@ -609,10 +623,10 @@ await (async function () {
         await api('/api/crypto/devices/register', { method: 'POST', body: JSON.stringify(body) });
     }
 
-    async function replenishOneTimePreKeys(api) {
+    async function replenishOneTimePreKeys(api: CryptoApi): Promise<DeviceBundle | null> {
         if (!api || !localDeviceBundle) return localDeviceBundle;
 
-        const serverPool = await api('/api/crypto/devices/current/prekeys', { method: 'GET' });
+        const serverPool = await api('/api/crypto/devices/current/prekeys', { method: 'GET' }) as PrekeyPoolResponse;
         const serverAvailable = Math.max(0, Number(serverPool?.available || 0));
         let nextBundle = structuredClone(localDeviceBundle);
         let unpublished = (nextBundle.oneTimePreKeys || []).filter(key => key.published === false);
@@ -647,14 +661,13 @@ await (async function () {
         return getLocalDeviceBundle();
     }
 
-    function isMissingServerDeviceError(error) {
-        const status = Number(error?.status);
+    function isMissingServerDeviceError(error: unknown): boolean {
+        const status = errorStatus(error);
         if (status === 401 || status === 404) return true;
-        const message = String(error?.message || '');
-        return /not registered|inactive|401|404|current device/i.test(message);
+        return /not registered|inactive|401|404|current device/i.test(errorMessage(error));
     }
 
-    async function ensureDeviceRegistered(api) {
+    async function ensureDeviceRegistered(api: CryptoApi): Promise<DeviceBundle> {
         const registrationScope = getOrCreateDeviceId();
 
         if (registrationPromise && registrationPromiseUsername === registrationScope) return registrationPromise;
@@ -696,9 +709,10 @@ await (async function () {
                     await saveLocalDeviceBundle(bundle);
                 }
                 bundle = getLocalDeviceBundle();
+                if (!bundle) throw new Error('Local device bundle is missing');
             }
             return bundle;
-        })().catch((err) => {
+        })().catch((err: unknown) => {
             registrationPromise = null;
             registrationPromiseUsername = null;
             throw err;
@@ -708,14 +722,14 @@ await (async function () {
 
     // ─── Signed prekey verification ──────────────────────────────────────────
 
-    async function verifySignedPreKeySignature(signingPublicKeyB64, signedPreKeyPublicB64, signatureB64) {
+    async function verifySignedPreKeySignature(signingPublicKeyB64: string | null | undefined, signedPreKeyPublicB64: string | null | undefined, signatureB64: string | null | undefined): Promise<void> {
         if (!signingPublicKeyB64 || !signedPreKeyPublicB64 || !signatureB64) {
             throw new Error('Target device signed prekey bundle is incomplete');
         }
         assertWebCryptoAvailable();
         const signingKey = await crypto.subtle.importKey(
             'spki',
-            b64ToArrayBuffer(signingPublicKeyB64),
+            cryptoSource(b64ToArrayBuffer(signingPublicKeyB64)),
             { name: 'ECDSA', namedCurve: 'P-256' },
             false,
             ['verify']
@@ -723,8 +737,8 @@ await (async function () {
         const verified = await crypto.subtle.verify(
             { name: 'ECDSA', hash: { name: 'SHA-256' } },
             signingKey,
-            b64ToBytes(signatureB64),
-            b64ToBytes(signedPreKeyPublicB64)
+            cryptoSource(b64ToBytes(signatureB64)),
+            cryptoSource(b64ToBytes(signedPreKeyPublicB64))
         );
         if (!verified) {
             throw new Error('Invalid signed prekey signature');
@@ -733,7 +747,7 @@ await (async function () {
 
     // ─── Helper: serialize/deserialize DH ratchet keypair ────────────────────
 
-    async function exportDHKeyPair(keyPair) {
+    async function exportDHKeyPair(keyPair: CryptoKeyPair): Promise<DhRatchetKeyPair> {
         return {
             publicKey: await exportRawPublicKey(keyPair.publicKey),
             privateKeyPkcs8: await exportPkcs8PrivateKey(keyPair.privateKey)
@@ -742,7 +756,7 @@ await (async function () {
 
     // ─── X3DH + Double Ratchet session establishment (initiator) ─────────────
 
-    async function createInitiatorSession(localBundle, targetDevice) {
+    async function createInitiatorSession(localBundle: DeviceBundle, targetDevice: TargetDevice): Promise<{ session: RatchetSession; ephemeralPublicKey: string }> {
         await verifySignedPreKeySignature(
             targetDevice.signingPublicKey,
             targetDevice.signedPreKey?.publicKey,
@@ -753,7 +767,11 @@ await (async function () {
         const ephemeral             = await generateX25519KeyPair();
         const ephemeralPublicKey    = await exportRawPublicKey(ephemeral.publicKey);
         const remoteIdentityPub     = await importRawPublicKey(targetDevice.identityPublicKey);
-        const remoteSignedPreKeyPub = await importRawPublicKey(targetDevice.signedPreKey.publicKey);
+        const signedPreKey = targetDevice.signedPreKey;
+        if (!signedPreKey?.publicKey) {
+            throw new Error('Target device signed prekey bundle is incomplete');
+        }
+        const remoteSignedPreKeyPub = await importRawPublicKey(signedPreKey.publicKey);
 
         // X3DH DH calculations
         const dh1 = await derive32(identityPrivate, remoteSignedPreKeyPub);
@@ -779,7 +797,7 @@ await (async function () {
         // Generate first DH ratchet keypair, use recipient's signed prekey as DHr.
         const DHs = await generateX25519KeyPair();
         const DHsExported = await exportDHKeyPair(DHs);
-        const DHr = targetDevice.signedPreKey.publicKey;
+        const DHr = signedPreKey.publicKey;
 
         const remoteSignedPub = await importRawPublicKey(DHr);
         const dhResult = await derive32(DHs.privateKey, remoteSignedPub);
@@ -809,9 +827,12 @@ await (async function () {
 
     // ─── X3DH + Double Ratchet session establishment (recipient) ─────────────
 
-    async function bootstrapRecipientSession(localBundle, envelope) {
+    async function bootstrapRecipientSession(localBundle: DeviceBundle, envelope: DecryptEnvelope): Promise<RatchetSession> {
         const identityPrivate      = await importPkcs8PrivateKey(localBundle.identity.privateKeyPkcs8);
         const signedPreKeyPrivate  = await importPkcs8PrivateKey(localBundle.signedPreKey.privateKeyPkcs8);
+        if (!envelope.senderIdentityPublicKey || !envelope.ephemeralPublicKey) {
+            throw new Error('PREKEY_WHISPER is missing handshake public keys');
+        }
         const senderIdentityPub    = await importRawPublicKey(envelope.senderIdentityPublicKey);
         const ephemeralPub         = await importRawPublicKey(envelope.ephemeralPublicKey);
 
@@ -865,11 +886,11 @@ await (async function () {
 
     // ─── Double Ratchet core ─────────────────────────────────────────────────
 
-    function skippedKeyId(dhPub, n) {
+    function skippedKeyId(dhPub: unknown, n: number): string {
         return normalizeB64(ratchetPublicKeyString(dhPub)) + ':' + n;
     }
 
-    async function decryptCiphertextWithEnvelopeAad(ciphertext, nonce, aesKey, envelope) {
+    async function decryptCiphertextWithEnvelopeAad(ciphertext: string, nonce: string, aesKey: CryptoKey, envelope: DecryptEnvelope): Promise<string> {
         const candidates = [];
         const base = {
             messageType: envelope.messageType,
@@ -897,7 +918,7 @@ await (async function () {
         throw lastError || new Error('AES-GCM decrypt failed');
     }
 
-    async function trySkippedMessageKeys(session, envelope) {
+    async function trySkippedMessageKeys(session: RatchetSession, envelope: DecryptEnvelope): Promise<string | null> {
         const kid = skippedKeyId(envelope.ratchetPublicKey, envelope.messageIndex ?? 0);
         const mkRawB64 = session.MKSKIPPED[kid];
         if (!mkRawB64) return null;
@@ -909,7 +930,7 @@ await (async function () {
         return plainText;
     }
 
-    async function skipMessageKeys(session, until) {
+    async function skipMessageKeys(session: RatchetSession, until: number): Promise<void> {
         if (session.CKr == null) return;
         if ((until - (session.Nr || 0)) > MAX_SKIP) {
             throw new Error('Too many skipped messages: ' + (until - (session.Nr || 0)));
@@ -927,7 +948,7 @@ await (async function () {
         pruneSkippedKeys(session);
     }
 
-    function pruneSkippedKeys(session) {
+    function pruneSkippedKeys(session: RatchetSession): void {
         const keys = Object.keys(session.MKSKIPPED);
         if (keys.length > MAX_STORED_SKIPPED_KEYS) {
             const sorted = keys.sort((a, b) => {
@@ -936,12 +957,13 @@ await (async function () {
                 return idxA - idxB;
             });
             for (let i = 0; i < (keys.length - MAX_STORED_SKIPPED_KEYS); i++) {
-                delete session.MKSKIPPED[sorted[i]];
+                const skippedId = sorted[i];
+                if (skippedId !== undefined) delete session.MKSKIPPED[skippedId];
             }
         }
     }
 
-    async function dhRatchetStep(session, newDHrPub) {
+    async function dhRatchetStep(session: RatchetSession, newDHrPub: string): Promise<void> {
         session.PN = session.Ns;
         session.Ns = 0;
         session.Nr = 0;
@@ -964,7 +986,7 @@ await (async function () {
         session.CKs = bytesToB64(kdf2.chainKey);
     }
 
-    async function encryptWithDoubleRatchet(session, plainText, aadContext: AADContext = {}) {
+    async function encryptWithDoubleRatchet(session: RatchetSession, plainText: string, aadContext: AADContext = {}) {
         if (!session.CKs) {
             throw new Error('Sending chain not initialized');
         }
@@ -994,7 +1016,7 @@ await (async function () {
         };
     }
 
-    async function decryptWithDoubleRatchet(session, envelope) {
+    async function decryptWithDoubleRatchet(session: RatchetSession, envelope: DecryptEnvelope): Promise<string> {
         session.MKSKIPPED = session.MKSKIPPED || {};
         const ratchetPub = envelope.ratchetPublicKey;
         const msgIdx = envelope.messageIndex ?? 0;
@@ -1038,7 +1060,7 @@ await (async function () {
                 + ' nr=' + (session.Nr || 0)
                 + ' chatId=' + envelope._chatId
                 + ' dh=' + (sameRatchet ? 'same' : 'new')
-                + (error?.message ? ' (' + error.message + ')' : '')
+                + (errorMessage(error) ? ' (' + errorMessage(error) + ')' : '')
             );
         }
 
@@ -1049,16 +1071,16 @@ await (async function () {
 
     // ─── Fanout (send to chat) ─────────────────────────────────────────────────
 
-    async function buildFanoutRequest(api, chatId, plainText) {
+    async function buildFanoutRequest(api: CryptoApi, chatId: number, plainText: string) {
         return withCryptoStateLock(() => buildFanoutRequestUnlocked(api, chatId, plainText));
     }
 
-    async function buildFanoutRequestUnlocked(api, chatId, plainText) {
+    async function buildFanoutRequestUnlocked(api: CryptoApi, chatId: number, plainText: string) {
         const localBundle = await ensureDeviceRegistered(api);
-        const resolved = await api('/api/crypto/resolve-chat-devices/' + encodeURIComponent(chatId), { method: 'POST' });
+        const resolved = await api('/api/crypto/resolve-chat-devices/' + encodeURIComponent(chatId), { method: 'POST' }) as ResolveChatDevicesResponse;
 
-        const envelopes = [];
-        const uniqueTargets = new Map();
+        const envelopes: EncryptedEnvelope[] = [];
+        const uniqueTargets = new Map<string, TargetDevice>();
         for (const dev of (resolved.targetDevices || [])) {
             if (dev?.deviceId && !uniqueTargets.has(dev.deviceId)) {
                 uniqueTargets.set(dev.deviceId, dev);
@@ -1103,7 +1125,7 @@ await (async function () {
                 const reserved = await api(
                     '/api/crypto/chats/' + encodeURIComponent(chatId) + '/devices/' + encodeURIComponent(targetDevice.deviceId) + '/reserve-prekey',
                     { method: 'POST' }
-                );
+                ) as ReservePrekeyResponse;
                 resolvedSignedPreKey = reserved?.signedPreKey || targetDevice.signedPreKey || null;
                 resolvedOneTimePreKey = reserved?.oneTimePreKey || null;
                 const created = await createInitiatorSession(localBundle, {
@@ -1151,7 +1173,7 @@ await (async function () {
 
     // ─── Decrypt an incoming envelope ─────────────────────────────────────────
 
-    async function forgetSession(localDeviceId, remoteDeviceId) {
+    async function forgetSession(localDeviceId: string, remoteDeviceId: string): Promise<void> {
         const sessions = loadSessions();
         const key = sessionKey(localDeviceId, remoteDeviceId);
         if (!sessions[key]) return;
@@ -1160,11 +1182,11 @@ await (async function () {
         log('[E2EE] Forgot stale session with ' + remoteDeviceId);
     }
 
-    async function decryptEnvelope(envelope) {
+    async function decryptEnvelope(envelope: DecryptEnvelope) {
         return withCryptoStateLock(() => decryptEnvelopeUnlocked(envelope));
     }
 
-    async function decryptEnvelopeUnlocked(envelope) {
+    async function decryptEnvelopeUnlocked(envelope: DecryptEnvelope): Promise<string> {
         const localBundle = getLocalDeviceBundle();
         if (!localBundle) throw new Error('Local device bundle is missing');
 
@@ -1234,7 +1256,7 @@ await (async function () {
         } catch (error) {
             if (!isPreKeyBootstrap && !hadReceivingChain) {
                 await forgetSession(localBundle.deviceId, envelope.senderDeviceId);
-                throw new Error('SESSION_STALE:' + envelope.senderDeviceId + ' ' + (error?.message || ''));
+                throw new Error('SESSION_STALE:' + envelope.senderDeviceId + ' ' + errorMessage(error));
             }
             throw error;
         }
@@ -1242,26 +1264,26 @@ await (async function () {
 
     // ─── File encryption / decryption (AES-256-GCM with random key) ────────────
 
-    async function encryptFile(fileArrayBuffer) {
+    async function encryptFile(fileArrayBuffer: ArrayBuffer) {
         assertWebCryptoAvailable();
         const key = crypto.getRandomValues(new Uint8Array(32));
         const iv = crypto.getRandomValues(new Uint8Array(12));
-        const cryptoKey = await crypto.subtle.importKey("raw", key, "AES-GCM", false, ["encrypt"]);
-        const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, cryptoKey, fileArrayBuffer);
+        const cryptoKey = await crypto.subtle.importKey("raw", cryptoSource(key), "AES-GCM", false, ["encrypt"]);
+        const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv: cryptoSource(iv) }, cryptoKey, fileArrayBuffer);
         const result = new Uint8Array(iv.length + encrypted.byteLength);
         result.set(iv, 0);
         result.set(new Uint8Array(encrypted), iv.length);
         return { encrypted: result, fileKey: btoa(String.fromCharCode(...key)) };
     }
 
-    async function decryptFile(encryptedArrayBuffer, fileKeyBase64) {
+    async function decryptFile(encryptedArrayBuffer: ArrayBuffer, fileKeyBase64: string) {
         assertWebCryptoAvailable();
         const keyBytes = Uint8Array.from(atob(fileKeyBase64), c => c.charCodeAt(0));
         const data = new Uint8Array(encryptedArrayBuffer);
         const iv = data.slice(0, 12);
         const ciphertext = data.slice(12);
-        const cryptoKey = await crypto.subtle.importKey("raw", keyBytes, "AES-GCM", false, ["decrypt"]);
-        const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, cryptoKey, ciphertext);
+        const cryptoKey = await crypto.subtle.importKey("raw", cryptoSource(keyBytes), "AES-GCM", false, ["decrypt"]);
+        const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: cryptoSource(iv) }, cryptoKey, cryptoSource(ciphertext));
         return decrypted;
     }
 
@@ -1269,7 +1291,7 @@ await (async function () {
 
     await initializeSecureState();
 
-    window.e2ee = {
+    const api: CryptoEngine = {
         getOrCreateDeviceId,
         getLocalDeviceBundle,
         resetLocalDeviceIdentity,
@@ -1288,4 +1310,16 @@ await (async function () {
         __importSessionStateForTests: async (sessions) => saveSessions(sessions || {})
     };
 
-})();
+    bindWindowAdapter(api);
+    return api;
+}
+
+function bindWindowAdapter(api: CryptoEngine) {
+    const globalE2ee = globalThis as typeof globalThis & { e2ee?: CryptoEngine };
+    if (globalE2ee.e2ee == null) {
+        globalE2ee.e2ee = api;
+    }
+}
+
+export const e2ee: CryptoEngine = await createCryptoEngine();
+export default e2ee;

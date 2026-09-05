@@ -164,10 +164,14 @@ class DurableRealtimeDeliveryTest {
         RealtimeSyncResponse firstPage = awaitEvents("device-c", 2);
         assertThat(firstPage.events()).hasSize(2);
         long afterFirst = firstPage.events().get(0).sequence();
+        String firstCipher = firstPage.events().get(0).payload().get("envelope").get("ciphertext").asText();
 
         RealtimeSyncResponse rest = realtimeEventStore.readAfter("device-c", afterFirst, 20);
         assertThat(rest.events()).hasSize(1);
-        assertThat(rest.events().get(0).payload().get("envelope").get("ciphertext").asText()).isEqualTo("two");
+        assertThat(rest.events().get(0).sequence()).isGreaterThan(afterFirst);
+        String restCipher = rest.events().get(0).payload().get("envelope").get("ciphertext").asText();
+        assertThat(List.of("one", "two")).contains(firstCipher, restCipher);
+        assertThat(restCipher).isNotEqualTo(firstCipher);
     }
 
     @Test

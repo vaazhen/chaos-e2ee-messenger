@@ -18,8 +18,12 @@ import java.util.List;
 @RequiredArgsConstructor
 public class CredentialRateLimiter {
 
-    private static final int LIMIT = 10;
-    private static final Duration WINDOW = Duration.ofMinutes(15);
+    private static final int LOGIN_LIMIT = 10;
+    private static final Duration LOGIN_WINDOW = Duration.ofMinutes(15);
+    private static final int REGISTER_LIMIT = 5;
+    private static final Duration REGISTER_WINDOW = Duration.ofHours(1);
+    private static final int IP_LIMIT = 40;
+    private static final Duration IP_WINDOW = Duration.ofMinutes(15);
     private static final long INFRA_RETRY_AFTER_SECONDS = 60;
 
     private static final DefaultRedisScript<Long> INCREMENT_WITH_TTL = new DefaultRedisScript<>("""
@@ -33,13 +37,65 @@ public class CredentialRateLimiter {
     private final RedisTemplate<String, String> redisTemplate;
 
     public void checkAndIncrement(String normalizedEmail) {
-        String key = key(normalizedEmail);
+        enforce(
+                "auth:login:rate:",
+                normalizedEmail,
+                LOGIN_LIMIT,
+                LOGIN_WINDOW,
+                "Too many login attempts. Try again in 15 minutes."
+        );
+    }
+
+    public void checkRegister(String normalizedEmail) {
+        enforce(
+                "auth:register:rate:",
+                normalizedEmail,
+                REGISTER_LIMIT,
+                REGISTER_WINDOW,
+                "Too many registration attempts. Try again later."
+        );
+    }
+
+    public void checkUserAction(String username, String action) {
+        String identity = (username == null || username.isBlank()) ? "unknown" : username.trim();
+        String safeAction = action != null && action.matches("[a-z]+") ? action : "other";
+        enforce(
+                "auth:user:" + safeAction + ":",
+                identity,
+                80,
+                Duration.ofMinutes(15),
+                "Too many requests. Try again later."
+        );
+    }
+
+    public void checkIp(String clientIp, String action) {
+        String identity = (clientIp == null || clientIp.isBlank()) ? "unknown" : clientIp.trim();
+        String safeAction = action != null && action.matches("[a-z]+") ? action : "other";
+        enforce(
+                "auth:ip:" + safeAction + ":",
+                identity,
+                IP_LIMIT,
+                IP_WINDOW,
+                "Too many requests. Try again later."
+        );
+    }
+
+    public void reset(String normalizedEmail) {
+        try {
+            redisTemplate.delete(key("auth:login:rate:", normalizedEmail));
+        } catch (Exception e) {
+            log.warn("Unable to reset credential rate limit: {}", e.getMessage());
+        }
+    }
+
+    private void enforce(String prefix, String identity, int limit, Duration window, String message) {
+        String redisKey = key(prefix, identity);
         Long count;
         try {
             count = redisTemplate.execute(
                     INCREMENT_WITH_TTL,
-                    List.of(key),
-                    String.valueOf(WINDOW.toSeconds())
+                    List.of(redisKey),
+                    String.valueOf(window.toSeconds())
             );
         } catch (Exception e) {
             log.warn("Credential rate limiter unavailable: {}", e.getMessage());
@@ -54,24 +110,16 @@ public class CredentialRateLimiter {
                     INFRA_RETRY_AFTER_SECONDS
             );
         }
-        if (count > LIMIT) {
-            throw new RateLimitException("Too many login attempts. Try again in 15 minutes.", WINDOW.toSeconds());
+        if (count > limit) {
+            throw new RateLimitException(message, window.toSeconds());
         }
     }
 
-    public void reset(String normalizedEmail) {
-        try {
-            redisTemplate.delete(key(normalizedEmail));
-        } catch (Exception e) {
-            log.warn("Unable to reset credential rate limit: {}", e.getMessage());
-        }
-    }
-
-    private String key(String normalizedEmail) {
+    private String key(String prefix, String identity) {
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256")
-                    .digest(normalizedEmail.getBytes(StandardCharsets.UTF_8));
-            return "auth:login:rate:" + Base64.getUrlEncoder().withoutPadding().encodeToString(digest);
+                    .digest(identity.getBytes(StandardCharsets.UTF_8));
+            return prefix + Base64.getUrlEncoder().withoutPadding().encodeToString(digest);
         } catch (Exception e) {
             throw new IllegalStateException("SHA-256 is unavailable", e);
         }

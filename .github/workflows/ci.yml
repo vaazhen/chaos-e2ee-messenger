@@ -99,6 +99,12 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Mocked browser E2E
+        run: npm run test:e2e
+
       - name: Upload frontend artifacts
         if: always()
         uses: actions/upload-artifact@v4

@@ -1,4 +1,5 @@
 import { API_BASE as _API_BASE } from "./config";
+import { getE2ee } from "./e2ee";
 export const API_BASE = _API_BASE;
 
 let accessToken = "";
@@ -35,8 +36,8 @@ function safeUUID() {
 }
 
 export function getCurrentDeviceId() {
-  if (window.e2ee?.getOrCreateDeviceId) {
-    return window.e2ee.getOrCreateDeviceId();
+  if (getE2ee()?.getOrCreateDeviceId) {
+    return getE2ee().getOrCreateDeviceId();
   }
   // Fallback — unscoped key (matches deviceId.js and crypto-engine.js)
   const DEVICE_ID_KEY = "cm_device_id";
@@ -260,21 +261,7 @@ export const api = {
 
   // ── E2EE Backup ──────────────────────────────────────────────────────────
   getBackupInfo:   ()     => call("/backup/info"),
-  exportBackup:    async (passphrase) => {
-    const token = getToken();
-    const deviceId = getCurrentDeviceId();
-    const res = await fetch(API_BASE + "/backup/export", {
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Backup-Passphrase": passphrase,
-        ...(token ? { Authorization: "Bearer " + token } : {}),
-        ...(deviceId ? { "X-Device-Id": deviceId } : {}),
-      },
-    });
-    if (!res.ok) throw new Error("Backup export failed");
-    return res.json();
-  },
+  exportBackup:    () => call("/backup/export"),
   importBackup:    (data) => call("/backup/import", { method: "POST", body: JSON.stringify(data) }),
 
   // ── Safety Numbers ───────────────────────────────────────────────────────

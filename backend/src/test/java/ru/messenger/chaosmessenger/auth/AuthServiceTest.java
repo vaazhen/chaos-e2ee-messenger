@@ -15,6 +15,7 @@ import ru.messenger.chaosmessenger.auth.service.PhoneVerificationService;
 import ru.messenger.chaosmessenger.auth.service.RefreshTokenService;
 import ru.messenger.chaosmessenger.auth.service.SetupTokenService;
 import ru.messenger.chaosmessenger.infra.security.JwtService;
+import ru.messenger.chaosmessenger.infra.ws.WebSocketLogoutCloser;
 import ru.messenger.chaosmessenger.user.domain.User;
 import ru.messenger.chaosmessenger.user.domain.UserStatus;
 import ru.messenger.chaosmessenger.user.repository.UserRepository;
@@ -42,6 +43,7 @@ class AuthServiceTest {
     @Mock SetupTokenService setupTokenService;
     @Mock PasswordEncoder passwordEncoder;
     @Mock CredentialRateLimiter credentialRateLimiter;
+    @Mock WebSocketLogoutCloser webSocketLogoutCloser;
 
     private AuthService service;
 
@@ -55,7 +57,8 @@ class AuthServiceTest {
                 jwtService,
                 setupTokenService,
                 passwordEncoder,
-                credentialRateLimiter
+                credentialRateLimiter,
+                webSocketLogoutCloser
         );
     }
 
@@ -108,6 +111,35 @@ class AuthServiceTest {
         assertThat(response.deviceRegistrationToken()).isEqualTo("device-token");
         verify(setupTokenService).consumePhone("setup-token");
         verify(userRepository).save(user);
+    }
+
+    @Test
+    void registerEmailChecksRegisterRateLimitBeforeCreatingUser() {
+        org.mockito.Mockito.doThrow(new ru.messenger.chaosmessenger.common.exception.RateLimitException(
+                        "Too many registration attempts. Try again later.",
+                        3600
+                ))
+                .when(credentialRateLimiter).checkRegister("alice@test.com");
+
+        assertThatThrownBy(() -> service.registerEmail(
+                " Alice@Test.COM ",
+                "secret123",
+                "alice",
+                "Alice",
+                "Smith",
+                null
+        )).isInstanceOf(ru.messenger.chaosmessenger.common.exception.RateLimitException.class);
+
+        verify(userRepository, never()).save(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void logoutClosesWebsocketSessionsForRevokedUser() {
+        when(refreshTokenService.revoke("refresh-token")).thenReturn("alice");
+
+        assertThat(service.logout("refresh-token").loggedOut()).isTrue();
+
+        verify(webSocketLogoutCloser).closeSessionsForUsername("alice");
     }
 
     @Test

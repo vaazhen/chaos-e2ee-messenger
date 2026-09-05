@@ -85,9 +85,9 @@ public class RefreshTokenService {
     }
 
     /** Revokes the entire refresh-token family represented by {@code token}. */
-    public void revoke(String token) {
+    public String revoke(String token) {
         if (token == null || token.isBlank()) {
-            return;
+            return null;
         }
 
         String digest = digest(token);
@@ -95,13 +95,14 @@ public class RefreshTokenService {
         TokenRecord record = decode(encoded);
         if (record != null) {
             revokeFamily(record.familyId());
-            return;
+            return record.username();
         }
 
         String usedFamily = redisTemplate.opsForValue().get(USED_PREFIX + digest);
         if (usedFamily != null) {
             revokeFamily(usedFamily);
         }
+        return null;
     }
 
     private IssuedToken issueForFamily(String username, String familyId) {

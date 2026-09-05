@@ -1,12 +1,25 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "strict": false,
-    "skipLibCheck": true
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "skipLibCheck": true,
+    "noEmit": true
   },
   "include": [
     "src/crypto-engine.ts",
+    "src/envelopeAad.ts",
+    "src/e2ee.ts",
+    "src/cryptoApi.ts",
     "src/types/**/*.ts",
+    "src/messageModel.ts",
+    "src/messageSend.ts",
+    "src/messageTimeline.ts",
+    "src/messageCrypto.ts",
+    "src/messageAttachments.ts",
     "src/vite-env.d.ts"
   ]
 }

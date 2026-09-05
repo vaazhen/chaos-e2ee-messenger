@@ -27,6 +27,28 @@ class CredentialRateLimiterTest {
     }
 
     @Test
+    void registerBlocksAfterConfiguredWindowWithoutPuttingEmailInRedisKey() {
+        RedisTemplate<String, String> redis = mock(RedisTemplate.class);
+        when(redis.execute(any(), anyList(), anyString())).thenReturn(6L);
+        CredentialRateLimiter limiter = new CredentialRateLimiter(redis);
+
+        assertThatThrownBy(() -> limiter.checkRegister("alice@example.com"))
+                .isInstanceOf(RateLimitException.class)
+                .hasMessageContaining("registration");
+    }
+
+    @Test
+    void ipLimitDoesNotPutRawAddressInRedisKey() {
+        RedisTemplate<String, String> redis = mock(RedisTemplate.class);
+        when(redis.execute(any(), anyList(), anyString())).thenReturn(41L);
+        CredentialRateLimiter limiter = new CredentialRateLimiter(redis);
+
+        assertThatThrownBy(() -> limiter.checkIp("203.0.113.9", "register"))
+                .isInstanceOf(RateLimitException.class)
+                .hasMessageContaining("Too many requests");
+    }
+
+    @Test
     void resetDeletesOnlyHashedRateKey() {
         RedisTemplate<String, String> redis = mock(RedisTemplate.class);
         CredentialRateLimiter limiter = new CredentialRateLimiter(redis);

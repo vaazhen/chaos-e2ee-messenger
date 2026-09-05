@@ -19,9 +19,6 @@ export default function BackupModal({ lang, theme, onClose, noWrapper }) {
   const [tab, setTab] = useState("export");
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [passphrase, setPassphrase] = useState("");
-  const [passphrase2, setPassphrase2] = useState("");
-  const [importPass, setImportPass] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -37,11 +34,10 @@ export default function BackupModal({ lang, theme, onClose, noWrapper }) {
   }, []);
 
   const handleExport = async () => {
-    if (passphrase.trim().length < 8 || passphrase !== passphrase2) return;
     setExporting(true);
     setError("");
     try {
-      const data = await api.exportBackup(passphrase.trim());
+      const data = await api.exportBackup();
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -49,8 +45,6 @@ export default function BackupModal({ lang, theme, onClose, noWrapper }) {
       a.download = `chaos-backup-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
-      setPassphrase("");
-      setPassphrase2("");
     } catch (e) {
       setError(e?.message || l("Ошибка экспорта", "Export failed"));
     } finally {
@@ -116,39 +110,18 @@ export default function BackupModal({ lang, theme, onClose, noWrapper }) {
 
       {tab === "export" && (
         <div className="backup-pane">
-          <label className="settings-field">
-            <span>{l("Фраза-пароль", "Passphrase")}</span>
-            <input
-              type="password"
-              className="settings-sheet-input"
-              value={passphrase}
-              onChange={(e) => setPassphrase(e.target.value)}
-              placeholder={l("Минимум 8 символов", "At least 8 characters")}
-            />
-          </label>
-          <label className="settings-field">
-            <span>{l("Повторите фразу", "Confirm passphrase")}</span>
-            <input
-              type="password"
-              className="settings-sheet-input"
-              value={passphrase2}
-              onChange={(e) => setPassphrase2(e.target.value)}
-              placeholder={l("Ещё раз", "Repeat")}
-              onKeyDown={(e) => { if (e.key === "Enter") handleExport(); }}
-            />
-          </label>
           <button
             type="button"
             className="settings-sheet-save"
             onClick={handleExport}
-            disabled={exporting || passphrase.trim().length < 8 || passphrase !== passphrase2}
+            disabled={exporting || !info?.hasBackup}
           >
             {exporting ? l("Экспорт...", "Exporting...") : l("Скачать копию", "Download backup")}
           </button>
           <p className="backup-note">
             {l(
-              "Фраза не хранится на сервере. Потеряете её — копию не откроете.",
-              "The passphrase is not stored on the server. Lose it, and the backup cannot be opened."
+              "Скачивается уже зашифрованный блоб. Фраза нужна только на устройстве, где копию создавали — сюда её не вводите.",
+              "This downloads the already-encrypted blob. The passphrase stays on the device that created the backup — do not send it here."
             )}
           </p>
         </div>
@@ -156,16 +129,6 @@ export default function BackupModal({ lang, theme, onClose, noWrapper }) {
 
       {tab === "import" && (
         <div className="backup-pane">
-          <label className="settings-field">
-            <span>{l("Фраза от копии", "Backup passphrase")}</span>
-            <input
-              type="password"
-              className="settings-sheet-input"
-              value={importPass}
-              onChange={(e) => setImportPass(e.target.value)}
-              placeholder={l("Если файл её требует", "If the file requires one")}
-            />
-          </label>
           <label className={`settings-sheet-save backup-file-btn${importing ? " is-disabled" : ""}`}>
             {importing ? l("Импорт...", "Importing...") : l("Выбрать JSON-файл", "Choose JSON file")}
             <input type="file" accept=".json" onChange={handleImport} hidden disabled={importing} />

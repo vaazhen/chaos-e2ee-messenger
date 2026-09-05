@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { api } from "../api";
+import { getE2ee } from "../e2ee";
 import { computeSafetyNumber, formatSafetyNumber } from "../safety-number";
 
 export function useSafetyNumberModal({ activeChat, meId, l }) {
@@ -14,7 +15,7 @@ export function useSafetyNumberModal({ activeChat, meId, l }) {
     if (!activeChat || activeChat.type !== "direct") return;
     setSafetyModal({ open: true, devices: [], selectedDeviceId: null, error: null });
     try {
-      const ownBundle = window.e2ee?.getLocalDeviceBundle?.();
+      const ownBundle = getE2ee()?.getLocalDeviceBundle?.();
       const ownIdentityKey = ownBundle?.identity?.publicKey;
       if (!ownIdentityKey) throw new Error(l("Локальный ключ устройства не найден", "Local device identity key is missing"));
 
@@ -30,7 +31,7 @@ export function useSafetyNumberModal({ activeChat, meId, l }) {
 
       const devices = await Promise.all(remoteDevices.map(async device => {
         const fingerprint = await computeSafetyNumber(ownIdentityKey, device.identityPublicKey);
-        const trust = window.e2ee?.getRemoteIdentityTrust?.(device.deviceId, device.identityPublicKey) || {
+        const trust = getE2ee()?.getRemoteIdentityTrust?.(device.deviceId, device.identityPublicKey) || {
           trustState: "UNVERIFIED"
         };
         return {
@@ -62,7 +63,7 @@ export function useSafetyNumberModal({ activeChat, meId, l }) {
   const verifySafetyDevice = useCallback(async (deviceId) => {
     const target = safetyModal.devices.find(device => device.deviceId === deviceId);
     if (!target) return;
-    await window.e2ee.verifyRemoteIdentity(target.deviceId, target.identityPublicKey, "SAFETY_NUMBER");
+    await getE2ee().verifyRemoteIdentity(target.deviceId, target.identityPublicKey, "SAFETY_NUMBER");
     setSafetyModal(current => ({
       ...current,
       devices: current.devices.map(device =>

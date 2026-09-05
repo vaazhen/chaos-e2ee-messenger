@@ -113,7 +113,7 @@ class RefreshTokenServiceTest {
         when(valueOps.getAndDelete("refresh:active:" + digest(token)))
                 .thenReturn("v1|alice|" + family);
 
-        service.revoke(token);
+        assertThat(service.revoke(token)).isEqualTo("alice");
 
         verify(valueOps).set("refresh:family:revoked:" + family, "1", Duration.ofDays(30));
     }

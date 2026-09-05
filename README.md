@@ -265,11 +265,13 @@ See `.env.example`, `backend/.env.example`, `frontend/.env.example`.
 
 ## Roadmap
 
-1. Finish the strict TypeScript crypto migration  
+1. Crypto engine is a strict TypeScript module; AAD v2 hex vectors live in [docs/protocol.md](docs/protocol.md)  
 2. Production object storage for ciphertext attachments  
 3. Production TURN, hardened call state, group calls  
 4. Independent pentest and cryptographic review  
-5. Formal protocol specification and test vectors  
+5. Formal protocol specification — working notes and pinned vectors in [docs/protocol.md](docs/protocol.md)  
+
+Do not grow the product surface (group calls, new transports, extra chat types) until an independent review exists.
 
 ---
 

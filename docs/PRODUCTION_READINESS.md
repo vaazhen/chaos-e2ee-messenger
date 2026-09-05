@@ -8,24 +8,35 @@
 | RT-3 | Sequential client event queue | P0 | VERIFIED | `useWebSocket.js` | `useWebSocket.test.jsx` |
 | RT-4 | Failed recovery event replay | P0 | VERIFIED | `useWebSocket.js` | retry test |
 | RT-5 | Cursor after durable client apply | P0 | VERIFIED | `useWebSocket.js` | ordering/cursor tests |
-| RT-6 | Bounded full-resync state | P0 | FIXED | `useWebSocket.js` | unit tests; browser E2E pending |
+| RT-6 | Bounded full-resync state | P0 | VERIFIED | `useWebSocket.js` | unit tests + `e2e/send-reconnect.e2e.spec.js` |
 | P0-6 | Honest backup semantics | P0 | VERIFIED | backup UI | frontend tests |
-| P0-7 | Backup passphrase remains client-side | P0 | VERIFIED | API/backend backup files | backend tests |
+| P0-7 | Backup passphrase remains client-side | P0 | VERIFIED | `BackupController`, `api.js`, `BackupModal.jsx` | export has no passphrase header; `api.test.js` |
 | P0-8 | Device linking step-up | P0 | VERIFIED | auth services | backend tests |
 | AUTH-1 | Atomic refresh rotation | P1 | VERIFIED | `RefreshTokenService.java` | backend tests |
 | SEC-3 | AAD protocol v2 and 64-bit chat ID | P1 | VERIFIED | `crypto-engine.ts` | crypto tests |
 | TS-1 | Real TypeScript gate includes crypto engine | P1 | VERIFIED | `tsconfig.json`, CI | local typecheck |
 | TS-2 | Protocol DTO strict gate | P1 | VERIFIED | `tsconfig.protocol.json` | local typecheck |
-| TS-3 | Full strict typing of crypto engine | P1 | IN_PROGRESS | `crypto-engine.ts` | migration gate only |
+| TS-3 | Full strict typing of crypto engine | P1 | VERIFIED | `crypto-engine.ts`, `tsconfig.crypto.json` | `typecheck:crypto` + `typecheck:protocol` |
+| TS-4 | Strict typing of message / timeline model | P1 | VERIFIED | `messageModel.ts`, `protocol.ts` | `typecheck:protocol` + `messageModel.test.js` |
+| TS-5 | Strict typing of decrypt / attachment helpers | P1 | VERIFIED | `messageCrypto.ts`, `messageAttachments.ts` | `typecheck:crypto` + message tests |
+| MOD-2 | Timeline and send payload are modules | P1 | VERIFIED | `messageTimeline.ts`, `messageSend.ts`, `useMessages.js` | unit tests + `useMessages.critical.test.jsx` |
+| MOD-1 | Crypto engine is a module, window is adapter | P1 | VERIFIED | `crypto-engine.ts`, `e2ee.ts` | named export + adapter test |
+| HTTP-1 | Crypto HTTP adapter always carries `status` | P1 | VERIFIED | `cryptoApi.ts` | `cryptoApi.test.js`; send / device / call reuse it |
 | CICD-1 | Trivy blocking gate | P0 | VERIFIED | `ci.yml` | workflow audit |
 | CICD-2 | Explicit CodeQL builds | P1 | FIXED | `ci.yml` | CI run pending |
+| CICD-5 | Master CI: durable cursor order + Tomcat 10.1.59 | P0 | FIXED | `DurableRealtimeDeliveryTest`, `pom.xml` | local tests; live CI on PR |
 | CICD-3 | Production depends on deployed staging | P0 | VERIFIED | `ci.yml` | workflow output gate |
 | CICD-4 | Mandatory staging smoke test when enabled | P0 | VERIFIED | `ci.yml` | workflow audit |
 | K8S-1 | Example secret excluded from kustomization | P0 | VERIFIED | `kustomization.yaml` | static audit |
 | K8S-2 | Tracked placeholder secret removed | P0 | VERIFIED | `.gitignore`, `k8s/secret.yaml` removed | static audit |
 | OBS-1 | Metrics, alerts and runbooks | P1 | VERIFIED | `infra`, `docs/runbooks` | static audit |
-| ATT-1 | Attachment hardening | P1 | FIXED | attachment backend | backend validation pending |
+| ATT-1 | Attachment hardening | P1 | VERIFIED | attachment backend | `AttachmentAccessServiceTest`, `AttachmentControllerTest`, storage tests |
 | CALL-1 | Calls behind feature flag | P1 | VERIFIED | signaling controller | static audit |
 | BE-CI-1 | Full Maven verify | P0 | VERIFIED | backend | local `mvn verify` |
 | DELIVERY-1 | Single outbox path through Kafka | P0 | VERIFIED | `EventPublisher`, `OutboxPublisher`, `RealtimeEventConsumer`, `DomainEventProcessor` | `DurableRealtimeDeliveryTest` |
 | AUTH-2 | JWT denied after refresh-family revoke | P0 | VERIFIED | `JwtAuthenticationFilter`, WS interceptor | backend tests |
+| AUTH-3 | Email registration and public auth IP rate limits | P1 | VERIFIED | `CredentialRateLimiter`, auth controllers | limiter + `AuthServiceTest` |
+| AUTH-4 | Profile JWT stays on the current refresh family | P1 | VERIFIED | `UserService`, `JwtAuthenticationFilter` | `UserServiceTest`, `InfraSecurityTest` |
+| AUTH-5 | Logout closes WebSocket sessions | P1 | VERIFIED | `WebSocketLogoutCloser`, `AuthService` | `WebSocketLogoutCloserTest`, `AuthServiceTest` |
+| AUTH-6 | Demo seed cannot start under prod | P1 | VERIFIED | `DemoDisabledInProduction` | `DemoDisabledInProductionTest` |
+| PERF-1 | Self-destruct and chat lookup stay bounded | P1 | VERIFIED | `SelfDestructScheduler`, `ChatQueryService` | scheduler unit test |

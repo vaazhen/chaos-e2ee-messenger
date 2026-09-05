@@ -46,6 +46,10 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
             return authorizeSubscribe(message, accessor);
         }
 
+        if (StompCommand.SEND.equals(accessor.getCommand())) {
+            return authorizeSend(message, accessor);
+        }
+
         if (StompCommand.DISCONNECT.equals(accessor.getCommand())) {
             String sessionId = accessor.getSessionId();
             sessionRegistry.unregister(sessionId);
@@ -84,7 +88,11 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
                 return null;
             }
             String sessionIdClaim = jwtService.extractSessionId(token);
-            if (sessionIdClaim != null && refreshTokenService.isFamilyRevoked(sessionIdClaim)) {
+            if (sessionIdClaim == null || sessionIdClaim.isBlank()) {
+                log.warn("WebSocket CONNECT denied: missing session user={}", username);
+                return null;
+            }
+            if (refreshTokenService.isFamilyRevoked(sessionIdClaim)) {
                 log.warn("WebSocket CONNECT denied: revoked session user={}", username);
                 return null;
             }
@@ -104,7 +112,7 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
             String sessionId = accessor.getSessionId();
             Principal userPrincipal = () -> username;
 
-            sessionRegistry.register(sessionId, username, deviceId);
+            sessionRegistry.register(sessionId, username, deviceId, sessionIdClaim);
 
             accessor.setUser(userPrincipal);
             accessor.getSessionAttributes().put("username", username);
@@ -118,6 +126,27 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
         }
     }
 
+    private Message<?> authorizeSend(Message<?> message, StompHeaderAccessor accessor) {
+        if (!isSessionDeviceActive(accessor) || isFamilyRevoked(accessor)) {
+            log.warn("WebSocket SEND denied sessionId={} dest={}", accessor.getSessionId(), accessor.getDestination());
+            return null;
+        }
+        return message;
+    }
+
+    private boolean isFamilyRevoked(StompHeaderAccessor accessor) {
+        String familyId = sessionRegistry.familyId(accessor.getSessionId());
+        if (familyId == null || familyId.isBlank()) {
+            return true;
+        }
+        try {
+            return refreshTokenService.isFamilyRevoked(familyId);
+        } catch (Exception e) {
+            log.warn("WebSocket family lookup failed; denying send: {}", e.getMessage());
+            return true;
+        }
+    }
+
     private Message<?> authorizeSubscribe(Message<?> message, StompHeaderAccessor accessor) {
         String username = resolveUsername(accessor);
         String dest = accessor.getDestination();
@@ -127,7 +156,7 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
             return null;
         }
 
-        if (!isSessionDeviceActive(accessor)) {
+        if (!isSessionDeviceActive(accessor) || isFamilyRevoked(accessor)) {
             log.warn("WebSocket SUBSCRIBE denied: inactive device sessionId={} user={} dest={}",
                     accessor.getSessionId(), username, dest);
             return null;

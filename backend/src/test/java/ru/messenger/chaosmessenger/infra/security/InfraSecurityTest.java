@@ -127,6 +127,30 @@ class InfraSecurityTest {
         verify(chain).doFilter(request, response);
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNotNull();
         assertThat(SecurityContextHolder.getContext().getAuthentication().getName()).isEqualTo("alice");
+        assertThat(request.getAttribute(JwtAuthenticationFilter.SESSION_ID_ATTRIBUTE)).isEqualTo("family-1");
+    }
+
+    @Test
+    void jwtAuthenticationFilterDeniesTokenWithoutSessionId() throws Exception {
+        JwtService jwtService = mock(JwtService.class);
+        JwtAuthenticationFilter filter = new JwtAuthenticationFilter(
+                jwtService,
+                mock(ru.messenger.chaosmessenger.auth.service.RefreshTokenService.class)
+        );
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("Authorization", "Bearer jwt-token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        FilterChain chain = mock(FilterChain.class);
+
+        when(jwtService.extractUsername("jwt-token")).thenReturn("alice");
+        when(jwtService.isTokenValid("jwt-token", "alice")).thenReturn(true);
+        when(jwtService.extractSessionId("jwt-token")).thenReturn(null);
+
+        filter.doFilter(request, response, chain);
+
+        verify(chain).doFilter(request, response);
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
 
     @Test

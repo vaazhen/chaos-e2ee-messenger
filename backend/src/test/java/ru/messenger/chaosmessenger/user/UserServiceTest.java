@@ -109,10 +109,10 @@ class UserServiceTest {
         when(userIdentityService.require("alice")).thenReturn(alice);
         when(userRepository.existsByUsername("new_name")).thenReturn(false);
         when(userRepository.save(alice)).thenReturn(alice);
-        when(jwtService.generateToken("new_name")).thenReturn("jwt-new-name");
+        when(jwtService.generateToken("new_name", "family-1")).thenReturn("jwt-new-name");
         when(participantRepository.findDistinctUsernamesSharingChatsWithUserId(1L)).thenReturn(List.of());
 
-        var response = userService.updateProfile("alice", request);
+        var response = userService.updateProfile("alice", request, "family-1");
 
         assertThat(alice.getFirstName()).isEqualTo("John");
         assertThat(alice.getLastName()).isEqualTo("Doe");
@@ -141,9 +141,9 @@ class UserServiceTest {
 
         when(userIdentityService.require("alice")).thenReturn(alice);
         when(userRepository.save(alice)).thenReturn(alice);
-        when(jwtService.generateToken("alice")).thenReturn("jwt-alice");
+        when(jwtService.generateToken("alice", "family-1")).thenReturn("jwt-alice");
 
-        var response = userService.updateProfile("alice", request);
+        var response = userService.updateProfile("alice", request, "family-1");
 
         assertThat(alice.getAvatarUrl()).isNull();
         assertThat(response.avatarUrl()).isNull();
@@ -155,9 +155,9 @@ class UserServiceTest {
 
         when(userIdentityService.require("alice")).thenReturn(alice);
         when(userRepository.save(alice)).thenReturn(alice);
-        when(jwtService.generateToken("alice")).thenReturn("jwt-alice");
+        when(jwtService.generateToken("alice", "family-1")).thenReturn("jwt-alice");
 
-        var response = userService.updateProfile("alice", request);
+        var response = userService.updateProfile("alice", request, "family-1");
 
         assertThat(response.username()).isEqualTo("alice");
         verify(userRepository, never()).existsByUsername("alice");
@@ -169,9 +169,9 @@ class UserServiceTest {
 
         when(userIdentityService.require("alice")).thenReturn(alice);
         when(userRepository.save(alice)).thenReturn(alice);
-        when(jwtService.generateToken("alice")).thenReturn("jwt-alice");
+        when(jwtService.generateToken("alice", "family-1")).thenReturn("jwt-alice");
 
-        var response = userService.updateProfile("alice", request);
+        var response = userService.updateProfile("alice", request, "family-1");
 
         assertThat(response.username()).isEqualTo("alice");
         verify(userRepository, never()).existsByUsername(org.mockito.ArgumentMatchers.anyString());
@@ -183,7 +183,7 @@ class UserServiceTest {
 
         when(userIdentityService.require("alice")).thenReturn(alice);
 
-        assertThatThrownBy(() -> userService.updateProfile("alice", request))
+        assertThatThrownBy(() -> userService.updateProfile("alice", request, "family-1"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Username must be 3-32 chars");
 
@@ -198,9 +198,21 @@ class UserServiceTest {
         when(userIdentityService.require("alice")).thenReturn(alice);
         when(userRepository.existsByUsername("bob")).thenReturn(true);
 
-        assertThatThrownBy(() -> userService.updateProfile("alice", request))
+        assertThatThrownBy(() -> userService.updateProfile("alice", request, "family-1"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Username \"bob\" is already taken");
+
+        verify(userRepository, never()).save(alice);
+        verify(outboxService, never()).write(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void updateProfileRejectsMissingSessionId() {
+        UpdateProfileRequest request = new UpdateProfileRequest("John", null, null, null, null);
+
+        assertThatThrownBy(() -> userService.updateProfile("alice", request, "  "))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("session");
 
         verify(userRepository, never()).save(alice);
         verify(outboxService, never()).write(any(), any(), any(), any(), any(), any());

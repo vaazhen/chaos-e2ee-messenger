@@ -42,11 +42,17 @@ export interface DecryptEnvelope {
   _chatId?: number;
 }
 
+/** DH ratchet key pair stored with the session (PKCS#8 private key). */
+export interface DhRatchetKeyPair {
+  publicKey: string;
+  privateKeyPkcs8: string;
+}
+
 /** Double Ratchet session state (v4). */
 export interface RatchetSession {
   version: number;
-  DHs: { publicKey: string; privateKey: string };
-  DHr: string;
+  DHs: DhRatchetKeyPair;
+  DHr: string | null;
   RK: string;
   CKs: string | null;
   CKr: string | null;
@@ -54,7 +60,12 @@ export interface RatchetSession {
   Nr: number;
   PN: number;
   MKSKIPPED: Record<string, string>;
-  rootKey: string;
+  localDeviceId?: string;
+  remoteDeviceId?: string;
+  senderIdentityPublicKey?: string;
+  _ephemeralPublicKey?: string;
+  establishedAt?: number;
+  rootKey?: string;
   receivingChainKey?: string;
   sendingChainKey?: string;
 }
@@ -77,6 +88,7 @@ export interface PreKey {
   publicKey: string;
   privateKeyPkcs8: string;
   signature?: string;
+  published?: boolean;
 }
 
 /** Full device bundle stored in IndexedDB / LocalStorage. */
@@ -129,6 +141,10 @@ export interface RemoteIdentityTrust {
   verificationMethod?: VerificationMethod;
   verifiedAt?: number;
   identityPublicKey: string;
+  firstSeenAt?: number;
+  lastSeenAt?: number;
+  changedAt?: number;
+  previousIdentityPublicKey?: string;
 }
 
 /** File encryption result. */
@@ -137,23 +153,110 @@ export interface EncryptedFile {
   fileKey: string;
 }
 
-/** AAD context for envelope authentication. */
+/** AAD context for envelope authentication. Unknown types encode as 0. */
 export interface AADContext {
-  messageType?: MessageType;
-  chatId?: number;
-  messageIndex?: number | null;
-  previousChainLength?: number | null;
-  ratchetPublicKey?: string | null;
+  messageType?: MessageType | string | undefined;
+  chatId?: number | undefined;
+  messageIndex?: number | null | undefined;
+  previousChainLength?: number | null | undefined;
+  ratchetPublicKey?: string | null | undefined;
 }
+
+export type CryptoApi = (path: string, opts?: RequestInit) => Promise<unknown>;
+
+export type MessagePayloadType = "text" | "image" | "voice" | "video_note" | "file" | string;
+
+export interface CompactReply {
+  id: string | number | null;
+  _text: string;
+  _img: boolean;
+  _voice: boolean;
+  _videoNote: boolean;
+}
+
+export interface MessageAttachment {
+  attachmentId?: string | undefined;
+  fileName?: string | undefined;
+  mimeType?: string | undefined;
+  durationMs?: number | undefined;
+  transcript?: string | undefined;
+  fileKey?: string | undefined;
+  objectUrl?: string | undefined;
+  blob?: Blob | undefined;
+  size?: number | undefined;
+  width?: number | undefined;
+  height?: number | undefined;
+}
+
+export interface MessagePayloadV1 {
+  v?: number;
+  type?: MessagePayloadType;
+  text?: string;
+  image?: { dataUrl?: string };
+  dataUrl?: string;
+  voice?: { dataUrl?: string; transcript?: string; durationMs?: number; mime?: string };
+  videoNote?: { src?: string; durationMs?: number; mime?: string };
+  attachment?: MessageAttachment | null;
+  ttl?: number | null;
+  replyTo?: CompactReply | Record<string, unknown> | null;
+}
+
+export interface ParsedMessage {
+  text: string;
+  img: string | null;
+  voice: { dataUrl?: string; transcript?: string; durationMs?: number; mime?: string } | null;
+  videoNote: { src: string; durationMs: number; mime: string } | null;
+  payload: MessagePayloadV1 | null;
+  attachment: MessageAttachment | null;
+  replyTo?: CompactReply | Record<string, unknown> | null;
+  ttl?: number | null;
+}
+
+export interface TimelineMessage {
+  id?: string | number | undefined;
+  messageId?: string | number | undefined;
+  content?: string | undefined;
+  status?: string | undefined;
+  deleted?: boolean | undefined;
+  deletedAt?: string | null | undefined;
+  envelope?: DecryptEnvelope | null | undefined;
+  senderDeviceId?: string | undefined;
+  chatId?: number | string | undefined;
+  senderId?: string | number | undefined;
+  createdAt?: string | undefined;
+  _text?: string | undefined;
+  _img?: unknown;
+  _voice?: unknown;
+  _videoNote?: unknown;
+  _payload?: MessagePayloadV1 | null | undefined;
+  _attachment?: MessageAttachment | null | undefined;
+  _ttl?: number | null | undefined;
+  _replyTo?: CompactReply | Record<string, unknown> | null | undefined;
+  expiresAt?: string | null | undefined;
+  _time?: string | undefined;
+  _temp?: boolean | undefined;
+  _out?: boolean | undefined;
+  _clientMessageId?: string | undefined;
+  myReactions?: string[] | undefined;
+  reactions?: Record<string, number> | undefined;
+}
+
+/** Options when applying a decrypted WS/API message to a chat timeline. */
+export interface IncomingTimelineApplyOptions {
+  isOut: boolean;
+  clientMessageId?: string | undefined;
+}
+
+export type ChatMessageMap = Record<string, TimelineMessage[]>;
 
 /** Exported public API of the crypto engine. */
 export interface CryptoEngine {
   getOrCreateDeviceId(): string;
   getLocalDeviceBundle(): DeviceBundle | null;
-  ensureDeviceRegistered(api: (path: string, opts?: RequestInit) => Promise<any>): Promise<DeviceBundle>;
-  replenishOneTimePreKeys(api: (path: string, opts?: RequestInit) => Promise<any>): Promise<DeviceBundle | null>;
+  ensureDeviceRegistered(api: CryptoApi): Promise<DeviceBundle>;
+  replenishOneTimePreKeys(api: CryptoApi): Promise<DeviceBundle | null>;
   resetLocalDeviceIdentity(): Promise<void>;
-  buildFanoutRequest(api: (path: string, opts?: RequestInit) => Promise<any>, chatId: number, plainText: string): Promise<FanoutRequest>;
+  buildFanoutRequest(api: CryptoApi, chatId: number, plainText: string): Promise<FanoutRequest>;
   decryptEnvelope(envelope: DecryptEnvelope): Promise<string>;
   encryptFile(fileArrayBuffer: ArrayBuffer): Promise<EncryptedFile>;
   decryptFile(encryptedArrayBuffer: ArrayBuffer, fileKeyBase64: string): Promise<ArrayBuffer>;

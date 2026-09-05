@@ -40,7 +40,7 @@ class PhoneVerificationServiceTest {
         jwtService = mock(JwtService.class);
         rateLimiter = mock(SmsRateLimiter.class);
         passwordEncoder = new BCryptPasswordEncoder();
-        service = new PhoneVerificationService(codeRepo, smsSender, userRepository, jwtService, rateLimiter, passwordEncoder);
+        service = new PhoneVerificationService(codeRepo, smsSender, userRepository, rateLimiter, passwordEncoder);
     }
 
 
@@ -75,12 +75,12 @@ class PhoneVerificationServiceTest {
         when(codeRepo.findTopByPhoneOrderByIdDesc(phone)).thenReturn(Optional.of(code));
         when(userRepository.existsByPhone(phone)).thenReturn(true);
         when(userRepository.findByPhone(phone)).thenReturn(Optional.of(user));
-        when(jwtService.generateToken("alice")).thenReturn("jwt-token");
 
         PhoneVerificationService.VerificationResult result = service.verifyCode(phone, "123456");
 
         assertThat(result.status()).isEqualTo("ok");
-        assertThat(result.token()).isEqualTo("jwt-token");
+        assertThat(result.token()).isNull();
+        verifyNoInteractions(jwtService);
         assertThat(code.getUsedAt()).isNotNull();
         assertThat(code.getCode()).isNotEqualTo("123456");
         assertThat(passwordEncoder.matches("123456", code.getCode())).isTrue();
