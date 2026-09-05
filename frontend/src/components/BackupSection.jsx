@@ -145,8 +145,14 @@ export default function BackupSection({ l, effectiveLang }) {
                     setBackupStatus("");
                     setBackupLoading(true);
                     try {
-                      const exported = await api.exportBackup(importPassphrase);
-                      const decrypted = await decryptBackup(exported.encryptedPayload, exported.salt, exported.iv, importPassphrase);
+                      const exported = await api.exportBackup();
+                      const decrypted = await decryptBackup(
+                        exported.encryptedPayload,
+                        exported.salt,
+                        exported.iv,
+                        importPassphrase,
+                        exported.checksum,
+                      );
                       await restoreKeysFromBackup(decrypted);
                       setBackupStatus(l("Ключи восстановлены. Перезайдите, чтобы завершить восстановление.", "Keys restored. Re-login to complete recovery."));
                       setImportPassphrase("");

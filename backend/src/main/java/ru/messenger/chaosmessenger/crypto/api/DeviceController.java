@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
+import ru.messenger.chaosmessenger.auth.service.CredentialRateLimiter;
 import ru.messenger.chaosmessenger.auth.service.DeviceRegistrationTokenService;
 import ru.messenger.chaosmessenger.crypto.device.CurrentDeviceService;
 import ru.messenger.chaosmessenger.crypto.device.DeviceService;
@@ -39,6 +40,7 @@ public class DeviceController {
     private final DeviceService                  deviceService;
     private final CurrentDeviceService           currentDeviceService;
     private final DeviceRegistrationTokenService deviceRegTokenService;
+    private final CredentialRateLimiter credentialRateLimiter;
 
     @Operation(
             summary = "Register a device and upload its X3DH key bundle",
@@ -115,9 +117,14 @@ public class DeviceController {
     @Operation(summary = "Append one-time pre-keys for the current device")
     @PostMapping("/current/prekeys")
     public OneTimePreKeyPoolResponse appendOneTimePreKeys(
-            @Valid @RequestBody OneTimePreKeyUploadRequest request
+            @Valid @RequestBody OneTimePreKeyUploadRequest request,
+            Authentication authentication
     ) {
         UserDevice device = currentDeviceService.requireCurrentDevice();
+        credentialRateLimiter.checkUserAction(
+                authentication != null ? authentication.getName() : device.getDeviceId(),
+                "prekey"
+        );
         int available = deviceService.appendOneTimePreKeys(device, request.oneTimePreKeys());
         return new OneTimePreKeyPoolResponse(available);
     }

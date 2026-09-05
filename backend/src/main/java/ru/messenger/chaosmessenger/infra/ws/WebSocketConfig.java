@@ -8,6 +8,7 @@ import org.springframework.messaging.simp.config.MessageBrokerRegistry;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
+import org.springframework.web.socket.config.annotation.WebSocketTransportRegistration;
 import ru.messenger.chaosmessenger.infra.config.AllowedOriginParser;
 
 @Configuration
@@ -16,6 +17,7 @@ import ru.messenger.chaosmessenger.infra.config.AllowedOriginParser;
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final WebSocketAuthChannelInterceptor webSocketAuthChannelInterceptor;
+    private final WebSocketNativeSessionTracker webSocketNativeSessionTracker;
 
     @Value("${chaos.websocket.allowed-origin-patterns:${chaos.cors.allowed-origin-patterns:${chaos.cors.allowed-origins:http://localhost:5173}}}")
     private String allowedOriginPatterns;
@@ -41,5 +43,10 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
         registration.interceptors(webSocketAuthChannelInterceptor);
+    }
+
+    @Override
+    public void configureWebSocketTransport(WebSocketTransportRegistration registration) {
+        registration.addDecoratorFactory(webSocketNativeSessionTracker);
     }
 }

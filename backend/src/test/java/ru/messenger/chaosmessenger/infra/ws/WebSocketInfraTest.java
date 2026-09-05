@@ -101,6 +101,8 @@ class WebSocketInfraTest {
 
         when(jwtService.extractUsername("jwt-token")).thenReturn("alice");
         when(jwtService.isTokenValid("jwt-token", "alice")).thenReturn(true);
+        when(jwtService.extractSessionId("jwt-token")).thenReturn("family-1");
+        when(refreshTokenService.isFamilyRevoked("family-1")).thenReturn(false);
         when(userDeviceRepository.findByUserUsernameAndDeviceIdAndActiveTrue("alice", "dev-a"))
                 .thenReturn(Optional.of(device));
         when(userDeviceRepository.save(device)).thenReturn(device);
@@ -113,6 +115,18 @@ class WebSocketInfraTest {
         assertThat(device.getLastSeen()).isNotNull();
 
         verify(userDeviceRepository).save(device);
+    }
+
+    @Test
+    void connectRejectsMissingSessionId() {
+        Message<byte[]> message = connectMessage("s1", "dev-a");
+
+        when(jwtService.extractUsername("jwt-token")).thenReturn("alice");
+        when(jwtService.isTokenValid("jwt-token", "alice")).thenReturn(true);
+        when(jwtService.extractSessionId("jwt-token")).thenReturn(null);
+
+        assertThat(interceptor.preSend(message, channel)).isNull();
+        verify(userDeviceRepository, never()).save(any());
     }
 
     @Test
@@ -322,6 +336,8 @@ class WebSocketInfraTest {
 
         when(jwtService.extractUsername("jwt-token")).thenReturn(username);
         when(jwtService.isTokenValid("jwt-token", username)).thenReturn(true);
+        when(jwtService.extractSessionId("jwt-token")).thenReturn("family-1");
+        when(refreshTokenService.isFamilyRevoked("family-1")).thenReturn(false);
         when(userDeviceRepository.findByUserUsernameAndDeviceIdAndActiveTrue(username, deviceId))
                 .thenReturn(Optional.of(device));
         when(userDeviceRepository.save(device)).thenReturn(device);

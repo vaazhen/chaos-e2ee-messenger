@@ -1,5 +1,7 @@
 import { clearAll as clearLocalStore } from "./localMessageStore";
 import { getToken, API_BASE } from "./api";
+import { createCryptoApi } from "./cryptoApi";
+import { getE2ee } from "./e2ee";
 
 function generateUUID() {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
@@ -15,14 +17,15 @@ function generateUUID() {
 const DEVICE_ID_KEY = "cm_device_id";
 
 /**
- * Returns deviceId from window.e2ee (crypto-engine.js).
+ * Returns deviceId from the crypto engine.
  * Fallback generates UUID with the unscoped storage key.
  */
 export function getOrCreateDeviceId() {
-  if (window.e2ee?.getOrCreateDeviceId) {
-    return window.e2ee.getOrCreateDeviceId();
+  const e2ee = getE2ee();
+  if (e2ee?.getOrCreateDeviceId) {
+    return e2ee.getOrCreateDeviceId();
   }
-  // Fallback (crypto-engine.js not loaded yet)
+  // Fallback (crypto engine is not loaded yet)
   let id = localStorage.getItem(DEVICE_ID_KEY);
   if (!id) {
     id = "device-" + generateUUID();
@@ -32,61 +35,45 @@ export function getOrCreateDeviceId() {
 }
 
 /**
- * Registers the device through crypto-engine.js.
+ * Registers the device through the crypto engine.
  * Login passes a one-time enrollment token. Session restore may omit it and
  * only re-bind an already enrolled device whose identity keys still match.
  *
  * @param {string} [deviceRegistrationToken] — short-lived token (60 s) from login.
  */
 export async function ensureDeviceRegistered(deviceRegistrationToken) {
-  if (!window.e2ee?.ensureDeviceRegistered) {
-    if (import.meta.env.DEV) console.warn("[E2EE] crypto-engine.js is not loaded");
+  const e2ee = getE2ee();
+  if (!e2ee?.ensureDeviceRegistered) {
+    if (import.meta.env.DEV) console.warn("[E2EE] crypto engine is not loaded");
     return getOrCreateDeviceId();
   }
 
-  const token   = getToken();
-  const baseUrl = API_BASE.replace(/\/api$/, "");
-
-  const apiFn = async (path, opts = {}) => {
-    const extraHeaders = {};
-    if (deviceRegistrationToken && path.includes("/crypto/devices/register")) {
-      extraHeaders["X-Device-Registration-Token"] = deviceRegistrationToken;
-    }
-    const r = await fetch(baseUrl + path, {
-      ...opts,
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: "Bearer " + token,
-        "X-Device-Id": getOrCreateDeviceId(),
-        ...extraHeaders,
-        ...opts.headers,
-      },
-    });
-    if (!r.ok) {
-      const body = await r.json().catch(() => ({}));
-      const error = new Error(body?.message || `${r.status}`);
-      error.status = r.status;
-      error.code = body?.code;
-      throw error;
-    }
-    return r.json().catch(() => null);
-  };
+  const apiFn = createCryptoApi({
+    token: getToken,
+    deviceId: getOrCreateDeviceId,
+    baseUrl: API_BASE.replace(/\/api$/, ""),
+    credentials: "include",
+    headerFactory: (path) => (
+      deviceRegistrationToken && path.includes("/crypto/devices/register")
+        ? { "X-Device-Registration-Token": deviceRegistrationToken }
+        : {}
+    ),
+  });
   apiFn.__canRegisterDevice = Boolean(deviceRegistrationToken);
 
   try {
-    await window.e2ee.ensureDeviceRegistered(apiFn);
+    await e2ee.ensureDeviceRegistered(apiFn);
   } catch (error) {
-    if (!isDeviceIdentityConflict(error) || !window.e2ee?.resetLocalDeviceIdentity) {
+    if (!isDeviceIdentityConflict(error) || !e2ee?.resetLocalDeviceIdentity) {
       throw error;
     }
 
     if (import.meta.env.DEV) console.warn("[E2EE] Device id conflict, resetting local identity and retrying registration");
-    await window.e2ee.resetLocalDeviceIdentity();
+    await e2ee.resetLocalDeviceIdentity();
     clearLocalStore().catch(() => {});
-    await window.e2ee.ensureDeviceRegistered(apiFn);
+    await e2ee.ensureDeviceRegistered(apiFn);
   }
-  const deviceId = window.e2ee.getOrCreateDeviceId();
+  const deviceId = e2ee.getOrCreateDeviceId();
   if (import.meta.env.DEV) console.warn("[E2EE] Device registered");
   return deviceId;
 }
@@ -123,26 +110,13 @@ export async function ensureCurrentDeviceExists() {
     throw error;
   }
 
-  if (window.e2ee?.replenishOneTimePreKeys) {
-    const baseUrl = API_BASE.replace(/\/api$/, "");
-    const cryptoApi = async (path, opts = {}) => {
-      const response = await fetch(baseUrl + path, {
-        ...opts,
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: "Bearer " + token,
-          "X-Device-Id": deviceId,
-          ...opts.headers,
-        },
-      });
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(body?.message || `${response.status}`);
-      }
-      return response.json().catch(() => null);
-    };
-    await window.e2ee.replenishOneTimePreKeys(cryptoApi);
+  if (getE2ee()?.replenishOneTimePreKeys) {
+    await getE2ee().replenishOneTimePreKeys(createCryptoApi({
+      token,
+      deviceId,
+      baseUrl: API_BASE.replace(/\/api$/, ""),
+      credentials: "include",
+    }));
   }
 
   return deviceId;

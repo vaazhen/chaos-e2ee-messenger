@@ -3,7 +3,9 @@ package ru.messenger.chaosmessenger.user.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.transaction.annotation.Transactional;
 import ru.messenger.chaosmessenger.chat.repository.ChatParticipantRepository;
 import ru.messenger.chaosmessenger.infra.security.JwtService;
@@ -77,7 +79,10 @@ public class UserService {
     }
 
     @Transactional
-    public UpdateProfileResponse updateProfile(String currentIdentity, UpdateProfileRequest request) {
+    public UpdateProfileResponse updateProfile(String currentIdentity, UpdateProfileRequest request, String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Access token is missing a session");
+        }
         var user = userIdentityService.require(currentIdentity);
 
         if (request.firstName() != null) {
@@ -115,7 +120,7 @@ public class UserService {
 
         user = userRepository.save(user);
         UserProfileResponse updated = toProfileResponse(user);
-        String token = jwtService.generateToken(updated.username());
+        String token = jwtService.generateToken(updated.username(), sessionId);
 
         Long updatedUserId = updated.id();
         writeProfileUpdatedOutboxEvent(updatedUserId);

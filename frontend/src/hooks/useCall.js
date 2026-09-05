@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ICE_SERVERS } from "../config";
 import { getOrCreateDeviceId } from "../deviceId";
+import { getE2ee } from "../e2ee";
 import {
   decryptCallKeyEnvelope,
   encryptCallKeyForChat,
@@ -416,18 +417,27 @@ export function useCall({ enabled, me, sendSignal, incoming }) {
       if (video) await enableCamera(pc);
       let mediaKeys = [];
       try {
-        if (supportsMediaE2ee() && window.e2ee?.buildFanoutRequest) {
+        if (supportsMediaE2ee() && getE2ee()?.buildFanoutRequest) {
           const rawKey = generateCallKey();
           mediaKeys = await encryptCallKeyForChat(chatId, rawKey);
           callKeyRef.current = rawKey;
           const protectedOk = await protectPeerConnection(pc, rawKey);
-          setMediaProtection(protectedOk ? "e2ee" : "dtls");
+          if (!protectedOk || mediaKeys.length === 0) {
+            throw new Error("call-e2ee-unavailable");
+          }
+          setMediaProtection("e2ee");
         } else {
           setMediaProtection("dtls");
         }
       } catch (error) {
         callLog("media e2ee key wrap failed", error);
-        setMediaProtection("dtls");
+        setMediaError("e2ee");
+        if (pcRef.current) {
+          try { pcRef.current.close(); } catch (_) { /* ignore */ }
+          pcRef.current = null;
+        }
+        setPhaseNow("error");
+        return;
       }
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);

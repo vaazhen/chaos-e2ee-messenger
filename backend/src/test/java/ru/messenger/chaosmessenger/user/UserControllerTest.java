@@ -6,8 +6,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.domain.Pageable;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.core.Authentication;
+import ru.messenger.chaosmessenger.infra.security.JwtAuthenticationFilter;
 import ru.messenger.chaosmessenger.TestFixtures;
 import ru.messenger.chaosmessenger.chat.repository.ChatParticipantRepository;
 import ru.messenger.chaosmessenger.infra.security.JwtService;
@@ -129,9 +130,11 @@ class UserControllerTest {
         );
 
         when(authentication.getName()).thenReturn("alice");
-        when(userService.updateProfile("alice", request)).thenReturn(updated);
+        when(userService.updateProfile("alice", request, "family-1")).thenReturn(updated);
 
-        UpdateProfileResponse response = userController.updateProfile(authentication, request);
+        MockHttpServletRequest http = new MockHttpServletRequest();
+        http.setAttribute(JwtAuthenticationFilter.SESSION_ID_ATTRIBUTE, "family-1");
+        UpdateProfileResponse response = userController.updateProfile(authentication, request, http);
 
         assertThat(response).isSameAs(updated);
         assertThat(response.token()).isEqualTo("jwt-new");

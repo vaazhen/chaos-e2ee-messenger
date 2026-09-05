@@ -122,5 +122,11 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
 
     long countByChatIdAndSenderIdAndDeletedAtIsNull(Long chatId, Long senderId);
 
-    List<Message> findByExpiresAtBeforeAndDeletedAtIsNull(LocalDateTime now);
+    @Query("""
+            select m from Message m
+            where m.expiresAt < :now
+              and m.deletedAt is null
+            order by m.expiresAt asc, m.id asc
+            """)
+    List<Message> findExpiredBefore(@Param("now") LocalDateTime now, Pageable pageable);
 }

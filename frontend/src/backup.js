@@ -1,7 +1,9 @@
+import { getE2ee } from "./e2ee";
+
 const BACKUP_VERSION = 1;
 
 export async function createEncryptedBackup(passphrase) {
-  const e2ee = window.e2ee;
+  const e2ee = getE2ee();
   if (!e2ee) throw new Error('Crypto engine not loaded');
 
   const bundle = await e2ee.getLocalDeviceBundle();
@@ -65,7 +67,14 @@ export async function createEncryptedBackup(passphrase) {
   };
 }
 
-export async function decryptBackup(encryptedPayload, salt, iv, passphrase) {
+export async function decryptBackup(encryptedPayload, salt, iv, passphrase, checksum) {
+  if (checksum) {
+    const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(encryptedPayload));
+    const actual = btoa(String.fromCharCode(...new Uint8Array(hash)));
+    if (actual !== checksum) {
+      throw new Error("Backup checksum mismatch");
+    }
+  }
   const encryptedBytes = Uint8Array.from(atob(encryptedPayload), (c) => c.charCodeAt(0));
   const saltBytes = Uint8Array.from(atob(salt), (c) => c.charCodeAt(0));
   const ivBytes = Uint8Array.from(atob(iv), (c) => c.charCodeAt(0));
@@ -103,7 +112,8 @@ export async function decryptBackup(encryptedPayload, salt, iv, passphrase) {
 export async function restoreKeysFromBackup(backupData) {
   const { deviceId, registrationId, identityKeyPair, signingKeyPair, signedPreKey, oneTimePreKeys } = backupData;
 
-  if (!window.e2ee?.importLocalDeviceBundle) {
+  const e2ee = getE2ee();
+  if (!e2ee?.importLocalDeviceBundle) {
     throw new Error('Crypto engine does not support secure backup restore');
   }
   if (!deviceId || !identityKeyPair) {
@@ -119,7 +129,7 @@ export async function restoreKeysFromBackup(backupData) {
     oneTimePreKeys: oneTimePreKeys ? JSON.parse(oneTimePreKeys) : [],
   };
 
-  await window.e2ee.importLocalDeviceBundle(bundle);
+  await e2ee.importLocalDeviceBundle(bundle);
   localStorage.setItem('chaos_backupRestored', 'true');
   return { deviceId, restored: true };
 }

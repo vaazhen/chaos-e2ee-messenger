@@ -31,6 +31,7 @@ class AuthPhoneControllerTest {
 
     @Mock AuthService authService;
     @Mock RefreshCookieService refreshCookieService;
+    @Mock ru.messenger.chaosmessenger.auth.service.CredentialRateLimiter credentialRateLimiter;
 
     @InjectMocks AuthPhoneController controller;
 

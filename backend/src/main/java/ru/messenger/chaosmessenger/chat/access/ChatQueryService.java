@@ -330,14 +330,7 @@ public class ChatQueryService {
 
     @Transactional(readOnly = true)
     public ChatResponse getChatForUser(String username, Long chatId) {
-        try {
-            return getChatForUserById(username, chatId);
-        } catch (ChatException ex) {
-            return getMyChats(username, 0, 1000).stream()
-                    .filter(c -> Objects.equals(c.chatId(), chatId))
-                    .findFirst()
-                    .orElseThrow(() -> ex);
-        }
+        return getChatForUserById(username, chatId);
     }
 
     @Transactional(readOnly = true)

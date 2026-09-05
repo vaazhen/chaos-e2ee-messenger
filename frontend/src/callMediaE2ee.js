@@ -1,29 +1,17 @@
 import { API_BASE } from "./config";
+import { createCryptoApi } from "./cryptoApi";
 import { getOrCreateDeviceId } from "./deviceId";
 import { getToken } from "./api";
+import { getE2ee } from "./e2ee";
 
 const CALL_KEY_PREFIX = "chaos-call-key:v1:";
 
-function createCryptoApi() {
-  const token = getToken();
-  const deviceId = getOrCreateDeviceId();
-  const baseUrl = API_BASE.replace(/\/api$/, "");
-  return async (path, opts = {}) => {
-    const response = await fetch(baseUrl + path, {
-      ...opts,
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: "Bearer " + token } : {}),
-        ...(deviceId ? { "X-Device-Id": deviceId } : {}),
-        ...opts.headers,
-      },
-    });
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}));
-      throw new Error(body?.message || `${response.status}`);
-    }
-    return response.json().catch(() => null);
-  };
+function callCryptoApi() {
+  return createCryptoApi({
+    token: getToken,
+    deviceId: getOrCreateDeviceId,
+    baseUrl: API_BASE.replace(/\/api$/, ""),
+  });
 }
 
 function bytesToBase64(bytes) {
@@ -57,9 +45,9 @@ export function generateCallKey() {
 }
 
 export async function encryptCallKeyForChat(chatId, rawKey) {
-  if (!window.e2ee?.buildFanoutRequest) return [];
-  const fanout = await window.e2ee.buildFanoutRequest(
-    createCryptoApi(),
+  if (!getE2ee()?.buildFanoutRequest) return [];
+  const fanout = await getE2ee().buildFanoutRequest(
+    callCryptoApi(),
     chatId,
     CALL_KEY_PREFIX + bytesToBase64(rawKey),
   );
@@ -70,11 +58,11 @@ export async function encryptCallKeyForChat(chatId, rawKey) {
 }
 
 export async function decryptCallKeyEnvelope(envelopes) {
-  if (!window.e2ee?.decryptEnvelope || !Array.isArray(envelopes)) return null;
+  if (!getE2ee()?.decryptEnvelope || !Array.isArray(envelopes)) return null;
   const ownId = getOrCreateDeviceId();
   const mine = envelopes.find((item) => item?.targetDeviceId === ownId) || envelopes[0];
   if (!mine) return null;
-  const plaintext = await window.e2ee.decryptEnvelope(mine);
+  const plaintext = await getE2ee().decryptEnvelope(mine);
   if (!String(plaintext).startsWith(CALL_KEY_PREFIX)) return null;
   return base64ToBytes(String(plaintext).slice(CALL_KEY_PREFIX.length));
 }

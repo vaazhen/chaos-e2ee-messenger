@@ -14,11 +14,15 @@ public class WebSocketSessionRegistry {
     private final ConcurrentHashMap<String, Set<String>> sessionsByDeviceId = new ConcurrentHashMap<>();
 
     public void register(String sessionId, String username, String deviceId) {
+        register(sessionId, username, deviceId, null);
+    }
+
+    public void register(String sessionId, String username, String deviceId, String familyId) {
         if (sessionId == null || username == null || deviceId == null) {
             return;
         }
         unregister(sessionId);
-        bySessionId.put(sessionId, new SessionInfo(sessionId, username, deviceId, Instant.now()));
+        bySessionId.put(sessionId, new SessionInfo(sessionId, username, deviceId, familyId, Instant.now()));
         sessionsByUsername.computeIfAbsent(username, key -> ConcurrentHashMap.newKeySet()).add(sessionId);
         sessionsByDeviceId.computeIfAbsent(deviceId, key -> ConcurrentHashMap.newKeySet()).add(sessionId);
     }
@@ -43,6 +47,16 @@ public class WebSocketSessionRegistry {
     public String deviceId(String sessionId) {
         SessionInfo info = bySessionId.get(sessionId);
         return info == null ? null : info.deviceId();
+    }
+
+    public String familyId(String sessionId) {
+        SessionInfo info = bySessionId.get(sessionId);
+        return info == null ? null : info.familyId();
+    }
+
+    public Set<String> sessionIdsForUsername(String username) {
+        Set<String> sessions = sessionsByUsername.get(username);
+        return sessions == null ? Set.of() : Set.copyOf(sessions);
     }
 
     public boolean hasUserSession(String username) {
@@ -70,6 +84,6 @@ public class WebSocketSessionRegistry {
         }
     }
 
-    public record SessionInfo(String sessionId, String username, String deviceId, Instant connectedAt) {
+    public record SessionInfo(String sessionId, String username, String deviceId, String familyId, Instant connectedAt) {
     }
 }

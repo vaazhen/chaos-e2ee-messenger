@@ -13,12 +13,11 @@ import "./styles/screens/profile.css";
 import "./styles/screens/settings.css";
 import "./styles/screens/calls.css";
 import "./styles/responsive.css";
-import "./crypto-engine.ts";
+import { e2ee } from "./crypto-engine.ts";
 
-// If crypto-engine.js is not loaded, warn in the console without crashing the app
-if (!window.e2ee) {
+if (!e2ee) {
   console.warn(
-    "[E2EE] crypto-engine.js is not loaded. " +
+    "[E2EE] crypto-engine module did not initialize. " +
     "Check WebCrypto support and crypto-engine module initialization."
   );
 }

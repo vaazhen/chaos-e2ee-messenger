@@ -22,6 +22,8 @@ import java.io.IOException;
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
+    public static final String SESSION_ID_ATTRIBUTE = "chaos.jwt.sessionId";
+
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
 
@@ -67,6 +69,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 );
 
                 SecurityContextHolder.getContext().setAuthentication(authenticationToken);
+                request.setAttribute(SESSION_ID_ATTRIBUTE, jwtService.extractSessionId(token));
                 MDC.put("userId", username);
             }
         } catch (Exception e) {
@@ -84,7 +87,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private boolean isSessionRevoked(String token) {
         String sessionId = jwtService.extractSessionId(token);
         if (sessionId == null || sessionId.isBlank()) {
-            return false;
+            return true;
         }
         try {
             return refreshTokenService.isFamilyRevoked(sessionId);

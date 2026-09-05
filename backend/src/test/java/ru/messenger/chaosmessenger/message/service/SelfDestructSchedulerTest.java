@@ -39,7 +39,7 @@ class SelfDestructSchedulerTest {
 
         scheduler.deleteExpiredMessages();
 
-        verify(messageRepository, never()).findByExpiresAtBeforeAndDeletedAtIsNull(any());
+        verify(messageRepository, never()).findExpiredBefore(any(), any());
         verify(messageOutboxService, never()).messageDeleted(any());
     }
 
@@ -50,7 +50,7 @@ class SelfDestructSchedulerTest {
         Message first = TestFixtures.sentMessage(1L, 10L, 1L, "dev-a");
         Message second = TestFixtures.sentMessage(2L, 10L, 2L, "dev-b");
         Message otherChat = TestFixtures.sentMessage(3L, 11L, 1L, "dev-a");
-        when(messageRepository.findByExpiresAtBeforeAndDeletedAtIsNull(any(LocalDateTime.class)))
+        when(messageRepository.findExpiredBefore(any(LocalDateTime.class), any()))
                 .thenReturn(List.of(first, second, otherChat));
 
         scheduler.deleteExpiredMessages();

@@ -2,6 +2,7 @@ package ru.messenger.chaosmessenger.message.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -20,6 +21,7 @@ import java.util.stream.Collectors;
 public class SelfDestructScheduler {
 
     private static final long LOCK_KEY = 0x43484F53L;
+    private static final int BATCH_SIZE = 200;
 
     private final MessageRepository messageRepository;
     private final MessageOutboxService messageOutboxService;
@@ -33,7 +35,7 @@ public class SelfDestructScheduler {
             return;
         }
 
-        List<Message> expired = messageRepository.findByExpiresAtBeforeAndDeletedAtIsNull(LocalDateTime.now());
+        List<Message> expired = messageRepository.findExpiredBefore(LocalDateTime.now(), PageRequest.of(0, BATCH_SIZE));
         if (expired.isEmpty()) {
             return;
         }

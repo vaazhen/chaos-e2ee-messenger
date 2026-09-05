@@ -9,7 +9,7 @@
   </parent>
   <groupId>ru.messenger</groupId>
   <artifactId>chaos-messenger</artifactId>
-  <version>1.0.0</version>
+  <version>0.9.0</version>
   <name>chaos-messenger</name>
   <description>chaos-messenger</description>
   <url>https://github.com/vaazhen/chaos-messenger</url>
@@ -17,6 +17,7 @@
     <java.version>17</java.version>
     <netty.version>4.1.136.Final</netty.version>
     <postgresql.version>42.7.12</postgresql.version>
+    <tomcat.version>10.1.59</tomcat.version>
   </properties>
   <dependencyManagement>
     <dependencies>

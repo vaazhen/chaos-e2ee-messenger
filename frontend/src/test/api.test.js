@@ -139,6 +139,26 @@ describe("api", () => {
     });
   });
 
+  it("exportBackup does not send the passphrase to the server", async () => {
+    const { api, setToken } = await import("../api");
+    setToken("jwt-token");
+
+    fetch.mockResolvedValueOnce(await okJson({
+      encryptedPayload: "cipher",
+      salt: "salt",
+      iv: "iv",
+    }));
+
+    const body = await api.exportBackup("super-secret-passphrase");
+
+    expect(body.encryptedPayload).toBe("cipher");
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [url, opts] = fetch.mock.calls[0];
+    expect(String(url)).toContain("/backup/export");
+    expect(opts.headers["X-Backup-Passphrase"]).toBeUndefined();
+    expect(JSON.stringify(opts.headers || {})).not.toContain("super-secret-passphrase");
+  });
+
   it("usernameAvailable calls public auth endpoint when method exists", async () => {
     const { api } = await import("../api");
 

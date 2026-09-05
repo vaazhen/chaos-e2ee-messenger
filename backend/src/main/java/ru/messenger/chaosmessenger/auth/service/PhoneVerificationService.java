@@ -7,7 +7,6 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.messenger.chaosmessenger.auth.domain.VerificationCode;
 import ru.messenger.chaosmessenger.auth.repository.VerificationCodeRepository;
 import ru.messenger.chaosmessenger.infra.sms.SmsSender;
-import ru.messenger.chaosmessenger.infra.security.JwtService;
 import ru.messenger.chaosmessenger.user.domain.User;
 import ru.messenger.chaosmessenger.user.domain.UserStatus;
 import ru.messenger.chaosmessenger.user.repository.UserRepository;
@@ -30,7 +29,6 @@ public class PhoneVerificationService {
     private final VerificationCodeRepository codeRepo;
     private final SmsSender smsSender;
     private final UserRepository userRepository;
-    private final JwtService jwtService;
     private final SmsRateLimiter rateLimiter;
     private final PasswordEncoder passwordEncoder;
 
@@ -102,13 +100,12 @@ public class PhoneVerificationService {
                 return userRepository.save(created);
             });
 
-            String token = jwtService.generateToken(user.getUsername());
             boolean isNewUser = !existedBefore;
             return new VerificationResult(
                     "ok",
                     existedBefore,
                     isNewUser,
-                    token,
+                    null,
                     user.getId(),
                     user.getUsername()
             );

@@ -1,5 +1,6 @@
 package ru.messenger.chaosmessenger.user.api;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -17,6 +18,7 @@ import ru.messenger.chaosmessenger.user.dto.UpdateProfileRequest;
 import ru.messenger.chaosmessenger.user.dto.UpdateProfileResponse;
 import ru.messenger.chaosmessenger.user.dto.UserProfileResponse;
 import ru.messenger.chaosmessenger.user.dto.UserSearchResponse;
+import ru.messenger.chaosmessenger.infra.security.JwtAuthenticationFilter;
 import ru.messenger.chaosmessenger.user.service.UserService;
 
 import java.util.List;
@@ -50,7 +52,12 @@ public class UserController {
 
     @Operation(summary = "Update profile", description = "Returns the updated profile and a new JWT if the username changed.")
     @PutMapping("/profile")
-    public UpdateProfileResponse updateProfile(Authentication authentication, @Valid @RequestBody UpdateProfileRequest request) {
-        return userService.updateProfile(authentication.getName(), request);
+    public UpdateProfileResponse updateProfile(
+            Authentication authentication,
+            @Valid @RequestBody UpdateProfileRequest request,
+            HttpServletRequest httpRequest
+    ) {
+        String sessionId = (String) httpRequest.getAttribute(JwtAuthenticationFilter.SESSION_ID_ATTRIBUTE);
+        return userService.updateProfile(authentication.getName(), request, sessionId);
     }
 }

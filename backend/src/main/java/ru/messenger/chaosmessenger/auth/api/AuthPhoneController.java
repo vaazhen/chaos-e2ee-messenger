@@ -2,6 +2,7 @@ package ru.messenger.chaosmessenger.auth.api;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +25,7 @@ import ru.messenger.chaosmessenger.auth.dto.UsernameAvailabilityResponse;
 import ru.messenger.chaosmessenger.auth.dto.VerifyCodeRequest;
 import ru.messenger.chaosmessenger.auth.dto.VerifyCodeResponse;
 import ru.messenger.chaosmessenger.auth.service.AuthService;
+import ru.messenger.chaosmessenger.auth.service.CredentialRateLimiter;
 import ru.messenger.chaosmessenger.auth.service.RefreshCookieService;
 
 @Tag(name = "Authentication", description = "Registration and login")
@@ -34,17 +36,31 @@ public class AuthPhoneController {
 
     private final AuthService authService;
     private final RefreshCookieService refreshCookieService;
+    private final CredentialRateLimiter credentialRateLimiter;
 
     @Operation(summary = "Check whether an account exists for the given phone number")
     @GetMapping("/exists")
-    public AccountExistsResponse exists(@RequestParam("phone") String phone) {
+    public AccountExistsResponse exists(@RequestParam("phone") String phone, HttpServletRequest request) {
+        credentialRateLimiter.checkIp(clientIp(request), "lookup");
         return authService.accountExists(phone);
+    }
+
+    public AccountExistsResponse exists(String phone) {
+        return exists(phone, null);
     }
 
     @Operation(summary = "Check username availability during setup")
     @GetMapping("/username-available")
-    public UsernameAvailabilityResponse usernameAvailable(@RequestParam("username") String username) {
+    public UsernameAvailabilityResponse usernameAvailable(
+            @RequestParam("username") String username,
+            HttpServletRequest request
+    ) {
+        credentialRateLimiter.checkIp(clientIp(request), "lookup");
         return authService.usernameAvailable(username);
+    }
+
+    public UsernameAvailabilityResponse usernameAvailable(String username) {
+        return usernameAvailable(username, null);
     }
 
     @Operation(summary = "Send SMS verification code")
@@ -150,5 +166,12 @@ public class AuthPhoneController {
                 null,
                 auth.deviceRegistrationToken()
         );
+    }
+
+    private static String clientIp(HttpServletRequest request) {
+        if (request == null || request.getRemoteAddr() == null || request.getRemoteAddr().isBlank()) {
+            return "unknown";
+        }
+        return request.getRemoteAddr();
     }
 }
