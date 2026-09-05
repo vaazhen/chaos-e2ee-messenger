@@ -25,6 +25,7 @@ import ru.messenger.chaosmessenger.crypto.dto.DeviceRegistrationResponse;
 import ru.messenger.chaosmessenger.crypto.dto.OneTimePreKeyPoolResponse;
 import ru.messenger.chaosmessenger.crypto.dto.OneTimePreKeyUploadRequest;
 import ru.messenger.chaosmessenger.crypto.dto.UserDeviceResponse;
+import ru.messenger.chaosmessenger.infra.ws.WebSocketLogoutCloser;
 
 import java.util.List;
 
@@ -41,6 +42,7 @@ public class DeviceController {
     private final CurrentDeviceService           currentDeviceService;
     private final DeviceRegistrationTokenService deviceRegTokenService;
     private final CredentialRateLimiter credentialRateLimiter;
+    private final WebSocketLogoutCloser webSocketLogoutCloser;
 
     @Operation(
             summary = "Register a device and upload its X3DH key bundle",
@@ -138,12 +140,16 @@ public class DeviceController {
             @RequestHeader(value = "X-Device-Id", required = false) String currentDeviceId
     ) {
         requireAuth(authentication);
-        return deviceService.deactivateDevice(
+        UserDeviceResponse response = deviceService.deactivateDevice(
                 authentication.getName(),
                 internalDeviceId,
                 confirmLastDevice,
                 currentDeviceId
         );
+        if (!response.active()) {
+            webSocketLogoutCloser.closeSessionsForDevice(response.deviceId());
+        }
+        return response;
     }
 
     private void requireAuth(Authentication authentication) {

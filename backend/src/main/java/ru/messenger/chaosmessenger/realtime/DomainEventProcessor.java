@@ -81,6 +81,10 @@ public class DomainEventProcessor {
         }
         if ("user".equals(aggregateType)) {
             fanoutUserEvent(event, payload, afterCommit);
+            return;
+        }
+        if ("device".equals(aggregateType) || "security".equals(aggregateType)) {
+            fanoutUserDevices(event, payload, "/chats", event.eventType().toLowerCase(), afterCommit);
         }
     }
 

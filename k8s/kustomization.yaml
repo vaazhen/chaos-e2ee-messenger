@@ -17,3 +17,4 @@ resources:
   - ingress.yaml
   - autoscaling.yaml
   - disruption-budgets.yaml
+  - network-policy.yaml

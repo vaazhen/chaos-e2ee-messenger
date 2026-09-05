@@ -15,6 +15,8 @@ import ru.messenger.chaosmessenger.crypto.prekey.OneTimePreKey;
 import ru.messenger.chaosmessenger.crypto.prekey.OneTimePreKeyRepository;
 import ru.messenger.chaosmessenger.crypto.prekey.SignedPreKey;
 import ru.messenger.chaosmessenger.crypto.prekey.SignedPreKeyRepository;
+import ru.messenger.chaosmessenger.outbox.OutboxIds;
+import ru.messenger.chaosmessenger.outbox.OutboxService;
 import ru.messenger.chaosmessenger.user.domain.User;
 
 import java.math.BigInteger;
@@ -39,6 +41,7 @@ public class DeviceService {
     private final UserDeviceRepository userDeviceRepository;
     private final SignedPreKeyRepository signedPreKeyRepository;
     private final OneTimePreKeyRepository oneTimePreKeyRepository;
+    private final OutboxService outboxService;
 
     @Transactional(readOnly = true)
     public Optional<DeviceRegistrationResponse> findCurrentDevice(String username, String deviceId) {
@@ -106,6 +109,10 @@ public class DeviceService {
         if (newDevice && (request.oneTimePreKeys() == null || request.oneTimePreKeys().isEmpty())) {
             throw new IllegalArgumentException("At least one one-time pre-key is required");
         }
+        if (newDevice
+                && userDeviceRepository.countByUserIdAndActiveTrue(user.getId()) >= DeviceLimits.MAX_ACTIVE_DEVICES) {
+            throw new AuthException("Cannot register more than " + DeviceLimits.MAX_ACTIVE_DEVICES + " active devices");
+        }
 
         UserDevice device = existingDevice
                 .orElseGet(() -> UserDevice.builder()
@@ -165,6 +172,18 @@ public class DeviceService {
         device.setLastSeen(LocalDateTime.now());
 
         UserDevice saved = userDeviceRepository.save(device);
+        outboxService.write(
+                "device",
+                saved.getDeviceId(),
+                "DEVICE_REVOKED",
+                java.util.Map.of(
+                        "deviceId", saved.getDeviceId(),
+                        "reason", "device_revoked",
+                        "participantUsernames", java.util.List.of(username)
+                ),
+                null,
+                OutboxIds.key("device", user.getId(), saved.getDeviceId(), "REVOKED")
+        );
         return toResponse(saved, currentDeviceId);
     }
 

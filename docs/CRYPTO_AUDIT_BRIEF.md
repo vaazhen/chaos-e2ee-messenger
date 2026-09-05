@@ -16,7 +16,8 @@ Contract text: `docs/protocol.md`. Tests pin vectors and a few negative paths.
 - PREKEY and WHISPER replay, skipped-key bounds, concurrent send indexes.
 - Identity substitution vs Safety Number (TOFU).
 - Device revoke: delivery stop vs leftover peer sessions.
-- Group fanout (pairwise, no MLS / sender keys).
+- Group fanout (pairwise, no MLS / sender keys). Cap 32 participants.
+- Device cap 8; revoke stops API/fanout/WS, does not wipe peer sessions.
 - Call media key wrap; fail-closed on callee.
 - Web origin: server-delivered JS can steal keys. Electron/signed client is
   the high-assurance distribution path.

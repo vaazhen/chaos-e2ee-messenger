@@ -130,6 +130,11 @@ export function useMessengerRealtime({
       if (reason === "request_declined") {
         scheduleRequestsRefresh();
         scheduleChatsRefresh();
+        return;
+      }
+
+      if (reason === "device_revoked") {
+        scheduleChatsRefresh();
       }
     },
 
