@@ -68,6 +68,26 @@ public class CredentialRateLimiter {
         );
     }
 
+    public void checkLookup(String clientIp) {
+        enforce(
+                "auth:ip:lookup:",
+                (clientIp == null || clientIp.isBlank()) ? "unknown" : clientIp.trim(),
+                20,
+                IP_WINDOW,
+                "Too many lookup requests. Try again later."
+        );
+    }
+
+    public void checkVerify(String clientIp) {
+        enforce(
+                "auth:ip:verify:",
+                (clientIp == null || clientIp.isBlank()) ? "unknown" : clientIp.trim(),
+                30,
+                IP_WINDOW,
+                "Too many verification attempts. Try again later."
+        );
+    }
+
     public void checkIp(String clientIp, String action) {
         String identity = (clientIp == null || clientIp.isBlank()) ? "unknown" : clientIp.trim();
         String safeAction = action != null && action.matches("[a-z]+") ? action : "other";

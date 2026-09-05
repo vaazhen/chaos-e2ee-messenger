@@ -57,7 +57,30 @@ class ChatOutboxServiceTest {
                 eq("REQUEST_CREATED"),
                 org.mockito.ArgumentMatchers.any(),
                 isNull(),
-                eq("chat:10:REQUEST_CREATED")
+                eq("request:10:REQUEST_CREATED")
+        );
+    }
+
+    @Test
+    void requestAcceptedKeepsRequestAndChatEventsOnDistinctKeys() {
+        service.requestUpdated(10L, "request_accepted");
+        service.chatListUpdated(10L, "request_accepted");
+
+        verify(outboxService).write(
+                eq("request"),
+                eq("10"),
+                eq("REQUEST_ACCEPTED"),
+                org.mockito.ArgumentMatchers.any(),
+                isNull(),
+                eq("request:10:REQUEST_ACCEPTED")
+        );
+        verify(outboxService).write(
+                eq("chat"),
+                eq("10"),
+                eq("REQUEST_ACCEPTED"),
+                org.mockito.ArgumentMatchers.any(),
+                isNull(),
+                eq("chat:10:REQUEST_ACCEPTED")
         );
     }
 
@@ -74,6 +97,6 @@ class ChatOutboxServiceTest {
                 isNull(),
                 key.capture()
         );
-        assertThat(key.getValue()).matches("chat:10:GROUP_PARTICIPANTS_INVITED:\\d+");
+        assertThat(key.getValue()).matches("chat:10:GROUP_PARTICIPANTS_INVITED:[0-9a-f-]{36}");
     }
 }

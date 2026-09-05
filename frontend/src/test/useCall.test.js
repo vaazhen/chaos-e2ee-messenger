@@ -5,9 +5,21 @@ const deviceMocks = vi.hoisted(() => ({
   getOrCreateDeviceId: vi.fn(() => "alice-phone"),
 }));
 
+const callMediaMocks = vi.hoisted(() => ({
+  decryptCallKeyEnvelope: vi.fn(async () => null),
+}));
+
 vi.mock("../deviceId", () => ({
   getOrCreateDeviceId: deviceMocks.getOrCreateDeviceId,
 }));
+
+vi.mock("../callMediaE2ee", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    decryptCallKeyEnvelope: (...args) => callMediaMocks.decryptCallKeyEnvelope(...args),
+  };
+});
 
 function track(kind = "audio") {
   return {
@@ -291,5 +303,36 @@ describe("useCall", () => {
     });
 
     expect(result.current.remoteVideoOn).toBe(true);
+  });
+
+  it("rejects an incoming offer whose mediaKeys cannot be decrypted", async () => {
+    callMediaMocks.decryptCallKeyEnvelope.mockResolvedValueOnce(null);
+    const { useCall } = await import("../hooks/useCall");
+    const sendSignal = vi.fn();
+    const { result } = renderHook(() => useCall({
+      enabled: true,
+      me: { username: "alice" },
+      sendSignal,
+    }));
+
+    await act(async () => {
+      result.current.handleSignal({
+        type: "offer",
+        chatId: 50,
+        fromUsername: "bob",
+        fromDeviceId: "bob-laptop",
+        sdp: "offer-sdp",
+        mediaKeys: [{ targetDeviceId: "alice-phone", ciphertext: "x" }],
+      });
+    });
+
+    await act(async () => {
+      await result.current.acceptCall();
+    });
+
+    expect(result.current.phase).toBe("error");
+    expect(result.current.mediaError).toBe("e2ee");
+    expect(sendSignal).toHaveBeenCalledWith({ chatId: 50, type: "hangup" });
+    expect(sendSignal.mock.calls.some((call) => call[0]?.type === "answer")).toBe(false);
   });
 });

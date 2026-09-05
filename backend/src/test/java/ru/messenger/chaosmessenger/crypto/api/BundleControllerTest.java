@@ -6,6 +6,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.core.Authentication;
+import ru.messenger.chaosmessenger.auth.service.CredentialRateLimiter;
 import ru.messenger.chaosmessenger.crypto.device.CurrentDeviceService;
 import ru.messenger.chaosmessenger.crypto.dto.DeviceBundleDto;
 import ru.messenger.chaosmessenger.crypto.dto.OneTimePreKeyDto;
@@ -25,6 +26,7 @@ class BundleControllerTest {
 
     @Mock PreKeyService preKeyService;
     @Mock CurrentDeviceService currentDeviceService;
+    @Mock CredentialRateLimiter credentialRateLimiter;
     @Mock Authentication authentication;
 
     @InjectMocks BundleController bundleController;
@@ -79,6 +81,7 @@ class BundleControllerTest {
 
         assertThat(response).isSameAs(expected);
         verify(currentDeviceService).requireCurrentDevice();
+        verify(credentialRateLimiter).checkUserAction("alice", "prekey");
         verify(preKeyService).reserveChatDeviceOneTimePreKey("alice", 100L, "dev-b");
     }
 }

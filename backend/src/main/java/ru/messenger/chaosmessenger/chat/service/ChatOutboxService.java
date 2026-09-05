@@ -37,7 +37,7 @@ public class ChatOutboxService {
                 reason.toUpperCase(),
                 payload,
                 null,
-                OutboxIds.chatKey(chatId, reason)
+                OutboxIds.eventKey(aggregate, chatId, reason)
         );
     }
 }

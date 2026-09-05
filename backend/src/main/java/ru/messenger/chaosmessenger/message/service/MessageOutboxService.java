@@ -102,7 +102,14 @@ public class MessageOutboxService {
                 "MESSAGE_BULK_STATUS",
                 payload,
                 null,
-                OutboxIds.key("msg", "bulk", chatId, status, actorUserId, senderIds.hashCode())
+                OutboxIds.key(
+                        "msg",
+                        "bulk",
+                        chatId,
+                        status,
+                        actorUserId,
+                        senderIds.stream().distinct().sorted().map(String::valueOf).reduce((a, b) -> a + "," + b).orElse("")
+                )
         );
     }
 

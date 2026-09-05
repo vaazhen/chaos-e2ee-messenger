@@ -476,7 +476,10 @@ export function useCall({ enabled, me, sendSignal, incoming }) {
     try {
       if (Array.isArray(offer.mediaKeys) && offer.mediaKeys.length) {
         const rawKey = await decryptCallKeyEnvelope(offer.mediaKeys);
-        if (rawKey) callKeyRef.current = rawKey;
+        if (!rawKey) {
+          throw new Error("call-e2ee-unavailable");
+        }
+        callKeyRef.current = rawKey;
       }
       const pc = createPc(chatId, false);
       await pc.setRemoteDescription({ type: "offer", sdp: offer.sdp });
@@ -495,9 +498,12 @@ export function useCall({ enabled, me, sendSignal, incoming }) {
       armConnectTimer();
     } catch (error) {
       console.warn("[call] accept failed", error);
-      setMediaError(error?.name === "NotAllowedError" ? "mic" : "start");
+      setMediaError(error?.name === "NotAllowedError"
+        ? "mic"
+        : error?.message === "call-e2ee-unavailable" ? "e2ee" : "start");
       publish({ chatId, type: "hangup" });
       cleanup();
+      setPhaseNow("error");
     }
   }, [armConnectTimer, attachLocalAudio, cleanup, createPc, flushLocalIce, publish, setPhaseNow]);
 

@@ -46,4 +46,25 @@ describe("envelope AAD v2 vectors", () => {
       chatId: 0,
     })).toBe("02000000000000000000000000000000000000000000");
   });
+
+  it("changes the hex when any bound field changes", () => {
+    const base = {
+      messageType: "WHISPER",
+      chatId: 100,
+      messageIndex: 2,
+      previousChainLength: 1,
+      ratchetPublicKey: "AB",
+    };
+    const baseline = envelopeAadHex(base);
+    const mutants = [
+      { ...base, messageType: "PREKEY_WHISPER" },
+      { ...base, chatId: 101 },
+      { ...base, messageIndex: 3 },
+      { ...base, previousChainLength: 2 },
+      { ...base, ratchetPublicKey: "AC" },
+    ];
+    for (const mutant of mutants) {
+      expect(envelopeAadHex(mutant)).not.toBe(baseline);
+    }
+  });
 });

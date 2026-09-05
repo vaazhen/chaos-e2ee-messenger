@@ -23,7 +23,7 @@
 | MOD-1 | Crypto engine is a module, window is adapter | P1 | VERIFIED | `crypto-engine.ts`, `e2ee.ts` | named export + adapter test |
 | HTTP-1 | Crypto HTTP adapter always carries `status` | P1 | VERIFIED | `cryptoApi.ts` | `cryptoApi.test.js`; send / device / call reuse it |
 | CICD-1 | Trivy blocking gate | P0 | VERIFIED | `ci.yml` | workflow audit |
-| CICD-2 | Explicit CodeQL builds | P1 | FIXED | `ci.yml` | CI run pending |
+| CICD-2 | Explicit CodeQL builds | P1 | VERIFIED | `ci.yml` | PR #510 Actions |
 | CICD-5 | Master CI: durable cursor order + Tomcat 10.1.59 | P0 | FIXED | `DurableRealtimeDeliveryTest`, `pom.xml` | local tests; live CI on PR |
 | CICD-3 | Production depends on deployed staging | P0 | VERIFIED | `ci.yml` | workflow output gate |
 | CICD-4 | Mandatory staging smoke test when enabled | P0 | VERIFIED | `ci.yml` | workflow audit |
@@ -40,3 +40,17 @@
 | AUTH-5 | Logout closes WebSocket sessions | P1 | VERIFIED | `WebSocketLogoutCloser`, `AuthService` | `WebSocketLogoutCloserTest`, `AuthServiceTest` |
 | AUTH-6 | Demo seed cannot start under prod | P1 | VERIFIED | `DemoDisabledInProduction` | `DemoDisabledInProductionTest` |
 | PERF-1 | Self-destruct and chat lookup stay bounded | P1 | VERIFIED | `SelfDestructScheduler`, `ChatQueryService` | scheduler unit test |
+| DELIVERY-2 | Recurring chat outbox keys are unique | P1 | VERIFIED | `OutboxIds` | `OutboxIdsTest` 200 unique keys |
+| DELIVERY-4 | Request and chat one-shot keys do not collide | P1 | VERIFIED | `OutboxIds.eventKey`, `ChatOutboxService` | `ChatOutboxServiceTest` |
+| DELIVERY-3 | Kafka partition key is chat id | P1 | VERIFIED | `OutboxPublisher` | `OutboxPublisherTest` |
+| RT-7 | `/realtime/sync` limit clamped to 500 | P1 | VERIFIED | `RealtimeSyncLimits`, controller | `RealtimeSyncLimitsTest` |
+| CRYPTO-1 | WHISPER replay does not advance `Nr` | P1 | VERIFIED | `crypto-engine.ts` | crypto-engine cycle test |
+| CALL-2 | Incoming call with `mediaKeys` fails closed | P1 | VERIFIED | `useCall.js` | `useCall.test.js` |
+| AUTH-7 | Exists lookup does not echo phone | P1 | VERIFIED | `AuthService` | empty phone field |
+| AUTH-8 | Tighter IP limits on lookup and SMS verify | P1 | VERIFIED | `CredentialRateLimiter` | limiter test |
+| PREKEY-1 | Reserve-prekey uses the prekey user limiter | P1 | VERIFIED | `BundleController` | `BundleControllerTest` |
+| ATT-2 | Attachment upload/download streams | P1 | VERIFIED | `AttachmentStorageService`, controller | storage + controller tests |
+| CRYPTO-AUDIT | Independent protocol audit | P0 | OPEN | `docs/CRYPTO_AUDIT_BRIEF.md` | external reviewer |
+| PROD-S3 | S3-compatible ciphertext store | P2 | OPEN | local stream store only | infra |
+| PROD-TURN | Production TURN | P2 | OPEN | roadmap | infra |
+| PROD-HA | HA Redis / Kafka / Postgres drills | P2 | OPEN | runbooks exist | ops |

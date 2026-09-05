@@ -72,6 +72,20 @@ describe("useMessengerRealtime", () => {
     expect(chatStore.loadChats).not.toHaveBeenCalled();
   });
 
+  it("refreshes chats and requests when a request is accepted on /requests", async () => {
+    const { chatStore } = await setup();
+
+    act(() => {
+      wsMocks.captured.onRequestsUpdate({ reason: "request_accepted", chatId: 99 });
+    });
+    act(() => {
+      vi.advanceTimersByTime(220);
+    });
+
+    expect(chatStore.loadRequests).toHaveBeenCalledWith(1);
+    expect(chatStore.loadChats).toHaveBeenCalledWith(1);
+  });
+
   it("refreshes chats for group membership changes", async () => {
     const { chatStore } = await setup();
 

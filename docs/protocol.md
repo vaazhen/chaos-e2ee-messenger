@@ -54,6 +54,41 @@ path. After reconnect the client asks `GET /realtime/sync?after={cursor}` and
 drops duplicate `eventId`s. Typing and presence are ephemeral and skip the
 outbox.
 
+## Threat model per state transition
+
+This is the claimed model. It is not an independent proof.
+
+| Transition | Adversary | Must hold |
+|---|---|---|
+| Reserve OTK | Chat member | Server marks OTK used before decrypt. Reserve is rate-limited. |
+| `PREKEY_WHISPER` decrypt | Network / replay | AES-GCM fail keeps OTK and creates no session. Second decrypt is `PREKEY_REPLAY`. |
+| `WHISPER` decrypt | Replay / reorder | In-order replay fails AES-GCM and does not advance `Nr`. Out-of-order uses skipped keys (`MAX_SKIP=2000`). |
+| DH ratchet | Stolen chain key | Next reverse-direction message replaces the chain (PCS after one RTT). Past message keys are gone (FS for those messages). |
+| Identity change | Malicious server | `IDENTITY_KEY_CHANGED` blocks send/decrypt until the user re-verifies. |
+| Device deactivate | Stolen device | Server stops fanout / WS / API. Peer ratchet state is not remotely wiped. |
+| Incoming call with `mediaKeys` | Failed unwrap | Callee must not fall back to DTLS. |
+
+Forward secrecy: a stolen current chain key must not decrypt earlier messages whose keys were already deleted. Post-compromise security: after a DH ratchet in both directions, a stolen old chain key must not decrypt later messages.
+
+## Groups
+
+There is no sender-key or MLS group ratchet. A group message is one pairwise
+envelope per active participant device, plus self-whisper to the sender's
+devices. 500 users × 3 devices is ~1500 encrypts and the same number of
+durable log rows. That is an explicit scale limit, not a hidden property.
+
+## Kafka ordering
+
+`OutboxPublisher.partitionKey` is the chat id for `message` / `chat` /
+`request` aggregates. Events for one chat stay on one partition. Crypto state
+still has to tolerate at-least-once Kafka delivery: the device log keys
+`(device_id, event_id, destination)`.
+
+## Sync
+
+`GET /api/realtime/sync?after=&limit=` is clamped to 1..500 in the controller
+and again in `RealtimeEventStore`.
+
 ## Backup
 
 A passphrase-derived AES-GCM key stays on the device. Restore returns identity
@@ -64,7 +99,7 @@ ratchet sessions.
 
 - `frontend/src/test/envelopeAad.test.js` — AAD v2 hex vectors
 - `frontend/src/test/cryptoApi.test.js` — HTTP adapter keeps `status` / `code`
-- `frontend/src/test/crypto-engine.test.js` — handshake, ratchet, skip, tamper, heal, self-whisper, `KEY_CHANGED`
+- `frontend/src/test/crypto-engine.test.js` — handshake, ratchet, skip, WHISPER replay, tamper, heal, self-whisper, `KEY_CHANGED`
 - `frontend/src/test/messageModel.test.js` — payload / merge / placeholder rules
 - `frontend/src/test/messageCrypto.test.js` — decrypt keeps `replyTo`
 - `frontend/src/test/messageTimeline.test.js` — merge / optimistic / hidden rows

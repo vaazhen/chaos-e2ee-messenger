@@ -65,7 +65,7 @@ public class RealtimeEventStore {
 
     @Transactional(readOnly = true)
     public RealtimeSyncResponse readAfter(String deviceId, long after, int requestedLimit) {
-        int limit = Math.max(1, Math.min(requestedLimit, 500));
+        int limit = RealtimeSyncLimits.clamp(requestedLimit);
         List<RealtimeSyncEvent> rows = jdbcTemplate.query("""
                 SELECT sequence, event_id, destination, payload::text, created_at
                   FROM realtime_device_events

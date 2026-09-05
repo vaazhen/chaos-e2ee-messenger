@@ -43,6 +43,19 @@ class AttachmentStorageServiceTest {
         metadata.setAttachmentId(id);
         when(repository.findByAttachmentId(id)).thenReturn(Optional.of(metadata));
         assertThat(service.download(id)).containsExactly(ciphertext);
+        assertThat(Files.readAllBytes(service.payloadPath(id))).containsExactly(ciphertext);
+    }
+
+    @Test
+    void streamsCiphertextWithoutRequiringAFullByteArrayFromTheCaller() throws Exception {
+        EncryptedAttachmentRepository repository = mock(EncryptedAttachmentRepository.class);
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        when(jdbc.update(anyString(), any(), any(), any(), any(), any(), any())).thenReturn(1);
+        AttachmentStorageService service = service(repository, jdbc, 8);
+
+        byte[] ciphertext = new byte[] {5, 6, 7};
+        String id = service.upload(1L, 10L, new java.io.ByteArrayInputStream(ciphertext), "application/octet-stream");
+        assertThat(Files.readAllBytes(tempDir.resolve(id))).containsExactly(ciphertext);
     }
 
     @Test
