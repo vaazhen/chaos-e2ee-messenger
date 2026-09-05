@@ -59,6 +59,11 @@ public class WebSocketSessionRegistry {
         return sessions == null ? Set.of() : Set.copyOf(sessions);
     }
 
+    public Set<String> sessionIdsForDevice(String deviceId) {
+        Set<String> sessions = sessionsByDeviceId.get(deviceId);
+        return sessions == null ? Set.of() : Set.copyOf(sessions);
+    }
+
     public boolean hasUserSession(String username) {
         Set<String> sessions = sessionsByUsername.get(username);
         return sessions != null && !sessions.isEmpty();

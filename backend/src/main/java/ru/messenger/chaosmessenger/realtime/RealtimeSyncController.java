@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import ru.messenger.chaosmessenger.auth.service.CredentialRateLimiter;
 import ru.messenger.chaosmessenger.crypto.device.CurrentDeviceService;
 import ru.messenger.chaosmessenger.crypto.device.UserDevice;
 import ru.messenger.chaosmessenger.realtime.dto.RealtimeSyncResponse;
@@ -20,6 +21,7 @@ public class RealtimeSyncController {
 
     private final CurrentDeviceService currentDeviceService;
     private final RealtimeEventStore realtimeEventStore;
+    private final CredentialRateLimiter credentialRateLimiter;
 
     @GetMapping("/sync")
     public RealtimeSyncResponse sync(
@@ -27,6 +29,8 @@ public class RealtimeSyncController {
             @RequestParam(defaultValue = "200") @Min(1) @Max(RealtimeSyncLimits.MAX) int limit
     ) {
         UserDevice device = currentDeviceService.requireCurrentDevice();
+        String username = device.getUser() == null ? device.getDeviceId() : device.getUser().getUsername();
+        credentialRateLimiter.checkUserAction(username, "sync");
         return realtimeEventStore.readAfter(device.getDeviceId(), after, limit);
     }
 }

@@ -50,6 +50,14 @@
 | AUTH-8 | Tighter IP limits on lookup and SMS verify | P1 | VERIFIED | `CredentialRateLimiter` | limiter test |
 | PREKEY-1 | Reserve-prekey uses the prekey user limiter | P1 | VERIFIED | `BundleController` | `BundleControllerTest` |
 | ATT-2 | Attachment upload/download streams | P1 | VERIFIED | `AttachmentStorageService`, controller | storage + controller tests |
+| GROUP-1 | Pairwise groups capped at 32 | P1 | VERIFIED | `ChatLimits`, `GroupModerationService` | `GroupModerationServiceTest` |
+| DEVICE-1 | At most 8 active devices | P1 | VERIFIED | `DeviceLimits`, `DeviceService` | `DeviceServiceTest` |
+| DEVICE-2 | Revoke closes that device WebSocket | P1 | VERIFIED | `WebSocketLogoutCloser`, `DeviceController` | closer + controller tests |
+| DEVICE-3 | Revoke writes `DEVICE_REVOKED` outbox | P1 | VERIFIED | `DeviceService`, `DomainEventProcessor` | processor + device tests |
+| RT-8 | `/realtime/sync` user rate limit | P1 | VERIFIED | `RealtimeSyncController` | limiter `sync` |
+| OBS-2 | Prometheus loads `alerts.yml` | P2 | VERIFIED | `backend/prometheus.yml`, compose | rule_files mount |
+| K8S-3 | Default-deny NetworkPolicy | P2 | VERIFIED | `k8s/network-policy.yaml` | kustomization |
+| DR-1 | Postgres dump/restore drill script | P2 | VERIFIED | `scripts/restore-drill.sh` | runbook |
 | CRYPTO-AUDIT | Independent protocol audit | P0 | OPEN | `docs/CRYPTO_AUDIT_BRIEF.md` | external reviewer |
 | PROD-S3 | S3-compatible ciphertext store | P2 | OPEN | local stream store only | infra |
 | PROD-TURN | Production TURN | P2 | OPEN | roadmap | infra |

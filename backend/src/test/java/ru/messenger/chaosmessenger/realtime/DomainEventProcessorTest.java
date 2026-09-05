@@ -148,6 +148,23 @@ class DomainEventProcessorTest {
     }
 
     @Test
+    void deviceRevokedFansOutToOwnerDevices() {
+        when(userDeviceRepository.findActiveByUsernameWithUser("alice"))
+                .thenReturn(List.of(TestFixtures.device(1L, 1L, "alice-phone")));
+
+        processor.process(event(
+                "evt-revoked",
+                "device",
+                "DEVICE_REVOKED",
+                "{\"deviceId\":\"stolen\",\"participantUsernames\":[\"alice\"]}"
+        ));
+
+        ArgumentCaptor<ObjectNode> payload = ArgumentCaptor.forClass(ObjectNode.class);
+        verify(publisher).publishToDevice(eq("alice-phone"), eq("/chats"), payload.capture());
+        assertThat(payload.getValue().get("reason").asText()).isEqualTo("device_revoked");
+    }
+
+    @Test
     void unreadAndPushRunOnlyOnFirstDurableInsert() {
         DomainEvent event = event(
                 "evt-unread",

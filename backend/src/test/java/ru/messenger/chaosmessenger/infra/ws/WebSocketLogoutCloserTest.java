@@ -25,4 +25,19 @@ class WebSocketLogoutCloserTest {
         assertThat(registry.sessionIdsForUsername("alice")).isEmpty();
         assertThat(registry.sessionIdsForUsername("bob")).containsExactly("s3");
     }
+
+    @Test
+    void closesOnlyTheRevokedDevice() {
+        WebSocketSessionRegistry registry = new WebSocketSessionRegistry();
+        registry.register("s1", "alice", "dev-a", "family-1");
+        registry.register("s2", "alice", "dev-b", "family-1");
+        WebSocketNativeSessionTracker tracker = mock(WebSocketNativeSessionTracker.class);
+        WebSocketLogoutCloser closer = new WebSocketLogoutCloser(registry, tracker);
+
+        closer.closeSessionsForDevice("dev-a");
+
+        verify(tracker).close("s1");
+        assertThat(registry.sessionIdsForDevice("dev-a")).isEmpty();
+        assertThat(registry.sessionIdsForUsername("alice")).containsExactly("s2");
+    }
 }

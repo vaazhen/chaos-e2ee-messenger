@@ -135,6 +135,18 @@ class GroupModerationServiceTest {
                     .isInstanceOf(ChatException.class)
                     .hasMessageContaining("member");
         }
+
+        @Test
+        @DisplayName("rejects a group larger than the pairwise fanout cap")
+        void rejectsOversizedGroup() {
+            when(userRepository.findByUsername("alice")).thenReturn(Optional.of(alice));
+            List<Long> memberIds = java.util.stream.LongStream.rangeClosed(2, 34).boxed().toList();
+
+            assertThatThrownBy(() -> groupModerationService.createGroupChat("alice", "Huge", memberIds))
+                    .isInstanceOf(ChatException.class)
+                    .hasMessageContaining("32");
+            verify(chatRepository, never()).save(any());
+        }
     }
 
     @Nested
@@ -166,6 +178,28 @@ class GroupModerationServiceTest {
             assertThat(response).isNotNull();
             verify(participantRepository).saveAll(anyList());
             verify(chatOutboxService).chatListUpdated(20L, "group_participants_invited");
+        }
+
+        @Test
+        @DisplayName("rejects an invite that would exceed the pairwise fanout cap")
+        void rejectsInvitePastCap() {
+            Chat group = TestFixtures.groupChat(20L, "Team");
+            group.setWhoCanInvite("ADMINS");
+            List<ChatParticipant> existing = java.util.stream.LongStream.rangeClosed(1, 32)
+                    .mapToObj(id -> new ChatParticipant(20L, id, id == 1L ? GroupRole.OWNER : GroupRole.MEMBER))
+                    .toList();
+
+            when(userRepository.findByUsername("alice")).thenReturn(Optional.of(alice));
+            when(chatAccessService.requireActiveGroup(20L)).thenReturn(group);
+            when(chatAccessService.requireParticipantEntity(20L, 1L))
+                    .thenReturn(new ChatParticipant(20L, 1L, GroupRole.OWNER));
+            when(participantRepository.findByChatId(20L)).thenReturn(existing);
+
+            assertThatThrownBy(() -> groupModerationService.inviteGroupParticipants(
+                    "alice", 20L, new UpdateGroupParticipantsRequest(List.of(99L))))
+                    .isInstanceOf(ChatException.class)
+                    .hasMessageContaining("32");
+            verify(participantRepository, never()).saveAll(anyList());
         }
     }
 

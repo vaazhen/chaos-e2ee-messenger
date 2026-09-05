@@ -3,6 +3,7 @@ package ru.messenger.chaosmessenger.chat.service;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ru.messenger.chaosmessenger.chat.ChatLimits;
 import ru.messenger.chaosmessenger.chat.access.ChatAccessService;
 import ru.messenger.chaosmessenger.chat.access.ChatQueryService;
 import ru.messenger.chaosmessenger.chat.domain.Chat;
@@ -59,6 +60,11 @@ public class GroupModerationService {
                 .toList();
         if (otherMemberIds.isEmpty()) {
             throw new ChatException("Group must have at least one other member");
+        }
+        int size = otherMemberIds.size() + 1;
+        if (size > ChatLimits.MAX_GROUP_PARTICIPANTS) {
+            throw new ChatException("Group cannot exceed " + ChatLimits.MAX_GROUP_PARTICIPANTS
+                    + " participants (pairwise fanout, no MLS)");
         }
 
         List<User> members = userRepository.findAllById(otherMemberIds);
@@ -120,6 +126,10 @@ public class GroupModerationService {
         List<Long> alreadyMembers = distinctIds.stream().filter(existingUserIds::contains).toList();
         if (!alreadyMembers.isEmpty()) {
             throw new ChatException("Some users are already group members");
+        }
+        if (existingUserIds.size() + distinctIds.size() > ChatLimits.MAX_GROUP_PARTICIPANTS) {
+            throw new ChatException("Group cannot exceed " + ChatLimits.MAX_GROUP_PARTICIPANTS
+                    + " participants (pairwise fanout, no MLS)");
         }
 
         List<User> usersToInvite = userRepository.findAllById(distinctIds);

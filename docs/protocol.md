@@ -65,17 +65,25 @@ This is the claimed model. It is not an independent proof.
 | `WHISPER` decrypt | Replay / reorder | In-order replay fails AES-GCM and does not advance `Nr`. Out-of-order uses skipped keys (`MAX_SKIP=2000`). |
 | DH ratchet | Stolen chain key | Next reverse-direction message replaces the chain (PCS after one RTT). Past message keys are gone (FS for those messages). |
 | Identity change | Malicious server | `IDENTITY_KEY_CHANGED` blocks send/decrypt until the user re-verifies. |
-| Device deactivate | Stolen device | Server stops fanout / WS / API. Peer ratchet state is not remotely wiped. |
+| Device deactivate | Stolen device | Server stops fanout / WS / API and writes `DEVICE_REVOKED`. Peer ratchet state is not remotely wiped. |
 | Incoming call with `mediaKeys` | Failed unwrap | Callee must not fall back to DTLS. |
 
 Forward secrecy: a stolen current chain key must not decrypt earlier messages whose keys were already deleted. Post-compromise security: after a DH ratchet in both directions, a stolen old chain key must not decrypt later messages.
 
 ## Groups
 
-There is no sender-key or MLS group ratchet. A group message is one pairwise
-envelope per active participant device, plus self-whisper to the sender's
-devices. 500 users × 3 devices is ~1500 encrypts and the same number of
-durable log rows. That is an explicit scale limit, not a hidden property.
+There is no sender-key or MLS group ratchet. This generation will not add
+one. A group message is one pairwise envelope per active participant device,
+plus self-whisper to the sender's devices.
+
+`ChatLimits.MAX_GROUP_PARTICIPANTS = 32`. Create and invite reject a larger
+set. 32 users × 8 devices is the worst-case fanout we accept. Larger groups
+need a later protocol, not a bigger N here.
+
+A user may have at most `DeviceLimits.MAX_ACTIVE_DEVICES = 8` active devices.
+Deactivate sets `active=false` (fanout and `requireCurrentDevice` stop), then
+closes WebSocket sessions for that `deviceId`. Peer ratchet state on other
+phones is not remotely wiped.
 
 ## Kafka ordering
 

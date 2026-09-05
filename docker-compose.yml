@@ -203,6 +203,7 @@ services:
       - --log.level=warn
     volumes:
       - ./backend/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus-data:/prometheus
     depends_on:
       - backend

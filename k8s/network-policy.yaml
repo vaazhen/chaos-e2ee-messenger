@@ -1,0 +1,70 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: chaos-default-deny
+  namespace: chaos-messenger
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: chaos-backend
+  namespace: chaos-messenger
+spec:
+  podSelector:
+    matchLabels:
+      app: chaos-backend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: chaos-frontend
+      ports:
+        - protocol: TCP
+          port: 8080
+    - ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 9091
+  egress:
+    - {}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: chaos-frontend
+  namespace: chaos-messenger
+spec:
+  podSelector:
+    matchLabels:
+      app: chaos-frontend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 8080
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: chaos-backend
+      ports:
+        - protocol: TCP
+          port: 8080
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

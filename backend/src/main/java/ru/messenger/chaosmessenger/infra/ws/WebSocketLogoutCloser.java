@@ -20,4 +20,14 @@ public class WebSocketLogoutCloser {
             sessionRegistry.unregister(sessionId);
         }
     }
+
+    public void closeSessionsForDevice(String deviceId) {
+        if (deviceId == null || deviceId.isBlank()) {
+            return;
+        }
+        for (String sessionId : sessionRegistry.sessionIdsForDevice(deviceId)) {
+            nativeSessions.close(sessionId);
+            sessionRegistry.unregister(sessionId);
+        }
+    }
 }
