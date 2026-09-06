@@ -2,6 +2,7 @@ package ru.messenger.chaosmessenger.crypto.device;
 
 import ru.messenger.chaosmessenger.user.service.UserIdentityService;
 import ru.messenger.chaosmessenger.common.exception.AuthException;
+import ru.messenger.chaosmessenger.infra.security.JwtAuthenticationFilter;
 
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -43,8 +44,24 @@ public class CurrentDeviceService {
         User user = userIdentityService.require(username);
 
         UserDevice device = userDeviceRepository.findByUserIdAndDeviceIdAndActiveTrue(user.getId(), deviceId)
-                .orElseThrow(() -> new AuthException("Active device not found for current user"));
+                .orElseThrow(() -> new AuthException(
+                        "Active device not found for current user",
+                        "DEVICE_REVOKED"
+                ));
+        bindSessionFamily(device);
         request.setAttribute(CURRENT_DEVICE_REQUEST_ATTR, device);
         return device;
+    }
+
+    private void bindSessionFamily(UserDevice device) {
+        Object sessionId = request.getAttribute(JwtAuthenticationFilter.SESSION_ID_ATTRIBUTE);
+        if (!(sessionId instanceof String familyId) || familyId.isBlank()) {
+            return;
+        }
+        if (familyId.equals(device.getSessionFamilyId())) {
+            return;
+        }
+        device.setSessionFamilyId(familyId);
+        userDeviceRepository.save(device);
     }
 }

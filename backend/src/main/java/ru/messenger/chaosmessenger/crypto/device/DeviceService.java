@@ -1,5 +1,6 @@
 package ru.messenger.chaosmessenger.crypto.device;
 
+import ru.messenger.chaosmessenger.auth.service.RefreshTokenService;
 import ru.messenger.chaosmessenger.user.service.UserIdentityService;
 import ru.messenger.chaosmessenger.common.exception.AuthException;
 import ru.messenger.chaosmessenger.common.exception.CryptoException;
@@ -42,6 +43,23 @@ public class DeviceService {
     private final SignedPreKeyRepository signedPreKeyRepository;
     private final OneTimePreKeyRepository oneTimePreKeyRepository;
     private final OutboxService outboxService;
+    private final RefreshTokenService refreshTokenService;
+
+    public enum CurrentDeviceState {
+        ACTIVE,
+        REVOKED,
+        MISSING
+    }
+
+    @Transactional(readOnly = true)
+    public CurrentDeviceState currentDeviceState(String username, String deviceId) {
+        if (username == null || username.isBlank() || deviceId == null || deviceId.isBlank()) {
+            return CurrentDeviceState.MISSING;
+        }
+        return userDeviceRepository.findByUserUsernameAndDeviceId(username, deviceId)
+                .map(device -> device.isActive() ? CurrentDeviceState.ACTIVE : CurrentDeviceState.REVOKED)
+                .orElse(CurrentDeviceState.MISSING);
+    }
 
     @Transactional(readOnly = true)
     public Optional<DeviceRegistrationResponse> findCurrentDevice(String username, String deviceId) {
@@ -102,7 +120,14 @@ public class DeviceService {
                         }
                     });
         } else {
-            assertUnchangedIdentity(existingDevice.get(), request, allowNewDevice);
+            UserDevice existing = existingDevice.get();
+            if (!existing.isActive() && !allowNewDevice) {
+                throw new AuthException(
+                        "Revoked device cannot be reactivated without a login registration token",
+                        "DEVICE_REVOKED"
+                );
+            }
+            assertUnchangedIdentity(existing, request, allowNewDevice);
         }
 
         boolean newDevice = existingDevice.isEmpty();
@@ -170,8 +195,13 @@ public class DeviceService {
 
         device.setActive(false);
         device.setLastSeen(LocalDateTime.now());
+        String boundFamily = device.getSessionFamilyId();
+        device.setSessionFamilyId(null);
 
         UserDevice saved = userDeviceRepository.save(device);
+        if (boundFamily != null && !boundFamily.isBlank()) {
+            refreshTokenService.revokeFamily(boundFamily);
+        }
         outboxService.write(
                 "device",
                 saved.getDeviceId(),

@@ -10,6 +10,7 @@ import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.stereotype.Component;
 import ru.messenger.chaosmessenger.chat.repository.ChatParticipantRepository;
+import ru.messenger.chaosmessenger.crypto.device.DeviceSessionBinder;
 import ru.messenger.chaosmessenger.crypto.device.UserDevice;
 import ru.messenger.chaosmessenger.crypto.device.UserDeviceRepository;
 import ru.messenger.chaosmessenger.infra.security.JwtService;
@@ -33,6 +34,7 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
     private final UserRepository userRepository;
     private final ChatParticipantRepository participantRepository;
     private final WebSocketSessionRegistry sessionRegistry;
+    private final DeviceSessionBinder deviceSessionBinder;
 
     @Override
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
@@ -113,6 +115,7 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
             Principal userPrincipal = () -> username;
 
             sessionRegistry.register(sessionId, username, deviceId, sessionIdClaim);
+            deviceSessionBinder.bind(username, deviceId, sessionIdClaim);
 
             accessor.setUser(userPrincipal);
             accessor.getSessionAttributes().put("username", username);

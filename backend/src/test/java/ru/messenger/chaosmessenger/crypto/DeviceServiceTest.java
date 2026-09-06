@@ -9,6 +9,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import ru.messenger.chaosmessenger.TestFixtures;
+import ru.messenger.chaosmessenger.auth.service.RefreshTokenService;
 import ru.messenger.chaosmessenger.common.exception.AuthException;
 import ru.messenger.chaosmessenger.crypto.device.DeviceService;
 import ru.messenger.chaosmessenger.crypto.device.UserDevice;
@@ -56,6 +57,8 @@ class DeviceServiceTest {
     OneTimePreKeyRepository oneTimePreKeyRepository;
     @Mock
     OutboxService outboxService;
+    @Mock
+    RefreshTokenService refreshTokenService;
 
     @InjectMocks
     DeviceService deviceService;
@@ -300,12 +303,34 @@ class DeviceServiceTest {
         }
 
         @Test
-        void allowsJwtRebindWhenIdentityKeysMatch() throws Exception {
+        void rejectsJwtRebindOfRevokedDevice() throws Exception {
             DeviceRegistrationRequest request = validRegistrationRequest("dev-1");
 
             UserDevice existingDevice = TestFixtures.device(10L, alice.getId(), "dev-1");
             existingDevice.setUser(alice);
             existingDevice.setActive(false);
+            existingDevice.setIdentityPublicKey(request.identityPublicKey());
+            existingDevice.setSigningPublicKey(request.signingPublicKey());
+
+            when(userIdentityService.require("alice")).thenReturn(alice);
+            when(userDeviceRepository.findByUserUsernameAndDeviceId("alice", "dev-1"))
+                    .thenReturn(Optional.of(existingDevice));
+
+            assertThatThrownBy(() -> deviceService.registerDevice("alice", request, false))
+                    .isInstanceOf(AuthException.class)
+                    .hasMessageContaining("Revoked");
+
+            assertThat(existingDevice.isActive()).isFalse();
+            verify(userDeviceRepository, never()).save(any());
+        }
+
+        @Test
+        void allowsJwtRebindWhenActiveDeviceIdentityKeysMatch() throws Exception {
+            DeviceRegistrationRequest request = validRegistrationRequest("dev-1");
+
+            UserDevice existingDevice = TestFixtures.device(10L, alice.getId(), "dev-1");
+            existingDevice.setUser(alice);
+            existingDevice.setActive(true);
             existingDevice.setIdentityPublicKey(request.identityPublicKey());
             existingDevice.setSigningPublicKey(request.signingPublicKey());
 
@@ -375,6 +400,28 @@ class DeviceServiceTest {
 
     @Nested
     class CurrentAndListDevices {
+
+        @Test
+        void currentDeviceStateDistinguishesActiveRevokedAndMissing() {
+            UserDevice active = TestFixtures.device(10L, alice.getId(), "dev-1");
+            UserDevice revoked = TestFixtures.device(11L, alice.getId(), "dev-2");
+            revoked.setActive(false);
+
+            when(userDeviceRepository.findByUserUsernameAndDeviceId("alice", "dev-1"))
+                    .thenReturn(Optional.of(active));
+            when(userDeviceRepository.findByUserUsernameAndDeviceId("alice", "dev-2"))
+                    .thenReturn(Optional.of(revoked));
+            when(userDeviceRepository.findByUserUsernameAndDeviceId("alice", "dev-3"))
+                    .thenReturn(Optional.empty());
+
+            assertThat(deviceService.currentDeviceState("alice", "dev-1"))
+                    .isEqualTo(DeviceService.CurrentDeviceState.ACTIVE);
+            assertThat(deviceService.currentDeviceState("alice", "dev-2"))
+                    .isEqualTo(DeviceService.CurrentDeviceState.REVOKED);
+            assertThat(deviceService.currentDeviceState("alice", "dev-3"))
+                    .isEqualTo(DeviceService.CurrentDeviceState.MISSING);
+            assertThat(deviceService.currentDeviceState("alice", "")).isEqualTo(DeviceService.CurrentDeviceState.MISSING);
+        }
 
         @Test
         void findCurrentDeviceReturnsEmptyForBlankInput() {
@@ -482,6 +529,7 @@ class DeviceServiceTest {
             assertThat(active.getLastSeen()).isNotNull();
 
             verify(userDeviceRepository).save(active);
+            verify(refreshTokenService, never()).revokeFamily(any());
             verify(outboxService).write(
                     eq("device"),
                     eq("dev-1"),
@@ -490,6 +538,25 @@ class DeviceServiceTest {
                     isNull(),
                     eq("device:1:dev-1:REVOKED")
             );
+        }
+
+        @Test
+        void revokesBoundRefreshFamilyWhenDeviceIsDeactivated() {
+            UserDevice active = TestFixtures.device(10L, alice.getId(), "dev-1");
+            active.setSessionFamilyId("family-stolen");
+
+            when(userIdentityService.require("alice")).thenReturn(alice);
+            when(userDeviceRepository.findByIdAndUserId(10L, alice.getId()))
+                    .thenReturn(Optional.of(active));
+            when(userDeviceRepository.countByUserIdAndActiveTrue(alice.getId()))
+                    .thenReturn(2L);
+            when(userDeviceRepository.save(active)).thenReturn(active);
+
+            UserDeviceResponse response = deviceService.deactivateDevice("alice", 10L, false, "other-device");
+
+            assertThat(response.active()).isFalse();
+            assertThat(active.getSessionFamilyId()).isNull();
+            verify(refreshTokenService).revokeFamily("family-stolen");
         }
 
         @Test

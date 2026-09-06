@@ -102,7 +102,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AuthException.class)
     public ResponseEntity<ApiErrorResponse> handleAuth(AuthException ex) {
         log.warn("Auth error: {}", ex.getMessage());
-        String code = "AUTH_ERROR";
+        String code = ex.getCode();
         String message = localize(code, new Object[] { ex.getMessage() }, ex.getMessage());
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                 .body(new ApiErrorResponse(HttpStatus.UNAUTHORIZED.value(), code, message, LocalDateTime.now()));

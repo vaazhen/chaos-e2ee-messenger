@@ -106,7 +106,7 @@ export async function ensureCurrentDeviceExists() {
     const body = await r.json().catch(() => ({}));
     const error = new Error(body?.message || `${r.status} ${r.statusText}`);
     error.status = r.status;
-    error.code = body?.code;
+    error.code = body?.code ?? body?.error;
     throw error;
   }
 

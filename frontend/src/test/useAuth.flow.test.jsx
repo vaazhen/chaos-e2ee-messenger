@@ -30,14 +30,16 @@ const mocks = vi.hoisted(() => {
     getToken: vi.fn(() => token),
     ensureDeviceRegistered: vi.fn(),
     ensureCurrentDeviceExists: vi.fn(),
+    isRevokedDeviceAuth: vi.fn(() => false),
   };
 });
 
 vi.mock("../api", () => ({
   api: mocks.api,
-  setToken: mocks.setToken,
-  clearToken: mocks.clearToken,
-  getToken: mocks.getToken,
+    setToken: mocks.setToken,
+    clearToken: mocks.clearToken,
+    getToken: mocks.getToken,
+    isRevokedDeviceAuth: mocks.isRevokedDeviceAuth,
 }));
 
 vi.mock("../deviceId", () => ({
@@ -63,6 +65,7 @@ describe("useAuth critical frontend auth flow", () => {
 
     mocks.ensureDeviceRegistered.mockResolvedValue("device-a");
     mocks.ensureCurrentDeviceExists.mockResolvedValue("device-a");
+    mocks.isRevokedDeviceAuth.mockReturnValue(false);
   });
 
   it("verifyOtp handles new phone user by storing setupToken and moving to setup branch without JWT", async () => {
@@ -218,6 +221,34 @@ describe("useAuth critical frontend auth flow", () => {
       username: "alice",
       firstName: "Alice",
     });
+  });
+
+  it("restoreSession does not re-register a revoked device", async () => {
+    const { useAuth } = await import("../hooks/useAuth");
+
+    mocks.token = "jwt-stolen";
+    mocks.api.getMe.mockResolvedValueOnce({
+      id: 1,
+      username: "alice",
+      firstName: "Alice",
+    });
+    const revoked = Object.assign(new Error("Current device is revoked or inactive"), {
+      status: 401,
+      code: "DEVICE_REVOKED",
+    });
+    mocks.ensureCurrentDeviceExists.mockRejectedValueOnce(revoked);
+    mocks.isRevokedDeviceAuth.mockReturnValue(true);
+
+    const onRestored = vi.fn();
+    const { result } = renderHook(() => useAuth());
+
+    await act(async () => {
+      await result.current.restoreSession(onRestored);
+    });
+
+    expect(mocks.ensureDeviceRegistered).not.toHaveBeenCalled();
+    expect(onRestored).not.toHaveBeenCalled();
+    expect(result.current.screen).toBe("auth");
   });
 
   it("restoreSession moves to setup screen when profile is incomplete", async () => {

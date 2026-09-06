@@ -13,6 +13,7 @@ vi.mock("../api", () => ({
   setToken:   vi.fn(),
   clearToken: vi.fn(),
   getToken:   vi.fn().mockReturnValue(""),
+  isRevokedDeviceAuth: vi.fn().mockReturnValue(false),
 }));
 
 vi.mock("../deviceId", () => ({
