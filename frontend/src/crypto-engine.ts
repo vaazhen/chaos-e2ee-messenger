@@ -51,6 +51,13 @@ function errorStatus(error: unknown): number {
     return Number.NaN;
 }
 
+function errorCode(error: unknown): string {
+    if (error && typeof error === 'object' && 'code' in error) {
+        return String((error as { code?: unknown }).code || '');
+    }
+    return '';
+}
+
 function cryptoSource(bytes: Uint8Array): BufferSource {
     return bytes as unknown as BufferSource;
 }
@@ -661,10 +668,17 @@ async function createCryptoEngine(): Promise<CryptoEngine> {
         return getLocalDeviceBundle();
     }
 
+    function isRevokedDeviceError(error: unknown): boolean {
+        const code = errorCode(error);
+        if (code === "DEVICE_REVOKED") return true;
+        return /revoked|inactive|active device not found/i.test(errorMessage(error));
+    }
+
     function isMissingServerDeviceError(error: unknown): boolean {
+        if (isRevokedDeviceError(error)) return false;
         const status = errorStatus(error);
-        if (status === 401 || status === 404) return true;
-        return /not registered|inactive|401|404|current device/i.test(errorMessage(error));
+        if (status === 404) return true;
+        return /not registered/i.test(errorMessage(error));
     }
 
     async function ensureDeviceRegistered(api: CryptoApi): Promise<DeviceBundle> {

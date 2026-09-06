@@ -96,11 +96,13 @@ class CryptoApiControllerTest {
     @Test
     void currentRejectsUnregisteredDevice() {
         when(authentication.getName()).thenReturn("alice");
+        when(deviceService.currentDeviceState("alice", "dev-a"))
+                .thenReturn(DeviceService.CurrentDeviceState.MISSING);
         when(deviceService.findCurrentDevice("alice", "dev-a")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> deviceController.current(authentication, "dev-a"))
                 .isInstanceOf(ResponseStatusException.class)
-                .satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED));
+                .satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
     }
 
     @Test
@@ -108,6 +110,8 @@ class CryptoApiControllerTest {
         DeviceRegistrationResponse expected = new DeviceRegistrationResponse("dev-a", 10L);
 
         when(authentication.getName()).thenReturn("alice");
+        when(deviceService.currentDeviceState("alice", "dev-a"))
+                .thenReturn(DeviceService.CurrentDeviceState.ACTIVE);
         when(deviceService.findCurrentDevice("alice", "dev-a")).thenReturn(Optional.of(expected));
 
         DeviceRegistrationResponse response = deviceController.current(authentication, "dev-a");

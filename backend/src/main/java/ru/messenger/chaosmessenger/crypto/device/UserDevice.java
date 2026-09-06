@@ -105,6 +105,13 @@ public class UserDevice {
     private boolean active;
 
     /**
+     * Refresh-token family bound to this device. Revoked when the device is deactivated
+     * so a stolen client cannot keep rotating access tokens.
+     */
+    @Column(name = "session_family_id", length = 64)
+    private String sessionFamilyId;
+
+    /**
      * Timestamp of the device's last activity.
      * Updated on every WebSocket connection.
      */

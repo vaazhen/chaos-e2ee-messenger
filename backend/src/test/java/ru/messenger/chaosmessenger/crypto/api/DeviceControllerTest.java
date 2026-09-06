@@ -161,6 +161,8 @@ class DeviceControllerTest {
         );
 
         when(authentication.getName()).thenReturn("alice");
+        when(deviceService.currentDeviceState("alice", "dev-a"))
+                .thenReturn(DeviceService.CurrentDeviceState.ACTIVE);
         when(deviceService.findCurrentDevice("alice", "dev-a"))
                 .thenReturn(Optional.of(expected));
 
@@ -172,13 +174,26 @@ class DeviceControllerTest {
     @Test
     void currentThrowsWhenDeviceNotFound() {
         when(authentication.getName()).thenReturn("alice");
+        when(deviceService.currentDeviceState("alice", "dev-a"))
+                .thenReturn(DeviceService.CurrentDeviceState.MISSING);
         when(deviceService.findCurrentDevice("alice", "dev-a"))
                 .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> deviceController.current(authentication, "dev-a"))
                 .isInstanceOf(ResponseStatusException.class)
                 .satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode())
-                        .isEqualTo(HttpStatus.UNAUTHORIZED));
+                        .isEqualTo(HttpStatus.NOT_FOUND));
+    }
+
+    @Test
+    void currentThrowsWhenDeviceIsRevoked() {
+        when(authentication.getName()).thenReturn("alice");
+        when(deviceService.currentDeviceState("alice", "dev-a"))
+                .thenReturn(DeviceService.CurrentDeviceState.REVOKED);
+
+        assertThatThrownBy(() -> deviceController.current(authentication, "dev-a"))
+                .isInstanceOf(ru.messenger.chaosmessenger.common.exception.AuthException.class)
+                .hasMessageContaining("revoked");
     }
 
     @Test

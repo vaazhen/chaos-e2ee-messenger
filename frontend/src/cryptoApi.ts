@@ -3,6 +3,7 @@ import type { CryptoApi } from "./types/protocol";
 export interface CryptoHttpBody {
   message?: string;
   code?: string | number;
+  error?: string;
 }
 
 export type CryptoHttpError = Error & {
@@ -18,6 +19,7 @@ export function cryptoHttpError(
   const error = new Error(body?.message || `${status} ${statusText}`) as CryptoHttpError;
   error.status = status;
   if (body?.code !== undefined) error.code = body.code;
+  else if (body?.error !== undefined) error.code = body.error;
   return error;
 }
 

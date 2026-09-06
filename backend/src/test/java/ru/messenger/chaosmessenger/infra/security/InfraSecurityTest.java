@@ -237,6 +237,24 @@ class InfraSecurityTest {
     }
 
     @Test
+    void activeDeviceFilterSkipsAuthAndRegisterAndCurrent() {
+        ActiveDeviceFilter filter = new ActiveDeviceFilter(
+                mock(ru.messenger.chaosmessenger.crypto.device.CurrentDeviceService.class),
+                mock(JsonAuthenticationEntryPoint.class)
+        );
+
+        MockHttpServletRequest register = new MockHttpServletRequest("POST", "/api/crypto/devices/register");
+        MockHttpServletRequest current = new MockHttpServletRequest("GET", "/api/crypto/devices/current");
+        MockHttpServletRequest auth = new MockHttpServletRequest("POST", "/api/auth/refresh");
+        MockHttpServletRequest chats = new MockHttpServletRequest("GET", "/api/chats/my");
+
+        assertThat(filter.shouldNotFilter(register)).isTrue();
+        assertThat(filter.shouldNotFilter(current)).isTrue();
+        assertThat(filter.shouldNotFilter(auth)).isTrue();
+        assertThat(filter.shouldNotFilter(chats)).isFalse();
+    }
+
+    @Test
     void deviceContextHolderStoresAndClearsCurrentDeviceId() {
         DeviceContextHolder.set("dev-a");
 

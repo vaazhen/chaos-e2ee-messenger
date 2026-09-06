@@ -1,6 +1,7 @@
 package ru.messenger.chaosmessenger.infra.ws;
 
 import org.junit.jupiter.api.Test;
+import ru.messenger.chaosmessenger.auth.service.RefreshTokenService;
 import ru.messenger.chaosmessenger.realtime.WebSocketSessionRegistry;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -16,7 +17,8 @@ class WebSocketLogoutCloserTest {
         registry.register("s2", "alice", "dev-b", "family-1");
         registry.register("s3", "bob", "dev-c", "family-2");
         WebSocketNativeSessionTracker tracker = mock(WebSocketNativeSessionTracker.class);
-        WebSocketLogoutCloser closer = new WebSocketLogoutCloser(registry, tracker);
+        RefreshTokenService refreshTokenService = mock(RefreshTokenService.class);
+        WebSocketLogoutCloser closer = new WebSocketLogoutCloser(registry, tracker, refreshTokenService);
 
         closer.closeSessionsForUsername("alice");
 
@@ -32,11 +34,13 @@ class WebSocketLogoutCloserTest {
         registry.register("s1", "alice", "dev-a", "family-1");
         registry.register("s2", "alice", "dev-b", "family-1");
         WebSocketNativeSessionTracker tracker = mock(WebSocketNativeSessionTracker.class);
-        WebSocketLogoutCloser closer = new WebSocketLogoutCloser(registry, tracker);
+        RefreshTokenService refreshTokenService = mock(RefreshTokenService.class);
+        WebSocketLogoutCloser closer = new WebSocketLogoutCloser(registry, tracker, refreshTokenService);
 
         closer.closeSessionsForDevice("dev-a");
 
         verify(tracker).close("s1");
+        verify(refreshTokenService).revokeFamily("family-1");
         assertThat(registry.sessionIdsForDevice("dev-a")).isEmpty();
         assertThat(registry.sessionIdsForUsername("alice")).containsExactly("s2");
     }

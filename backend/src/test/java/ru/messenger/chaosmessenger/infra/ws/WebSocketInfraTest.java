@@ -62,7 +62,8 @@ class WebSocketInfraTest {
                 userDeviceRepository,
                 userRepository,
                 participantRepository,
-                sessionRegistry
+                sessionRegistry,
+                mock(ru.messenger.chaosmessenger.crypto.device.DeviceSessionBinder.class)
         );
     }
 

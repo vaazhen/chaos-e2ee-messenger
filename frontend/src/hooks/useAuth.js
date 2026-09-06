@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from "react";
-import { api, setToken, clearToken, getToken } from "../api";
+import { api, setToken, clearToken, getToken, isRevokedDeviceAuth } from "../api";
 import { ensureDeviceRegistered, ensureCurrentDeviceExists } from "../deviceId";
 
 export function useAuth() {
@@ -38,6 +38,9 @@ export function useAuth() {
       await ensureCurrentDeviceExists();
       return;
     } catch (firstError) {
+      if (isRevokedDeviceAuth(firstError?.status, firstError?.message, firstError?.code)) {
+        throw firstError;
+      }
       try {
         await ensureDeviceRegistered();
         await ensureCurrentDeviceExists();

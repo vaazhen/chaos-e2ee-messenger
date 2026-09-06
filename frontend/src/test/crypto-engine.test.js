@@ -159,6 +159,33 @@ describe("crypto-engine frontend safety checks", () => {
     await expect(window.e2ee.decryptEnvelope(selfEnvelope)).resolves.toBe("private self secret");
   });
 
+  it("decrypts a self whisper after the timeline DTO drops senderDeviceId", async () => {
+    await loadCryptoEngine();
+    const bundle = testBundle();
+    await activateDevice(bundle);
+    const api = vi.fn(async (path) => {
+      if (path === "/api/crypto/devices/current/prekeys") return { available: 50 };
+      return { targetDevices: [{ userId: 1, deviceId: bundle.deviceId }] };
+    });
+    const request = await window.e2ee.buildFanoutRequest(api, 100, "timeline self");
+    const stored = request.envelopes[0];
+    const { envelopeForDecrypt } = await import("../messageModel");
+    const envelope = envelopeForDecrypt({
+      targetDeviceId: stored.targetDeviceId,
+      messageType: stored.messageType,
+      senderIdentityPublicKey: stored.senderIdentityPublicKey,
+      ephemeralPublicKey: stored.ephemeralPublicKey,
+      ciphertext: stored.ciphertext,
+      nonce: stored.nonce,
+      signedPreKeyId: stored.signedPreKeyId,
+      oneTimePreKeyId: stored.oneTimePreKeyId,
+      messageIndex: stored.messageIndex,
+      ratchetPublicKey: stored.ratchetPublicKey,
+      previousChainLength: stored.previousChainLength,
+    }, bundle.deviceId, 100);
+    await expect(window.e2ee.decryptEnvelope(envelope)).resolves.toBe("timeline self");
+  });
+
   it("does not decrypt self envelopes derived from public identity material", async () => {
     await loadCryptoEngine();
     const bundle = testBundle();
@@ -457,8 +484,8 @@ describe("Double Ratchet full protocol cycle", () => {
         return { deviceId: Alice.deviceId };
       }
       if (String(path).includes("prekeys")) {
-        const error = new Error("Current device is not registered or inactive");
-        error.status = 401;
+        const error = new Error("Current device is not registered");
+        error.status = 404;
         throw error;
       }
       return {};
@@ -467,6 +494,30 @@ describe("Double Ratchet full protocol cycle", () => {
       deviceId: Alice.deviceId,
     });
     expect(api).toHaveBeenCalledWith(
+      expect.stringContaining("/crypto/devices/register"),
+      expect.anything()
+    );
+  }, 30000);
+
+  it("does not re-register a revoked device", async () => {
+    await loadCryptoEngine();
+    await activateDevice(Alice);
+    const api = vi.fn(async (path) => {
+      if (String(path).includes("/crypto/devices/register")) {
+        throw new Error("should not re-register revoked device");
+      }
+      if (String(path).includes("prekeys")) {
+        const error = new Error("Current device is revoked or inactive");
+        error.status = 401;
+        error.code = "DEVICE_REVOKED";
+        throw error;
+      }
+      return {};
+    });
+    await expect(window.e2ee.ensureDeviceRegistered(api)).rejects.toMatchObject({
+      code: "DEVICE_REVOKED",
+    });
+    expect(api).not.toHaveBeenCalledWith(
       expect.stringContaining("/crypto/devices/register"),
       expect.anything()
     );

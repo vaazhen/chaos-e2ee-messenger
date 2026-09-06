@@ -116,7 +116,10 @@ public class RefreshTokenService {
         return new IssuedToken(token, familyId);
     }
 
-    private void revokeFamily(String familyId) {
+    public void revokeFamily(String familyId) {
+        if (familyId == null || familyId.isBlank()) {
+            return;
+        }
         redisTemplate.opsForValue().set(REVOKED_FAMILY_PREFIX + familyId, "1", REFRESH_TTL);
     }
 

@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import ru.messenger.chaosmessenger.auth.service.CredentialRateLimiter;
 import ru.messenger.chaosmessenger.auth.service.DeviceRegistrationTokenService;
+import ru.messenger.chaosmessenger.common.exception.AuthException;
 import ru.messenger.chaosmessenger.crypto.device.CurrentDeviceService;
 import ru.messenger.chaosmessenger.crypto.device.DeviceService;
 import ru.messenger.chaosmessenger.crypto.device.UserDevice;
@@ -92,10 +93,17 @@ public class DeviceController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "X-Device-Id header is required");
         }
 
+        DeviceService.CurrentDeviceState state = deviceService.currentDeviceState(authentication.getName(), deviceId);
+        if (state == DeviceService.CurrentDeviceState.REVOKED) {
+            throw new AuthException(
+                    "Current device is revoked or inactive",
+                    "DEVICE_REVOKED"
+            );
+        }
         return deviceService.findCurrentDevice(authentication.getName(), deviceId)
                 .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.UNAUTHORIZED,
-                        "Current device is not registered or inactive"
+                        HttpStatus.NOT_FOUND,
+                        "Current device is not registered"
                 ));
     }
 

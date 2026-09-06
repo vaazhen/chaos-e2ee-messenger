@@ -124,6 +124,17 @@ class RefreshTokenServiceTest {
         verifyNoInteractions(redisTemplate);
     }
 
+    @Test
+    void revokeFamilyIgnoresBlankAndMarksKnownFamily() {
+        service.revokeFamily(" ");
+        service.revokeFamily(null);
+        verifyNoInteractions(redisTemplate);
+
+        service.revokeFamily("family-4");
+
+        verify(valueOps).set("refresh:family:revoked:family-4", "1", Duration.ofDays(30));
+    }
+
     private static String digest(String token) {
         try {
             byte[] hash = MessageDigest.getInstance("SHA-256")

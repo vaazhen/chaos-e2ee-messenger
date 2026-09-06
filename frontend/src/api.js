@@ -51,17 +51,25 @@ export function getCurrentDeviceId() {
 
 let _refreshPromise = null;
 
-export function isMissingCurrentDeviceAuth(status, message) {
+export function isRevokedDeviceAuth(status, message, code) {
+  if (code === "DEVICE_REVOKED") return true;
+  const text = String(message || "");
+  return /revoked|inactive|active device not found/i.test(text)
+    && (!Number.isFinite(Number(status)) || Number(status) === 401);
+}
+
+export function isMissingCurrentDeviceAuth(status, message, code) {
+  if (isRevokedDeviceAuth(status, message, code)) return true;
   const text = String(message || "");
   if (!/not registered|inactive|current device/i.test(text)) return false;
-  const code = Number(status);
-  return !Number.isFinite(code) || code === 401 || code === 404;
+  const http = Number(status);
+  return !Number.isFinite(http) || http === 401 || http === 404;
 }
 
 function httpError(status, statusText, body) {
   const error = new Error(body?.message || `${status} ${statusText}`);
   error.status = status;
-  error.code = body?.code;
+  error.code = body?.code ?? body?.error;
   return error;
 }
 
@@ -107,7 +115,11 @@ export async function call(path, opts = {}) {
   let unauthorizedBody = null;
   if (response.status === 401 && !path.includes("/auth/refresh") && !path.includes("/auth/login")) {
     unauthorizedBody = await response.clone().json().catch(() => ({}));
-    if (!isMissingCurrentDeviceAuth(response.status, unauthorizedBody?.message)) {
+    if (!isMissingCurrentDeviceAuth(
+      response.status,
+      unauthorizedBody?.message,
+      unauthorizedBody?.code ?? unauthorizedBody?.error
+    )) {
       const refreshed = await tryAutoRefresh();
       if (refreshed) {
         const newToken = getToken();
